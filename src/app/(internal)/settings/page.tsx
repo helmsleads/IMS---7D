@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import AppShell from "@/components/internal/AppShell";
-import { User, Bell, Loader2 } from "lucide-react";
+import { User, Bell, Loader2, Settings2, Globe, ChevronRight, GitBranch } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import {
   NotificationType,
@@ -17,15 +18,42 @@ const TABS: { id: SettingsTab; label: string; icon: typeof User }[] = [
   { id: "notifications", label: "Notifications", icon: Bell },
 ];
 
+const ADMIN_SETTINGS = [
+  {
+    href: "/settings/workflows",
+    label: "Workflow Profiles",
+    description: "Industry rules and automation",
+    icon: GitBranch,
+  },
+  {
+    href: "/settings/system",
+    label: "System Settings",
+    description: "Inventory, billing, and notifications",
+    icon: Settings2,
+  },
+  {
+    href: "/settings/portal",
+    label: "Portal Settings",
+    description: "Branding and feature toggles",
+    icon: Globe,
+  },
+];
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
 
   return (
     <AppShell title="Settings">
       <div className="flex flex-col lg:flex-row gap-6">
-        {/* Tabs Navigation */}
-        <div className="lg:w-64 flex-shrink-0">
+        {/* Sidebar Navigation */}
+        <div className="lg:w-72 flex-shrink-0 space-y-4">
+          {/* User Settings */}
           <nav className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                User Settings
+              </span>
+            </div>
             {TABS.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -45,6 +73,32 @@ export default function SettingsPage() {
                   <Icon className="w-5 h-5" />
                   <span className="font-medium">{tab.label}</span>
                 </button>
+              );
+            })}
+          </nav>
+
+          {/* Admin Settings */}
+          <nav className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Admin Settings
+              </span>
+            </div>
+            {ADMIN_SETTINGS.map((setting) => {
+              const Icon = setting.icon;
+              return (
+                <Link
+                  key={setting.href}
+                  href={setting.href}
+                  className="flex items-center gap-3 px-4 py-3 text-left transition-colors text-gray-600 hover:bg-gray-50 border-l-4 border-transparent group"
+                >
+                  <Icon className="w-5 h-5 text-gray-400 group-hover:text-gray-600" />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium block">{setting.label}</span>
+                    <span className="text-xs text-gray-400">{setting.description}</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500" />
+                </Link>
               );
             })}
           </nav>

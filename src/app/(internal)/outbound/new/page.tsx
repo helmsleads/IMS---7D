@@ -60,6 +60,7 @@ export default function NewOutboundOrderPage() {
   const [clientId, setClientId] = useState("");
   const [shipToAddress, setShipToAddress] = useState("");
   const [notes, setNotes] = useState("");
+  const [requiresRepack, setRequiresRepack] = useState(true);
   const [items, setItems] = useState<OrderItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -187,6 +188,8 @@ export default function NewOutboundOrderPage() {
         ship_to_address: shipToAddress.trim() || null,
         notes: notes.trim() || null,
         status: "confirmed", // Skip pending since internal order
+        source: "internal",
+        requires_repack: requiresRepack,
       };
 
       const itemsData: CreateOutboundItemData[] = items.map((item) => ({
@@ -292,6 +295,29 @@ export default function NewOutboundOrderPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="Optional notes (add 'rush' or 'urgent' for priority orders)"
                   />
+                </div>
+
+                {/* Repack Option */}
+                <div className="pt-4 border-t border-gray-200">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={requiresRepack}
+                      onChange={(e) => setRequiresRepack(e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-gray-900">
+                        Requires repacking
+                      </span>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {requiresRepack
+                          ? "Items will be packed into shipping boxes (box fees apply)"
+                          : "Ship in original cases/packaging (no box fees)"
+                        }
+                      </p>
+                    </div>
+                  </label>
                 </div>
               </div>
             </Card>

@@ -18,6 +18,13 @@ import {
   XCircle,
   User,
   ScanLine,
+  Box,
+  Plus,
+  Zap,
+  AlertCircle,
+  Calendar,
+  Globe,
+  Building2,
 } from "lucide-react";
 import Link from "next/link";
 import AppShell from "@/components/internal/AppShell";
@@ -42,6 +49,26 @@ import {
 import { createClient } from "@/lib/supabase";
 import { getLocations, Location } from "@/lib/api/locations";
 import { getInventory, InventoryWithDetails } from "@/lib/api/inventory";
+import {
+  getSupplies,
+  getOrderSupplies,
+  recordSupplyUsage,
+  SupplyWithInventory,
+  SupplyUsageWithDetails,
+} from "@/lib/api/supplies";
+import {
+  recordBoxUsage,
+  getOrderBoxUsage,
+  BoxUsageRecord,
+  PACKING_MATERIALS,
+  BOX_TYPES,
+  recordPackingMaterialUsage,
+  getOrderPackingMaterialUsage,
+  PackingMaterialRecord,
+  suggestBoxesForOrder,
+  BoxSuggestionResult,
+} from "@/lib/api/box-usage";
+import { getClientSettings, ClientSetting } from "@/lib/api/settings";
 import PickingScanner from "@/components/internal/PickingScanner";
 
 const STATUS_STEPS = [
@@ -107,6 +134,100 @@ function isUrgent(notes: string | null): boolean {
   return lowerNotes.includes("rush") || lowerNotes.includes("urgent");
 }
 
+// Carrier delivery estimates in business days
+const CARRIER_DELIVERY_DAYS: Record<string, { min: number; max: number; name: string }> = {
+  "ups_ground": { min: 3, max: 5, name: "UPS Ground" },
+  "ups_2day": { min: 2, max: 2, name: "UPS 2-Day" },
+  "ups_next_day": { min: 1, max: 1, name: "UPS Next Day" },
+  "fedex_ground": { min: 3, max: 5, name: "FedEx Ground" },
+  "fedex_express": { min: 2, max: 2, name: "FedEx Express" },
+  "fedex_overnight": { min: 1, max: 1, name: "FedEx Overnight" },
+  "usps_priority": { min: 2, max: 3, name: "USPS Priority" },
+  "usps_first_class": { min: 3, max: 5, name: "USPS First Class" },
+  "usps_ground": { min: 5, max: 7, name: "USPS Ground" },
+  "dhl_express": { min: 2, max: 3, name: "DHL Express" },
+  // Default fallbacks for common carrier names
+  "ups": { min: 3, max: 5, name: "UPS" },
+  "fedex": { min: 3, max: 5, name: "FedEx" },
+  "usps": { min: 3, max: 5, name: "USPS" },
+  "dhl": { min: 3, max: 5, name: "DHL" },
+};
+
+function getEstimatedDelivery(carrier: string | null, shippedDate: string | null): {
+  minDate: Date | null;
+  maxDate: Date | null;
+  businessDays: { min: number; max: number };
+  serviceName: string | null;
+} | null {
+  if (!shippedDate) return null;
+
+  const shipDate = new Date(shippedDate);
+  if (isNaN(shipDate.getTime())) return null;
+
+  // Normalize carrier name for lookup
+  const normalizedCarrier = carrier?.toLowerCase().replace(/[^a-z0-9]/g, "_") || "";
+
+  // Find matching carrier config
+  let deliveryConfig = CARRIER_DELIVERY_DAYS[normalizedCarrier];
+
+  // Try partial matches if exact match not found
+  if (!deliveryConfig) {
+    for (const [key, config] of Object.entries(CARRIER_DELIVERY_DAYS)) {
+      if (normalizedCarrier.includes(key) || key.includes(normalizedCarrier)) {
+        deliveryConfig = config;
+        break;
+      }
+    }
+  }
+
+  // Default to 3-7 business days if carrier not recognized
+  if (!deliveryConfig) {
+    deliveryConfig = { min: 3, max: 7, name: carrier || "Standard" };
+  }
+
+  // Calculate delivery dates (add business days, skipping weekends)
+  const addBusinessDays = (date: Date, days: number): Date => {
+    const result = new Date(date);
+    let added = 0;
+    while (added < days) {
+      result.setDate(result.getDate() + 1);
+      const dayOfWeek = result.getDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        added++;
+      }
+    }
+    return result;
+  };
+
+  return {
+    minDate: addBusinessDays(shipDate, deliveryConfig.min),
+    maxDate: addBusinessDays(shipDate, deliveryConfig.max),
+    businessDays: { min: deliveryConfig.min, max: deliveryConfig.max },
+    serviceName: deliveryConfig.name,
+  };
+}
+
+function formatEstimatedDelivery(estimate: ReturnType<typeof getEstimatedDelivery>): string {
+  if (!estimate) return "—";
+
+  const formatShortDate = (date: Date) => {
+    return date.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  if (estimate.minDate && estimate.maxDate) {
+    if (estimate.businessDays.min === estimate.businessDays.max) {
+      return formatShortDate(estimate.minDate);
+    }
+    return `${formatShortDate(estimate.minDate)} - ${formatShortDate(estimate.maxDate)}`;
+  }
+
+  return "—";
+}
+
 export default function OutboundOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -130,6 +251,9 @@ export default function OutboundOrderDetailPage() {
   const [showShipModal, setShowShipModal] = useState(false);
   const [shipSuccess, setShipSuccess] = useState("");
 
+  // Confirm order modal state
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+
   // Cancel confirmation modal state
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -137,12 +261,49 @@ export default function OutboundOrderDetailPage() {
   // Picking scanner state
   const [showPickingScanner, setShowPickingScanner] = useState(false);
 
+  // Supplies state
+  const [supplies, setSupplies] = useState<SupplyWithInventory[]>([]);
+  const [orderSupplies, setOrderSupplies] = useState<SupplyUsageWithDetails[]>([]);
+  const [selectedSupplyId, setSelectedSupplyId] = useState("");
+  const [supplyQty, setSupplyQty] = useState(1);
+  const [addingSupply, setAddingSupply] = useState(false);
+
+  // Client settings state
+  const [clientSettings, setClientSettings] = useState<ClientSetting[]>([]);
+
+  // Box usage state
+  const [boxUsage, setBoxUsage] = useState<BoxUsageRecord[]>([]);
+  const [selectedBoxCode, setSelectedBoxCode] = useState("");
+  const [boxQty, setBoxQty] = useState(1);
+  const [addingBox, setAddingBox] = useState(false);
+
+  // Packing materials state
+  const [packingMaterialUsage, setPackingMaterialUsage] = useState<PackingMaterialRecord[]>([]);
+  const [selectedMaterialCode, setSelectedMaterialCode] = useState("");
+  const [materialQty, setMaterialQty] = useState(1);
+  const [addingMaterial, setAddingMaterial] = useState(false);
+
+  // Box suggestions state
+  const [boxSuggestions, setBoxSuggestions] = useState<BoxSuggestionResult | null>(null);
+
+  // Helper to get client setting value
+  const getClientSettingValue = (category: string, key: string): unknown => {
+    const setting = clientSettings.find(
+      (s) => s.category === category && s.setting_key === key
+    );
+    return setting?.setting_value ?? null;
+  };
+
   const fetchOrder = async () => {
     try {
-      const [orderData, locationsData, inventoryData] = await Promise.all([
+      const [orderData, locationsData, inventoryData, suppliesData, orderSuppliesData, boxUsageData, packingMaterialData] = await Promise.all([
         getOutboundOrder(orderId),
         getLocations(),
         getInventory(),
+        getSupplies({ active: true }),
+        getOrderSupplies(orderId),
+        getOrderBoxUsage(orderId),
+        getOrderPackingMaterialUsage(orderId),
       ]);
       if (!orderData) {
         setError("Order not found");
@@ -150,9 +311,46 @@ export default function OutboundOrderDetailPage() {
         setOrder(orderData);
         setLocations(locationsData.filter((l) => l.active));
         setInventory(inventoryData);
+        setSupplies(suppliesData);
+        setOrderSupplies(orderSuppliesData);
+        setBoxUsage(boxUsageData);
+        setPackingMaterialUsage(packingMaterialData);
         // Set default location if only one
         if (locationsData.filter((l) => l.active).length === 1) {
           setShipLocationId(locationsData.filter((l) => l.active)[0].id);
+        }
+
+        // Fetch client settings if client exists
+        if (orderData.client_id) {
+          try {
+            const settings = await getClientSettings(orderData.client_id);
+            setClientSettings(settings);
+          } catch (err) {
+            console.error("Failed to fetch client settings:", err);
+          }
+        }
+
+        // Calculate box suggestions based on order items
+        // Fetch container types for products in this order
+        const supabase = (await import("@/lib/supabase")).createClient();
+        const productIds = orderData.items.map((item) => item.product_id);
+        const { data: productData } = await supabase
+          .from("products")
+          .select("id, container_type")
+          .in("id", productIds);
+
+        if (productData) {
+          const containerTypeMap = new Map(
+            productData.map((p) => [p.id, p.container_type || "bottle"])
+          );
+
+          const itemsForSuggestion = orderData.items.map((item) => ({
+            qty: item.qty_requested,
+            containerType: (containerTypeMap.get(item.product_id) || "bottle") as "bottle" | "can" | "keg" | "bag_in_box" | "other",
+          }));
+
+          const suggestions = suggestBoxesForOrder(itemsForSuggestion);
+          setBoxSuggestions(suggestions);
         }
       }
     } catch (err) {
@@ -167,15 +365,18 @@ export default function OutboundOrderDetailPage() {
     fetchOrder();
   }, [orderId]);
 
-  const handleStatusUpdate = async (newStatus: string, additionalFields?: { carrier?: string; tracking_number?: string }) => {
-    if (!order) return;
+  const handleStatusUpdate = async (newStatus: string, additionalFields?: { carrier?: string; tracking_number?: string }): Promise<boolean> => {
+    if (!order) return false;
     setUpdating(true);
     try {
       await updateOutboundOrderStatus(order.id, newStatus, additionalFields);
       await fetchOrder();
       setShowShipModal(false);
+      return true;
     } catch (err) {
       console.error("Failed to update status:", err);
+      setError(err instanceof Error ? err.message : "Failed to update order status");
+      return false;
     } finally {
       setUpdating(false);
     }
@@ -322,6 +523,113 @@ export default function OutboundOrderDetailPage() {
     window.print();
   };
 
+  const handleAddSupply = async () => {
+    if (!selectedSupplyId || supplyQty <= 0 || !order) return;
+
+    setAddingSupply(true);
+    try {
+      await recordSupplyUsage(order.id, selectedSupplyId, supplyQty);
+      // Refresh order supplies
+      const updatedSupplies = await getOrderSupplies(orderId);
+      setOrderSupplies(updatedSupplies);
+      // Reset form
+      setSelectedSupplyId("");
+      setSupplyQty(1);
+    } catch (err) {
+      console.error("Failed to add supply:", err);
+    } finally {
+      setAddingSupply(false);
+    }
+  };
+
+  // Get suggested supplies based on order items
+  const getSuggestedSupplies = () => {
+    if (!order) return [];
+
+    const totalItems = order.items.reduce((sum, item) => sum + item.qty_requested, 0);
+    const suggestions: { supply: SupplyWithInventory; reason: string; qty: number }[] = [];
+
+    // Suggest boxes based on item count
+    const boxSupply = supplies.find((s) =>
+      s.category === "packaging" && s.name.toLowerCase().includes("box")
+    );
+    if (boxSupply) {
+      const boxQty = Math.ceil(totalItems / 10); // 1 box per 10 items
+      suggestions.push({ supply: boxSupply, reason: `${totalItems} items to pack`, qty: boxQty });
+    }
+
+    // Suggest tape for any order
+    const tapeSupply = supplies.find((s) =>
+      s.category === "packaging" && s.name.toLowerCase().includes("tape")
+    );
+    if (tapeSupply) {
+      suggestions.push({ supply: tapeSupply, reason: "Standard packing", qty: 1 });
+    }
+
+    // Suggest bubble wrap for fragile items
+    const bubbleWrap = supplies.find((s) =>
+      s.category === "packaging" && s.name.toLowerCase().includes("bubble")
+    );
+    if (bubbleWrap && totalItems > 5) {
+      suggestions.push({ supply: bubbleWrap, reason: "Protection for items", qty: Math.ceil(totalItems / 5) });
+    }
+
+    // Suggest packing peanuts for larger orders
+    const peanutsSupply = supplies.find((s) =>
+      s.category === "packaging" && (s.name.toLowerCase().includes("peanut") || s.name.toLowerCase().includes("fill"))
+    );
+    if (peanutsSupply && totalItems > 10) {
+      suggestions.push({ supply: peanutsSupply, reason: "Void fill for larger order", qty: 1 });
+    }
+
+    return suggestions;
+  };
+
+  const supplyOptions = supplies.map((s) => ({
+    value: s.id,
+    label: `${s.name} (${s.sku})`,
+  }));
+
+  const handleAddBox = async () => {
+    if (!selectedBoxCode || boxQty <= 0 || !order) return;
+
+    setAddingBox(true);
+    try {
+      const result = await recordBoxUsage(order.id, selectedBoxCode, boxQty);
+      if (result) {
+        setBoxUsage((prev) => [...prev, result]);
+      }
+      // Reset form
+      setSelectedBoxCode("");
+      setBoxQty(1);
+    } catch (err) {
+      console.error("Failed to add box:", err);
+    } finally {
+      setAddingBox(false);
+    }
+  };
+
+  const handleAddPackingMaterial = async () => {
+    if (!selectedMaterialCode || materialQty <= 0 || !order) return;
+
+    setAddingMaterial(true);
+    try {
+      const result = await recordPackingMaterialUsage(order.id, selectedMaterialCode, materialQty);
+      if (result) {
+        setPackingMaterialUsage((prev) => [...prev, result]);
+      }
+      // Reset form
+      setSelectedMaterialCode("");
+      setMaterialQty(1);
+    } catch (err) {
+      console.error("Failed to add packing material:", err);
+    } finally {
+      setAddingMaterial(false);
+    }
+  };
+
+  const suggestedSupplies = getSuggestedSupplies();
+
   const handleCancelOrder = async () => {
     if (!order) return;
 
@@ -422,17 +730,45 @@ export default function OutboundOrderDetailPage() {
   const allItemsShipped = order.items.every((item) => item.qty_shipped >= item.qty_requested);
   const canPick = order.status === "confirmed" || order.status === "processing";
 
+  // Client service options
+  const rushProcessingEnabled = getClientSettingValue("fulfillment", "rush_processing_enabled") === true;
+  const carrierPreference = getClientSettingValue("fulfillment", "carrier_preference") as string | null;
+  const specialInstructions = getClientSettingValue("fulfillment", "special_instructions") as string | null;
+
+  // Order-level fields (from portal orders)
+  const orderIsRush = (order as any).is_rush === true;
+  const orderPreferredCarrier = (order as any).preferred_carrier as string | null;
+  const orderRequiresRepack = (order as any).requires_repack !== false; // Default true if not set
+
+  // Combine client settings with order fields
+  const isRushRequested = orderIsRush || isUrgent(order.notes) || (rushProcessingEnabled && order.notes?.toLowerCase().includes("rush"));
+  const effectivePreferredCarrier = orderPreferredCarrier || carrierPreference;
+  const hasServiceOptions = rushProcessingEnabled || effectivePreferredCarrier || specialInstructions || orderIsRush || !orderRequiresRepack;
+
   return (
     <AppShell
       title={order.order_number}
       subtitle={`Outbound order for ${order.client?.company_name || "Unknown Client"}`}
       actions={backLink}
     >
-      {/* Urgent Banner */}
-      {isUrgent(order.notes) && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-center gap-2">
-          <Flag className="w-5 h-5 text-red-500" />
-          <span className="font-medium text-red-700">Rush/Urgent Order</span>
+      {/* Urgent/Rush Banner */}
+      {isRushRequested && (
+        <div className="mb-6 bg-red-50 border-2 border-red-300 rounded-lg px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+              <Zap className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <span className="font-semibold text-red-800 text-lg">Rush Order</span>
+              {rushProcessingEnabled && (
+                <p className="text-sm text-red-600">Client has rush processing enabled</p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-red-700">
+            <Flag className="w-4 h-4" />
+            <span className="text-sm font-medium">Priority Fulfillment</span>
+          </div>
         </div>
       )}
 
@@ -459,6 +795,7 @@ export default function OutboundOrderDetailPage() {
             {/* Vertical Timeline */}
             <div className="space-y-0">
               {(() => {
+                const estimatedDelivery = getEstimatedDelivery(order.carrier, order.shipped_date);
                 const timelineSteps = [
                   { key: "pending", label: "Requested", date: order.requested_at },
                   { key: "confirmed", label: "Confirmed", date: order.confirmed_at },
@@ -475,6 +812,10 @@ export default function OutboundOrderDetailPage() {
                   const isLast = index === timelineSteps.length - 1;
                   const StepIcon = STATUS_STEPS[stepIndex]?.icon || Clock;
 
+                  // Check if this is the delivered step and we should show estimate
+                  const isDeliveredStep = step.key === "delivered";
+                  const showEstimate = isDeliveredStep && !order.delivered_date && order.shipped_date && estimatedDelivery;
+
                   return (
                     <div key={step.key} className="flex gap-4">
                       {/* Timeline Line & Icon */}
@@ -486,12 +827,16 @@ export default function OutboundOrderDetailPage() {
                               ? "bg-green-600 text-white"
                               : isCurrent
                               ? "bg-blue-600 text-white ring-4 ring-blue-100"
+                              : showEstimate
+                              ? "bg-purple-100 text-purple-600 ring-2 ring-purple-200"
                               : "bg-gray-200 text-gray-400"
                             }
                           `}
                         >
                           {isCompleted && !isCurrent ? (
                             <CheckCircle2 className="w-5 h-5" />
+                          ) : showEstimate ? (
+                            <Calendar className="w-5 h-5" />
                           ) : (
                             <StepIcon className="w-5 h-5" />
                           )}
@@ -513,23 +858,42 @@ export default function OutboundOrderDetailPage() {
                               ? "text-blue-600"
                               : isCompleted
                               ? "text-gray-900"
+                              : showEstimate
+                              ? "text-purple-700"
                               : "text-gray-400"
                           }`}
                         >
-                          {step.label}
+                          {showEstimate ? "Estimated Delivery" : step.label}
                           {isCurrent && (
                             <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
                               Current
                             </span>
                           )}
                         </p>
-                        <p
-                          className={`text-sm ${
-                            isCompleted ? "text-gray-600" : "text-gray-400"
-                          }`}
-                        >
-                          {step.date ? formatDateTime(step.date) : "Pending"}
-                        </p>
+                        {showEstimate ? (
+                          <div>
+                            <p className="text-sm text-purple-600 font-medium">
+                              {formatEstimatedDelivery(estimatedDelivery)}
+                            </p>
+                            {estimatedDelivery?.serviceName && (
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                via {order.carrier || estimatedDelivery.serviceName}
+                                {estimatedDelivery.businessDays.min === estimatedDelivery.businessDays.max
+                                  ? ` (${estimatedDelivery.businessDays.min} business day${estimatedDelivery.businessDays.min !== 1 ? "s" : ""})`
+                                  : ` (${estimatedDelivery.businessDays.min}-${estimatedDelivery.businessDays.max} business days)`
+                                }
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <p
+                            className={`text-sm ${
+                              isCompleted ? "text-gray-600" : "text-gray-400"
+                            }`}
+                          >
+                            {step.date ? formatDateTime(step.date) : "Pending"}
+                          </p>
+                        )}
                       </div>
                     </div>
                   );
@@ -541,8 +905,7 @@ export default function OutboundOrderDetailPage() {
             <div className="mt-8 pt-6 border-t border-gray-200">
               {order.status === "pending" && (
                 <Button
-                  onClick={() => handleStatusUpdate("confirmed")}
-                  loading={updating}
+                  onClick={() => setShowConfirmModal(true)}
                   disabled={updating}
                 >
                   <ClipboardCheck className="w-4 h-4 mr-2" />
@@ -915,6 +1278,538 @@ export default function OutboundOrderDetailPage() {
               </div>
             </Card>
           )}
+
+          {/* Supplies Section - Show during packing */}
+          {(order.status === "processing" || order.status === "packed") && (
+            <Card>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Box className="w-5 h-5 text-blue-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Packing Supplies
+                  </h2>
+                </div>
+                <span className="text-sm text-gray-500">
+                  {orderSupplies.length} supplies used
+                </span>
+              </div>
+
+              {/* Suggested Supplies */}
+              {suggestedSupplies.length > 0 && orderSupplies.length === 0 && (
+                <div className="mb-6">
+                  <p className="text-sm font-medium text-gray-700 mb-3">Suggested Supplies</p>
+                  <div className="space-y-2">
+                    {suggestedSupplies.map(({ supply, reason, qty }) => (
+                      <div
+                        key={supply.id}
+                        className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3"
+                      >
+                        <div>
+                          <p className="font-medium text-gray-900">{supply.name}</p>
+                          <p className="text-xs text-blue-600">{reason}</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedSupplyId(supply.id);
+                            setSupplyQty(qty);
+                          }}
+                          className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-100 rounded-md transition-colors"
+                        >
+                          Add {qty}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Add Supply Form */}
+              <div className="space-y-3 mb-6">
+                <p className="text-sm font-medium text-gray-700">Add Supply</p>
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <Select
+                      name="supply-select"
+                      options={supplyOptions}
+                      value={selectedSupplyId}
+                      onChange={(e) => setSelectedSupplyId(e.target.value)}
+                      placeholder="Select supply..."
+                    />
+                  </div>
+                  <div className="w-20">
+                    <Input
+                      name="supply-qty"
+                      type="number"
+                      min={1}
+                      value={supplyQty}
+                      onChange={(e) => setSupplyQty(parseInt(e.target.value) || 1)}
+                    />
+                  </div>
+                  <Button
+                    onClick={handleAddSupply}
+                    disabled={!selectedSupplyId || supplyQty <= 0 || addingSupply}
+                    loading={addingSupply}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Supplies Used List */}
+              {orderSupplies.length > 0 ? (
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-3">Supplies Used</p>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                            Supply
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            Qty
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            Unit Price
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {orderSupplies.map((usage) => (
+                          <tr key={usage.id}>
+                            <td className="px-4 py-2">
+                              <p className="font-medium text-gray-900 text-sm">
+                                {usage.supply.name}
+                              </p>
+                              <p className="text-xs text-gray-500">{usage.supply.sku}</p>
+                            </td>
+                            <td className="px-4 py-2 text-right text-sm">
+                              {usage.quantity} {usage.supply.unit}
+                            </td>
+                            <td className="px-4 py-2 text-right text-sm text-gray-600">
+                              ${usage.unit_price.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-2 text-right text-sm font-medium">
+                              ${usage.total.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-gray-50">
+                        <tr>
+                          <td colSpan={3} className="px-4 py-2 text-sm font-medium text-gray-900 text-right">
+                            Total Supplies Cost:
+                          </td>
+                          <td className="px-4 py-2 text-right text-sm font-bold text-gray-900">
+                            ${orderSupplies.reduce((sum, u) => sum + u.total, 0).toFixed(2)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {/* Billing Note */}
+                  <p className="text-xs text-gray-500 mt-3 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-green-500" />
+                    Supplies will be recorded for billing
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center py-6 text-gray-500 border border-dashed border-gray-300 rounded-lg">
+                  <Box className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm">No supplies added yet</p>
+                  <p className="text-xs text-gray-400 mt-1">Add supplies used for packing this order</p>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Box Usage Section - 7Degrees Box Rates (only if repack required) */}
+          {orderRequiresRepack && (order.status === "processing" || order.status === "packed" || order.status === "shipped") && (
+            <Card>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Package className="w-5 h-5 text-purple-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Box Usage
+                  </h2>
+                </div>
+                <span className="text-sm text-gray-500">
+                  7Degrees Box Rates
+                </span>
+              </div>
+
+              {/* Preview for Processing - Shows what will be auto-assigned */}
+              {order.status === "processing" && boxSuggestions && (boxSuggestions.totalBottles > 0 || boxSuggestions.totalCans > 0) && boxUsage.length === 0 && (
+                <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Zap className="w-4 h-4 text-blue-600" />
+                    <p className="text-sm font-semibold text-blue-800">Box Preview</p>
+                    <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                      Will auto-assign when packed
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-3">
+                    Based on {boxSuggestions.totalBottles > 0 ? `${boxSuggestions.totalBottles} bottle${boxSuggestions.totalBottles !== 1 ? "s" : ""}` : ""}
+                    {boxSuggestions.totalBottles > 0 && boxSuggestions.totalCans > 0 ? " and " : ""}
+                    {boxSuggestions.totalCans > 0 ? `${boxSuggestions.totalCans} can${boxSuggestions.totalCans !== 1 ? "s" : ""}` : ""}:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {[...boxSuggestions.bottles, ...boxSuggestions.cans].map((suggestion, idx) => (
+                      <div
+                        key={idx}
+                        className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
+                      >
+                        <span className="font-medium text-gray-700">{suggestion.qty}x</span>
+                        <span className="text-gray-600">{suggestion.name}</span>
+                        <span className="text-xs text-gray-400">(${(suggestion.qty * suggestion.price).toFixed(2)})</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-sm font-medium text-gray-700 mt-3">
+                    Estimated Cost: <span className="text-purple-700">${boxSuggestions.estimatedCost.toFixed(2)}</span>
+                  </p>
+                  {boxSuggestions.hasNonBoxItems && (
+                    <p className="text-xs text-amber-600 flex items-center gap-1 mt-2">
+                      <AlertCircle className="w-3 h-3" />
+                      Some items (kegs, bag-in-box) don't use standard boxes
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Auto-Assigned Notice for Packed/Shipped orders with boxes */}
+              {(order.status === "packed" || order.status === "shipped") && boxUsage.length > 0 && (
+                <div className="mb-4 flex items-center gap-2 text-sm text-green-700 bg-green-50 px-3 py-2 rounded-lg">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Boxes auto-assigned based on order contents</span>
+                </div>
+              )}
+
+              {/* Manual Add for Processing - Allow early manual assignment */}
+              {order.status === "processing" && boxUsage.length === 0 && boxSuggestions && (boxSuggestions.totalBottles > 0 || boxSuggestions.totalCans > 0) && (
+                <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                  <div className="flex items-center gap-2 mb-3">
+                    <p className="text-sm font-medium text-gray-700">Or manually assign now:</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {[...boxSuggestions.bottles, ...boxSuggestions.cans].map((suggestion, idx) => (
+                      <button
+                        key={idx}
+                        onClick={async () => {
+                          setAddingBox(true);
+                          try {
+                            const result = await recordBoxUsage(order.id, suggestion.code, suggestion.qty);
+                            if (result) {
+                              setBoxUsage((prev) => [...prev, result]);
+                            }
+                          } catch (err) {
+                            console.error("Failed to add suggested box:", err);
+                          } finally {
+                            setAddingBox(false);
+                          }
+                        }}
+                        disabled={addingBox}
+                        className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-purple-300 rounded-lg text-sm hover:bg-purple-50 transition-colors disabled:opacity-50"
+                      >
+                        <span className="font-medium text-purple-700">{suggestion.qty}x</span>
+                        <span className="text-gray-700">{suggestion.name}</span>
+                        <span className="text-xs text-gray-500">(${(suggestion.qty * suggestion.price).toFixed(2)})</span>
+                        <Plus className="w-3 h-3 text-purple-600" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Quick Box Selection Grid - For manual additions */}
+              <div className="mb-6">
+                <p className="text-sm font-medium text-gray-700 mb-3">
+                  {boxUsage.length > 0 ? "Add More Boxes" : "Select Box Type"}
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {BOX_TYPES.map((box) => (
+                    <button
+                      key={box.code}
+                      onClick={() => setSelectedBoxCode(box.code)}
+                      className={`
+                        p-3 rounded-lg border-2 text-left transition-all
+                        ${selectedBoxCode === box.code
+                          ? "border-purple-500 bg-purple-50"
+                          : box.isCan
+                            ? "border-blue-200 hover:border-blue-400 hover:bg-blue-50"
+                            : "border-gray-200 hover:border-purple-300 hover:bg-gray-50"
+                        }
+                      `}
+                    >
+                      <p className={`font-medium text-sm ${
+                        selectedBoxCode === box.code ? "text-purple-700" : "text-gray-900"
+                      }`}>
+                        {box.name}
+                      </p>
+                      <p className={`text-xs ${
+                        selectedBoxCode === box.code ? "text-purple-600" : box.isCan ? "text-blue-500" : "text-gray-500"
+                      }`}>
+                        ${box.price.toFixed(2)}
+                        {box.isCan && <span className="ml-1 text-blue-400">(cans)</span>}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quantity and Add */}
+              {selectedBoxCode && (
+                <div className="flex gap-2 items-end mb-6 p-4 bg-purple-50 rounded-lg">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Quantity
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setBoxQty(Math.max(1, boxQty - 1))}
+                        className="w-10 h-10 rounded-lg border border-gray-300 bg-white flex items-center justify-center text-gray-600 hover:bg-gray-50"
+                      >
+                        -
+                      </button>
+                      <Input
+                        name="box-qty"
+                        type="number"
+                        min={1}
+                        value={boxQty}
+                        onChange={(e) => setBoxQty(parseInt(e.target.value) || 1)}
+                        className="w-20 text-center"
+                      />
+                      <button
+                        onClick={() => setBoxQty(boxQty + 1)}
+                        className="w-10 h-10 rounded-lg border border-gray-300 bg-white flex items-center justify-center text-gray-600 hover:bg-gray-50"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={handleAddBox}
+                    disabled={addingBox}
+                    loading={addingBox}
+                    className="bg-purple-600 hover:bg-purple-700"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add {boxQty} Box{boxQty > 1 ? "es" : ""}
+                  </Button>
+                </div>
+              )}
+
+              {/* Box Usage List */}
+              {boxUsage.length > 0 ? (
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-3">Boxes Used</p>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                            Box Type
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            Qty
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            Price
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {boxUsage.map((usage) => (
+                          <tr key={usage.id}>
+                            <td className="px-4 py-2">
+                              <p className="font-medium text-gray-900 text-sm">
+                                {usage.box_name}
+                              </p>
+                            </td>
+                            <td className="px-4 py-2 text-right text-sm">
+                              {usage.quantity}
+                            </td>
+                            <td className="px-4 py-2 text-right text-sm text-gray-600">
+                              ${usage.unit_price.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-2 text-right text-sm font-medium">
+                              ${usage.total.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-gray-50">
+                        <tr>
+                          <td colSpan={3} className="px-4 py-2 text-sm font-medium text-gray-900 text-right">
+                            Total Box Cost:
+                          </td>
+                          <td className="px-4 py-2 text-right text-sm font-bold text-purple-700">
+                            ${boxUsage.reduce((sum, u) => sum + u.total, 0).toFixed(2)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-6 text-gray-500 border border-dashed border-gray-300 rounded-lg">
+                  <Package className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm">No boxes recorded yet</p>
+                  <p className="text-xs text-gray-400 mt-1">Select a box type above to record usage</p>
+                </div>
+              )}
+
+              {/* Packing Materials Section */}
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <p className="text-sm font-medium text-gray-700 mb-3">Packing Materials</p>
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {PACKING_MATERIALS.map((material) => (
+                    <button
+                      key={material.code}
+                      onClick={() => setSelectedMaterialCode(material.code)}
+                      className={`
+                        p-3 rounded-lg border-2 text-left transition-all
+                        ${selectedMaterialCode === material.code
+                          ? "border-amber-500 bg-amber-50"
+                          : "border-gray-200 hover:border-amber-300 hover:bg-gray-50"
+                        }
+                      `}
+                    >
+                      <p className={`font-medium text-sm ${
+                        selectedMaterialCode === material.code ? "text-amber-700" : "text-gray-900"
+                      }`}>
+                        {material.name}
+                      </p>
+                      <p className={`text-xs ${
+                        selectedMaterialCode === material.code ? "text-amber-600" : "text-gray-500"
+                      }`}>
+                        ${material.price.toFixed(2)} / {material.unit}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Quantity and Add for Materials */}
+                {selectedMaterialCode && (
+                  <div className="flex gap-2 items-end mb-4 p-4 bg-amber-50 rounded-lg">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Quantity
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setMaterialQty(Math.max(1, materialQty - 1))}
+                          className="w-10 h-10 rounded-lg border border-gray-300 bg-white flex items-center justify-center text-gray-600 hover:bg-gray-50"
+                        >
+                          -
+                        </button>
+                        <Input
+                          name="material-qty"
+                          type="number"
+                          min={1}
+                          value={materialQty}
+                          onChange={(e) => setMaterialQty(parseInt(e.target.value) || 1)}
+                          className="w-20 text-center"
+                        />
+                        <button
+                          onClick={() => setMaterialQty(materialQty + 1)}
+                          className="w-10 h-10 rounded-lg border border-gray-300 bg-white flex items-center justify-center text-gray-600 hover:bg-gray-50"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={handleAddPackingMaterial}
+                      disabled={addingMaterial}
+                      loading={addingMaterial}
+                      className="bg-amber-600 hover:bg-amber-700"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+                )}
+
+                {/* Packing Materials Used List */}
+                {packingMaterialUsage.length > 0 && (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                            Material
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            Qty
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            Price
+                          </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
+                            Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {packingMaterialUsage.map((usage) => (
+                          <tr key={usage.id}>
+                            <td className="px-4 py-2">
+                              <p className="font-medium text-gray-900 text-sm">
+                                {usage.material_name}
+                              </p>
+                            </td>
+                            <td className="px-4 py-2 text-right text-sm">
+                              {usage.quantity}
+                            </td>
+                            <td className="px-4 py-2 text-right text-sm text-gray-600">
+                              ${usage.unit_price.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-2 text-right text-sm font-medium">
+                              ${usage.total.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-gray-50">
+                        <tr>
+                          <td colSpan={3} className="px-4 py-2 text-sm font-medium text-gray-900 text-right">
+                            Total Materials Cost:
+                          </td>
+                          <td className="px-4 py-2 text-right text-sm font-bold text-amber-700">
+                            ${packingMaterialUsage.reduce((sum, u) => sum + u.total, 0).toFixed(2)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Grand Total & Auto-billing Note */}
+              {(boxUsage.length > 0 || packingMaterialUsage.length > 0) && (
+                <div className="mt-6 pt-4 border-t border-gray-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-sm font-semibold text-gray-900">Total Packaging Cost:</span>
+                    <span className="text-lg font-bold text-gray-900">
+                      ${(boxUsage.reduce((sum, u) => sum + u.total, 0) + packingMaterialUsage.reduce((sum, u) => sum + u.total, 0)).toFixed(2)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-green-500" />
+                    All packaging charges automatically added to client billing
+                  </p>
+                </div>
+              )}
+            </Card>
+          )}
         </div>
 
         {/* Sidebar */}
@@ -925,9 +1820,29 @@ export default function OutboundOrderDetailPage() {
               {/* Order Number - Large */}
               <div className="pb-4 border-b border-gray-200">
                 <p className="text-sm text-gray-500 mb-1">Order Number</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {order.order_number}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-2xl font-bold text-gray-900">
+                    {order.order_number}
+                  </p>
+                  {/* Source Badge */}
+                  {(order as any).source === "portal" ? (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-700"
+                      title="Portal Order - Customer requested"
+                    >
+                      <Globe className="w-3 h-3" />
+                      Portal
+                    </span>
+                  ) : (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600"
+                      title="Internal Order - Staff created"
+                    >
+                      <Building2 className="w-3 h-3" />
+                      Internal
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Status */}
@@ -955,9 +1870,21 @@ export default function OutboundOrderDetailPage() {
               {order.ship_to_address && (
                 <div>
                   <p className="text-sm text-gray-500 mb-1">Ship To</p>
-                  <p className="text-gray-900 whitespace-pre-line">
-                    {order.ship_to_address}
-                  </p>
+                  <div className="text-gray-900">
+                    <p>{order.ship_to_address}</p>
+                    {(order as any).ship_to_address2 && (
+                      <p>{(order as any).ship_to_address2}</p>
+                    )}
+                    {((order as any).ship_to_city || (order as any).ship_to_state || (order as any).ship_to_postal_code) && (
+                      <p>
+                        {(order as any).ship_to_city && `${(order as any).ship_to_city}, `}
+                        {(order as any).ship_to_state} {(order as any).ship_to_postal_code}
+                      </p>
+                    )}
+                    {(order as any).ship_to_country && (order as any).ship_to_country !== "US" && (order as any).ship_to_country !== "USA" && (
+                      <p>{(order as any).ship_to_country}</p>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1037,6 +1964,106 @@ export default function OutboundOrderDetailPage() {
               )}
             </div>
           </Card>
+
+          {/* Client Service Options - Show if any options are set */}
+          {(hasServiceOptions || isRushRequested) && (
+            <Card>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-blue-600" />
+                Service Options
+              </h2>
+              <div className="space-y-4">
+                {/* Rush Processing */}
+                {(rushProcessingEnabled || isRushRequested) && (
+                  <div className={`p-3 rounded-lg ${isRushRequested ? "bg-red-50 border border-red-200" : "bg-gray-50"}`}>
+                    <div className="flex items-center gap-2">
+                      <Zap className={`w-4 h-4 ${isRushRequested ? "text-red-600" : "text-gray-400"}`} />
+                      <span className="text-sm font-medium text-gray-700">Rush Processing</span>
+                      {rushProcessingEnabled && (
+                        <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">
+                          Enabled
+                        </span>
+                      )}
+                      {orderIsRush && (
+                        <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
+                          From Order
+                        </span>
+                      )}
+                    </div>
+                    {isRushRequested ? (
+                      <p className="text-sm text-red-700 mt-1 font-medium">
+                        {orderIsRush ? "Rush requested by customer" : "Rush requested for this order"}
+                      </p>
+                    ) : rushProcessingEnabled ? (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Client has rush processing available
+                      </p>
+                    ) : null}
+                  </div>
+                )}
+
+                {/* Packaging / Repack Status */}
+                {!orderRequiresRepack && (
+                  <div className="p-3 rounded-lg bg-green-50 border border-green-200">
+                    <div className="flex items-center gap-2">
+                      <Package className="w-4 h-4 text-green-600" />
+                      <span className="text-sm font-medium text-gray-700">Packaging</span>
+                      <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
+                        No Repack
+                      </span>
+                    </div>
+                    <p className="text-sm text-green-700 mt-1">
+                      Ship in original cases/packaging (no box fees)
+                    </p>
+                  </div>
+                )}
+
+                {/* Carrier Preference */}
+                {effectivePreferredCarrier && (
+                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                    <div className="flex items-center gap-2">
+                      <Truck className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-medium text-gray-700">Preferred Carrier</span>
+                      {orderPreferredCarrier && (
+                        <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
+                          From Order
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-blue-800 mt-1 font-semibold">
+                      {effectivePreferredCarrier}
+                    </p>
+                    {order.carrier && order.carrier !== effectivePreferredCarrier && (
+                      <p className="text-xs text-orange-600 mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        Order carrier differs from preference
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Special Instructions */}
+                {specialInstructions && (
+                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <FileText className="w-4 h-4 text-amber-600" />
+                      <span className="text-sm font-medium text-gray-700">Special Instructions</span>
+                    </div>
+                    <p className="text-sm text-amber-800 whitespace-pre-line">
+                      {specialInstructions}
+                    </p>
+                  </div>
+                )}
+
+                {/* No active options message */}
+                {!rushProcessingEnabled && !isRushRequested && !effectivePreferredCarrier && !specialInstructions && (
+                  <p className="text-sm text-gray-500 text-center py-2">
+                    No special service options for this client
+                  </p>
+                )}
+              </div>
+            </Card>
+          )}
 
           {/* Fulfillment Summary */}
           <Card>
@@ -1219,6 +2246,134 @@ export default function OutboundOrderDetailPage() {
         initialCarrier={order?.carrier || ""}
         initialTrackingNumber={order?.tracking_number || ""}
       />
+
+      {/* Confirm Order Modal with Inventory Check */}
+      <Modal
+        isOpen={showConfirmModal}
+        onClose={() => !updating && setShowConfirmModal(false)}
+        title="Confirm Order"
+      >
+        {order && (() => {
+          const itemAvailability = order.items.map((item) => {
+            const totalAvailable = inventory
+              .filter((inv) => inv.product_id === item.product_id)
+              .reduce((sum, inv) => sum + inv.qty_on_hand, 0);
+            const totalReserved = inventory
+              .filter((inv) => inv.product_id === item.product_id)
+              .reduce((sum, inv) => sum + (inv.qty_reserved || 0), 0);
+            const effectiveAvailable = totalAvailable - totalReserved;
+            const shortage = item.qty_requested - effectiveAvailable;
+
+            return {
+              item,
+              totalAvailable,
+              totalReserved,
+              effectiveAvailable,
+              shortage: shortage > 0 ? shortage : 0,
+              status: effectiveAvailable >= item.qty_requested
+                ? "sufficient" as const
+                : effectiveAvailable > 0
+                ? "partial" as const
+                : "none" as const,
+            };
+          });
+
+          const hasShortages = itemAvailability.some((a) => a.status !== "sufficient");
+          const hasNoStock = itemAvailability.some((a) => a.status === "none");
+
+          return (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Review inventory availability before confirming this order.
+              </p>
+
+              {hasShortages && (
+                <div className={`p-3 rounded-lg border ${
+                  hasNoStock ? "bg-red-50 border-red-200" : "bg-yellow-50 border-yellow-200"
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className={`w-4 h-4 ${hasNoStock ? "text-red-600" : "text-yellow-600"}`} />
+                    <p className={`text-sm font-medium ${hasNoStock ? "text-red-800" : "text-yellow-800"}`}>
+                      {hasNoStock
+                        ? "Some items have no available inventory"
+                        : "Some items have insufficient inventory"}
+                    </p>
+                  </div>
+                  <p className={`text-xs mt-1 ml-6 ${hasNoStock ? "text-red-700" : "text-yellow-700"}`}>
+                    You can still confirm the order, but fulfillment may be delayed.
+                  </p>
+                </div>
+              )}
+
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="text-left py-2 px-3 font-medium text-gray-700">Product</th>
+                      <th className="text-right py-2 px-3 font-medium text-gray-700">Requested</th>
+                      <th className="text-right py-2 px-3 font-medium text-gray-700">Available</th>
+                      <th className="text-right py-2 px-3 font-medium text-gray-700">Reserved</th>
+                      <th className="text-center py-2 px-3 font-medium text-gray-700">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itemAvailability.map(({ item, totalAvailable, totalReserved, effectiveAvailable, shortage, status }) => (
+                      <tr key={item.id} className="border-b border-gray-100">
+                        <td className="py-2 px-3">
+                          <div className="font-medium text-gray-900">{item.product?.name || "Unknown"}</div>
+                          <div className="text-xs text-gray-500">{item.product?.sku}</div>
+                        </td>
+                        <td className="py-2 px-3 text-right font-medium">{item.qty_requested}</td>
+                        <td className="py-2 px-3 text-right">{totalAvailable}</td>
+                        <td className="py-2 px-3 text-right text-gray-500">{totalReserved}</td>
+                        <td className="py-2 px-3 text-center">
+                          {status === "sufficient" ? (
+                            <span className="inline-flex items-center gap-1 text-green-700 bg-green-50 px-2 py-0.5 rounded-full text-xs font-medium">
+                              <CheckCircle2 className="w-3 h-3" />
+                              OK
+                            </span>
+                          ) : status === "partial" ? (
+                            <span className="inline-flex items-center gap-1 text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded-full text-xs font-medium">
+                              <AlertCircle className="w-3 h-3" />
+                              Short {shortage}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-red-700 bg-red-50 px-2 py-0.5 rounded-full text-xs font-medium">
+                              <XCircle className="w-3 h-3" />
+                              No stock
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowConfirmModal(false)}
+                  disabled={updating}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={async () => {
+                    const success = await handleStatusUpdate("confirmed");
+                    if (success) setShowConfirmModal(false);
+                  }}
+                  loading={updating}
+                  disabled={updating}
+                >
+                  <ClipboardCheck className="w-4 h-4 mr-2" />
+                  {hasShortages ? "Confirm Anyway" : "Confirm Order"}
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
 
       {/* Cancel Order Confirmation Modal */}
       <Modal

@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Allow ngrok for local development with Shopify webhooks
+  allowedDevOrigins: [
+    "teri-daydreamy-brandon.ngrok-free.dev",
+    "*.ngrok-free.dev",
+  ],
   images: {
     // Allow images from these remote sources
     remotePatterns: [

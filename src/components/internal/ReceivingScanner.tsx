@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Check, Package, ScanLine, AlertTriangle, CheckCircle, X, Plus, Volume2 } from "lucide-react";
+import { Check, Package, ScanLine, AlertTriangle, CheckCircle, X, Plus, Volume2, Layers, Calendar } from "lucide-react";
 import Image from "next/image";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
+import Input from "@/components/ui/Input";
 import BarcodeScanner from "@/components/ui/BarcodeScanner";
 import { lookupBarcode } from "@/lib/api/barcode";
+import { receiveWithLot } from "@/lib/api/inbound";
 import { createClient } from "@/lib/supabase";
 
 interface InboundItem {
@@ -20,15 +22,18 @@ interface InboundItem {
     sku: string;
     barcode: string | null;
     image_url: string | null;
+    lot_tracking_enabled: boolean;
+    default_expiration_days: number | null;
   };
 }
 
 interface ReceivingScannerProps {
   inboundOrderId: string;
+  defaultLocationId?: string;
   onComplete: () => void;
 }
 
-type ScanStatus = "idle" | "scanning" | "found" | "not_found" | "not_expected";
+type ScanStatus = "idle" | "scanning" | "found" | "not_found" | "not_expected" | "lot_entry";
 
 // Audio context for beep sound
 let audioContext: AudioContext | null = null;
@@ -62,6 +67,7 @@ function playBeep(success: boolean = true) {
 
 export default function ReceivingScanner({
   inboundOrderId,
+  defaultLocationId,
   onComplete,
 }: ReceivingScannerProps) {
   const [items, setItems] = useState<InboundItem[]>([]);
@@ -74,6 +80,12 @@ export default function ReceivingScanner({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(true);
+
+  // Lot tracking state
+  const [lotNumber, setLotNumber] = useState("");
+  const [expirationDate, setExpirationDate] = useState("");
+  const [lotScannerActive, setLotScannerActive] = useState(false);
+  const [locationId, setLocationId] = useState<string | null>(defaultLocationId || null);
 
   const fetchItems = useCallback(async () => {
     const supabase = createClient();
@@ -90,7 +102,9 @@ export default function ReceivingScanner({
           name,
           sku,
           barcode,
-          image_url
+          image_url,
+          lot_tracking_enabled,
+          default_expiration_days
         )
       `)
       .eq("inbound_order_id", inboundOrderId)
@@ -108,6 +122,16 @@ export default function ReceivingScanner({
   useEffect(() => {
     fetchItems();
   }, [fetchItems]);
+
+  // Calculate default expiration date based on product's default_expiration_days
+  const getDefaultExpirationDate = useCallback((item: InboundItem): string => {
+    if (item.product.default_expiration_days) {
+      const date = new Date();
+      date.setDate(date.getDate() + item.product.default_expiration_days);
+      return date.toISOString().split("T")[0];
+    }
+    return "";
+  }, []);
 
   const handleScan = useCallback(async (code: string) => {
     setScannedCode(code);
@@ -137,10 +161,26 @@ export default function ReceivingScanner({
     // Success beep
     if (audioEnabled) playBeep(true);
 
-    setScanStatus("found");
     setScannedItem(matchedItem);
-    setPendingQty(0);
-  }, [items, audioEnabled]);
+
+    // If lot tracking is enabled, go to lot entry step
+    if (matchedItem.product.lot_tracking_enabled) {
+      setLotNumber("");
+      setExpirationDate(getDefaultExpirationDate(matchedItem));
+      setScanStatus("lot_entry");
+      setPendingQty(1); // Default to 1 for lot-tracked items
+    } else {
+      setScanStatus("found");
+      setPendingQty(0);
+    }
+  }, [items, audioEnabled, getDefaultExpirationDate]);
+
+  // Handle lot barcode scan
+  const handleLotScan = useCallback((code: string) => {
+    setLotNumber(code);
+    setLotScannerActive(false);
+    if (audioEnabled) playBeep(true);
+  }, [audioEnabled]);
 
   const handleAddQty = (qty: number) => {
     if (!scannedItem) return;
@@ -160,47 +200,79 @@ export default function ReceivingScanner({
   const handleConfirmReceive = async () => {
     if (!scannedItem || pendingQty <= 0) return;
 
+    // For lot-tracked items, validate lot number
+    if (scannedItem.product.lot_tracking_enabled) {
+      if (!lotNumber.trim()) {
+        setMessage({ type: "error", text: "Lot number is required" });
+        return;
+      }
+      if (!locationId) {
+        setMessage({ type: "error", text: "Location is required for lot-tracked items" });
+        return;
+      }
+    }
+
     setSaving(true);
     setMessage(null);
 
-    const supabase = createClient();
-
     const newQtyReceived = scannedItem.qty_received + pendingQty;
 
-    const { error } = await supabase
-      .from("inbound_items")
-      .update({ qty_received: newQtyReceived })
-      .eq("id", scannedItem.id);
+    try {
+      if (scannedItem.product.lot_tracking_enabled && locationId) {
+        // Use receiveWithLot for lot-tracked products
+        await receiveWithLot(
+          scannedItem.id,
+          newQtyReceived,
+          locationId,
+          lotNumber.trim(),
+          expirationDate || null
+        );
+      } else {
+        // Standard receive for non-lot-tracked products
+        const supabase = createClient();
+        const { error } = await supabase
+          .from("inbound_items")
+          .update({ qty_received: newQtyReceived })
+          .eq("id", scannedItem.id);
 
-    if (error) {
+        if (error) {
+          throw new Error(error.message);
+        }
+      }
+
+      // Update local state
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === scannedItem.id
+            ? { ...item, qty_received: newQtyReceived }
+            : item
+        )
+      );
+
+      const lotInfo = scannedItem.product.lot_tracking_enabled
+        ? ` (Lot: ${lotNumber})`
+        : "";
+      setMessage({
+        type: "success",
+        text: `Received ${pendingQty} x ${scannedItem.product.name}${lotInfo}`,
+      });
+
+      // Reset scan state
+      setScanStatus("idle");
+      setScannedItem(null);
+      setScannedCode(null);
+      setPendingQty(0);
+      setLotNumber("");
+      setExpirationDate("");
+      setSaving(false);
+
+      // Auto-start scanner for next item
+      setTimeout(() => setScannerActive(true), 500);
+    } catch (err) {
+      console.error("Failed to receive:", err);
       setMessage({ type: "error", text: "Failed to update received quantity" });
       setSaving(false);
-      return;
     }
-
-    // Update local state
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === scannedItem.id
-          ? { ...item, qty_received: newQtyReceived }
-          : item
-      )
-    );
-
-    setMessage({
-      type: "success",
-      text: `Received ${pendingQty} x ${scannedItem.product.name}`,
-    });
-
-    // Reset scan state
-    setScanStatus("idle");
-    setScannedItem(null);
-    setScannedCode(null);
-    setPendingQty(0);
-    setSaving(false);
-
-    // Auto-start scanner for next item
-    setTimeout(() => setScannerActive(true), 500);
   };
 
   const handleScanAgain = () => {
@@ -208,17 +280,29 @@ export default function ReceivingScanner({
     setScannedItem(null);
     setScannedCode(null);
     setPendingQty(0);
+    setLotNumber("");
+    setExpirationDate("");
+    setLotScannerActive(false);
     setMessage(null);
     setScannerActive(true);
   };
 
   const handleManualSelect = (item: InboundItem) => {
     if (audioEnabled) playBeep(true);
-    setScanStatus("found");
     setScannedItem(item);
     setScannedCode(item.product.sku);
     setScannerActive(false);
-    setPendingQty(0);
+
+    // If lot tracking is enabled, go to lot entry step
+    if (item.product.lot_tracking_enabled) {
+      setLotNumber("");
+      setExpirationDate(getDefaultExpirationDate(item));
+      setScanStatus("lot_entry");
+      setPendingQty(1);
+    } else {
+      setScanStatus("found");
+      setPendingQty(0);
+    }
   };
 
   const totalExpected = items.reduce((sum, item) => sum + item.qty_expected, 0);
@@ -331,6 +415,184 @@ export default function ReceivingScanner({
             <Button variant="secondary" onClick={handleScanAgain} className="mt-4">
               Scan Again
             </Button>
+          </div>
+        )}
+
+        {/* Lot Entry Step - For lot-tracked products */}
+        {scanStatus === "lot_entry" && scannedItem && (
+          <div className="space-y-4">
+            {/* Product Info Card */}
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <div className="flex items-start gap-4">
+                {/* Product Image */}
+                <div className="w-16 h-16 bg-white rounded-lg border border-purple-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  {scannedItem.product.image_url ? (
+                    <Image
+                      src={scannedItem.product.image_url}
+                      alt={scannedItem.product.name}
+                      width={64}
+                      height={64}
+                      className="object-contain"
+                    />
+                  ) : (
+                    <Package className="w-6 h-6 text-purple-400" />
+                  )}
+                </div>
+
+                {/* Product Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-gray-900">{scannedItem.product.name}</p>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 rounded">
+                      <Layers className="w-3 h-3" />
+                      Lot Tracked
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-500 font-mono">{scannedItem.product.sku}</p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Remaining: <strong>{scannedItem.qty_expected - scannedItem.qty_received}</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Lot Entry Form */}
+            <div className="space-y-4 bg-gray-50 rounded-lg p-4">
+              <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                <Layers className="w-4 h-4 text-purple-600" />
+                Enter Lot Information
+              </h4>
+
+              {/* Lot Number - with scan option */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Lot Number <span className="text-red-500">*</span>
+                </label>
+                {lotScannerActive ? (
+                  <div className="space-y-2">
+                    <BarcodeScanner
+                      isActive={lotScannerActive}
+                      onScan={handleLotScan}
+                      onError={(err) => console.error("Lot scanner error:", err)}
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setLotScannerActive(false)}
+                      className="w-full"
+                    >
+                      Cancel Scan
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <Input
+                      name="lot-number"
+                      value={lotNumber}
+                      onChange={(e) => setLotNumber(e.target.value)}
+                      placeholder="Enter or scan lot number"
+                      className="flex-1"
+                    />
+                    <Button
+                      variant="secondary"
+                      onClick={() => setLotScannerActive(true)}
+                      title="Scan lot barcode"
+                    >
+                      <ScanLine className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Expiration Date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Expiration Date
+                  {scannedItem.product.default_expiration_days && (
+                    <span className="text-gray-400 font-normal ml-1">
+                      (auto-calculated from {scannedItem.product.default_expiration_days} days)
+                    </span>
+                  )}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={expirationDate}
+                    onChange={(e) => setExpirationDate(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setExpirationDate(getDefaultExpirationDate(scannedItem))}
+                    className="px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-md"
+                    title="Reset to default"
+                  >
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Quantity */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Quantity <span className="text-red-500">*</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    name="lot-qty"
+                    type="number"
+                    min={1}
+                    max={scannedItem.qty_expected - scannedItem.qty_received}
+                    value={pendingQty}
+                    onChange={(e) => setPendingQty(parseInt(e.target.value) || 0)}
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setPendingQty(scannedItem.qty_expected - scannedItem.qty_received)}
+                  >
+                    Max
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Summary */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center justify-between text-sm">
+                <div className="space-y-1">
+                  <p className="text-gray-600">
+                    Lot: <span className="font-medium text-gray-900">{lotNumber || "—"}</span>
+                  </p>
+                  <p className="text-gray-600">
+                    Expires: <span className="font-medium text-gray-900">{expirationDate || "—"}</span>
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-gray-500">Qty to Receive</p>
+                  <p className="text-2xl font-bold text-blue-700">{pendingQty}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <Button
+                variant="secondary"
+                onClick={handleScanAgain}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmReceive}
+                disabled={saving || pendingQty <= 0 || !lotNumber.trim()}
+                className="flex-1"
+              >
+                {saving ? "Saving..." : `Confirm Receive`}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -512,7 +774,17 @@ export default function ReceivingScanner({
                     )}
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900">{item.product.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-gray-900">{item.product.name}</p>
+                      {item.product.lot_tracking_enabled && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 rounded"
+                          title="Lot tracking required"
+                        >
+                          <Layers className="w-3 h-3" />
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-500 font-mono">{item.product.sku}</p>
                   </div>
                 </div>
@@ -529,7 +801,7 @@ export default function ReceivingScanner({
                       size="sm"
                       onClick={() => handleManualSelect(item)}
                     >
-                      Receive
+                      {item.product.lot_tracking_enabled ? "Enter Lot" : "Receive"}
                     </Button>
                   )}
                 </div>

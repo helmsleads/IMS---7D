@@ -9,14 +9,21 @@ export default function ProtectedRoute({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading } = useAuth();
+  const { user, isStaff, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login");
+    if (!loading) {
+      if (!user) {
+        // Not logged in at all - redirect to login
+        router.push("/login");
+      } else if (!isStaff) {
+        // Logged in but not staff - redirect to portal
+        // This prevents portal users from accessing internal routes
+        router.push("/portal/dashboard");
+      }
     }
-  }, [user, loading, router]);
+  }, [user, isStaff, loading, router]);
 
   if (loading) {
     return (
@@ -26,7 +33,8 @@ export default function ProtectedRoute({
     );
   }
 
-  if (!user) {
+  // Must be logged in AND be staff to see internal content
+  if (!user || !isStaff) {
     return null;
   }
 

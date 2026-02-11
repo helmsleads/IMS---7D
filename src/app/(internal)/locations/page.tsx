@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, MapPin, Pencil, Trash2 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
@@ -26,6 +27,7 @@ interface LocationWithStats extends Location {
 }
 
 export default function LocationsPage() {
+  const router = useRouter();
   const [locations, setLocations] = useState<Location[]>([]);
   const [inventory, setInventory] = useState<InventoryWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -265,7 +267,7 @@ export default function LocationsPage() {
           data={locationsWithStats}
           loading={loading}
           emptyMessage="No locations found"
-          onRowClick={(location) => openEditModal(location)}
+          onRowClick={(location) => router.push(`/locations/${location.id}`)}
         />
       </Card>
 

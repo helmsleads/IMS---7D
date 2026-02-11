@@ -227,14 +227,14 @@ export default function InboundPage() {
   const columns = [
     {
       key: "po_number",
-      header: "PO Number",
+      header: "Reference #",
       render: (order: InboundOrderWithCount) => (
         <span className="font-medium text-gray-900">{order.po_number}</span>
       ),
     },
     {
       key: "supplier",
-      header: "Supplier",
+      header: "Ship From",
       render: (order: InboundOrderWithCount) => (
         <span className="text-gray-900">{order.supplier || "—"}</span>
       ),
@@ -314,26 +314,26 @@ export default function InboundPage() {
   const actionButtons = (
     <Button onClick={() => router.push("/inbound/new")}>
       <Plus className="w-4 h-4 mr-1" />
-      Create PO
+      New Shipment
     </Button>
   );
 
   if (!loading && orders.length === 0) {
     return (
       <AppShell
-        title="Inbound Orders"
-        subtitle="Purchase orders and receiving"
+        title="Inbound Shipments"
+        subtitle="Incoming inventory and receiving"
         actions={actionButtons}
       >
         <Card>
           <EmptyState
             icon={<PackageCheck className="w-12 h-12" />}
-            title="No inbound orders yet"
-            description="Create a purchase order to start receiving inventory from suppliers"
+            title="No inbound shipments yet"
+            description="Create an inbound shipment to start receiving inventory"
             action={
               <Button onClick={() => router.push("/inbound/new")}>
                 <Plus className="w-4 h-4 mr-1" />
-                Create PO
+                New Shipment
               </Button>
             }
           />
@@ -344,7 +344,7 @@ export default function InboundPage() {
 
   if (error) {
     return (
-      <AppShell title="Inbound Orders" subtitle="Purchase orders and receiving">
+      <AppShell title="Inbound Shipments" subtitle="Incoming inventory and receiving">
         <FetchError message={error} onRetry={fetchOrders} />
       </AppShell>
     );
@@ -352,8 +352,8 @@ export default function InboundPage() {
 
   return (
     <AppShell
-      title="Inbound Orders"
-      subtitle="Purchase orders and receiving"
+      title="Inbound Shipments"
+      subtitle="Incoming inventory and receiving"
       actions={actionButtons}
     >
       <div className="space-y-4 mb-4">

@@ -1,24 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import { Client } from "@/lib/api/clients";
+import { getServiceTiers } from "@/lib/api/services";
+import { getWorkflowProfiles, getAllIndustries } from "@/lib/api/workflow-profiles";
+import { ServiceTier, WorkflowProfile, ClientIndustry } from "@/types/database";
 
 export interface ClientFormData {
   company_name: string;
-  contact_name: string;
-  email: string;
-  phone: string;
   address_line1: string;
   address_line2: string;
   city: string;
   state: string;
   zip: string;
   active: boolean;
-  enable_portal: boolean;
-  initial_password: string;
+  service_tier_id: string;
+  industries: ClientIndustry[];
+  workflow_profile_id: string;
 }
 
 interface ClientFormProps {
@@ -34,33 +35,94 @@ export default function ClientForm({
   onSubmit,
   onCancel,
   submitLabel = "Save Client",
-  isEdit = false,
 }: ClientFormProps) {
-  const hasPortalAccess = !!initialData?.auth_id;
-
   const [formData, setFormData] = useState<ClientFormData>({
     company_name: initialData?.company_name || "",
-    contact_name: initialData?.contact_name || "",
-    email: initialData?.email || "",
-    phone: initialData?.phone || "",
     address_line1: initialData?.address_line1 || "",
     address_line2: initialData?.address_line2 || "",
     city: initialData?.city || "",
     state: initialData?.state || "",
     zip: initialData?.zip || "",
     active: initialData?.active ?? true,
-    enable_portal: hasPortalAccess,
-    initial_password: "",
+    service_tier_id: initialData?.service_tier_id || "",
+    industries: initialData?.industries || [],
+    workflow_profile_id: initialData?.workflow_profile_id || "",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [serviceTiers, setServiceTiers] = useState<ServiceTier[]>([]);
+  const [tiersLoading, setTiersLoading] = useState(true);
+  const [workflowProfiles, setWorkflowProfiles] = useState<WorkflowProfile[]>([]);
+  const [profilesLoading, setProfilesLoading] = useState(true);
 
-  const handleChange = (field: keyof ClientFormData, value: string | boolean) => {
+  const industries = getAllIndustries();
+
+  // Group industries by category for display
+  const industriesByCategory = industries.reduce((acc, ind) => {
+    if (!acc[ind.category]) {
+      acc[ind.category] = [];
+    }
+    acc[ind.category].push(ind);
+    return acc;
+  }, {} as Record<string, typeof industries>);
+
+  // Filter profiles by selected industries (show profiles that match ANY selected industry)
+  const filteredProfiles = workflowProfiles.filter(
+    (p) => formData.industries.length === 0 || formData.industries.includes(p.industry as ClientIndustry)
+  );
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [tiers, profiles] = await Promise.all([
+          getServiceTiers(),
+          getWorkflowProfiles(),
+        ]);
+        setServiceTiers(tiers.filter((t) => t.status === "active"));
+        setWorkflowProfiles(profiles);
+      } catch (error) {
+        console.error("Failed to fetch form data:", error);
+      } finally {
+        setTiersLoading(false);
+        setProfilesLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  // When industries change, reset workflow profile if it's not valid for the selected industries
+  useEffect(() => {
+    if (formData.workflow_profile_id && formData.industries.length > 0) {
+      const currentProfile = workflowProfiles.find(
+        (p) => p.id === formData.workflow_profile_id
+      );
+      if (currentProfile && !formData.industries.includes(currentProfile.industry as ClientIndustry)) {
+        // Find a default profile for the selected industries
+        const defaultProfile = workflowProfiles.find(
+          (p) => formData.industries.includes(p.industry as ClientIndustry)
+        );
+        setFormData((prev) => ({
+          ...prev,
+          workflow_profile_id: defaultProfile?.id || "",
+        }));
+      }
+    }
+  }, [formData.industries, formData.workflow_profile_id, workflowProfiles]);
+
+  const handleChange = (field: keyof ClientFormData, value: string | boolean | ClientIndustry[]) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: "" }));
     }
+  };
+
+  const toggleIndustry = (industry: ClientIndustry) => {
+    const current = formData.industries;
+    const updated = current.includes(industry)
+      ? current.filter((i) => i !== industry)
+      : [...current, industry];
+    handleChange("industries", updated);
   };
 
   const validate = (): boolean => {
@@ -68,21 +130,6 @@ export default function ClientForm({
 
     if (!formData.company_name.trim()) {
       newErrors.company_name = "Company name is required";
-    }
-
-    if (!formData.email.trim()) {
-      newErrors.email = "Email is required";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = "Please enter a valid email address";
-    }
-
-    // Validate password if enabling portal for first time
-    if (formData.enable_portal && !hasPortalAccess) {
-      if (!formData.initial_password.trim()) {
-        newErrors.initial_password = "Initial password is required";
-      } else if (formData.initial_password.length < 8) {
-        newErrors.initial_password = "Password must be at least 8 characters";
-      }
     }
 
     setErrors(newErrors);
@@ -111,7 +158,7 @@ export default function ClientForm({
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
           Company Info
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-4">
           <Input
             label="Company Name"
             name="company_name"
@@ -121,31 +168,9 @@ export default function ClientForm({
             required
             placeholder="e.g., Acme Corporation"
           />
-          <Input
-            label="Contact Name"
-            name="contact_name"
-            value={formData.contact_name}
-            onChange={(e) => handleChange("contact_name", e.target.value)}
-            placeholder="Primary contact person"
-          />
-          <Input
-            label="Email"
-            name="email"
-            type="email"
-            value={formData.email}
-            onChange={(e) => handleChange("email", e.target.value)}
-            error={errors.email}
-            required
-            placeholder="contact@company.com"
-          />
-          <Input
-            label="Phone"
-            name="phone"
-            type="tel"
-            value={formData.phone}
-            onChange={(e) => handleChange("phone", e.target.value)}
-            placeholder="(555) 123-4567"
-          />
+          <p className="text-sm text-gray-500">
+            Contacts for this company are managed in the &quot;Users&quot; tab after creation.
+          </p>
         </div>
       </Card>
 
@@ -195,54 +220,120 @@ export default function ClientForm({
         </div>
       </Card>
 
-      {/* Portal Access */}
+      {/* Industry & Workflow */}
       <Card>
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          Portal Access
+          Industries & Workflow
         </h2>
-        <div className="space-y-4">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={formData.enable_portal}
-              onChange={(e) => handleChange("enable_portal", e.target.checked)}
-              disabled={hasPortalAccess}
-              className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
-            />
-            <div>
-              <span className="font-medium text-gray-900">Enable Portal Access</span>
-              <p className="text-sm text-gray-500">
-                Allow this client to log in and view their inventory and orders
-              </p>
-            </div>
+
+        {/* Industries Multi-Select */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Product Types <span className="text-gray-400 font-normal">(select all that apply)</span>
           </label>
-
-          {hasPortalAccess && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <p className="text-sm text-green-800">
-                Portal access is enabled. Client can log in using their email address.
-              </p>
-            </div>
-          )}
-
-          {formData.enable_portal && !hasPortalAccess && (
-            <div className="space-y-3 pl-8">
-              <Input
-                label="Initial Password"
-                name="initial_password"
-                type="password"
-                value={formData.initial_password}
-                onChange={(e) => handleChange("initial_password", e.target.value)}
-                error={errors.initial_password}
-                required
-                placeholder="Minimum 8 characters"
-              />
-              <p className="text-sm text-gray-500">
-                Client will receive an email with instructions to set up their account.
-              </p>
-            </div>
-          )}
+          <div className="space-y-4">
+            {Object.entries(industriesByCategory).map(([category, categoryIndustries]) => (
+              <div key={category}>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                  {category}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {categoryIndustries.map((ind) => {
+                    const isSelected = formData.industries.includes(ind.value);
+                    return (
+                      <button
+                        key={ind.value}
+                        type="button"
+                        onClick={() => toggleIndustry(ind.value)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                          isSelected
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        }`}
+                      >
+                        {ind.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-sm text-gray-500">
+            Select all product types this client handles. This determines compliance requirements.
+          </p>
         </div>
+
+        {/* Workflow Profile */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Workflow Profile
+          </label>
+          <select
+            value={formData.workflow_profile_id}
+            onChange={(e) => handleChange("workflow_profile_id", e.target.value)}
+            disabled={profilesLoading}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500"
+          >
+            <option value="">Select a profile</option>
+            {filteredProfiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-sm text-gray-500">
+            Defines available supplies, container types, and default settings
+          </p>
+        </div>
+
+        {/* Show selected profile details */}
+        {formData.workflow_profile_id && (
+          <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+            {(() => {
+              const profile = workflowProfiles.find(
+                (p) => p.id === formData.workflow_profile_id
+              );
+              if (!profile) return null;
+              return (
+                <div className="space-y-2 text-sm">
+                  <p className="text-gray-600">{profile.description}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {profile.requires_lot_tracking && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                        Lot Tracking
+                      </span>
+                    )}
+                    {profile.requires_expiration_dates && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                        Expiration Dates
+                      </span>
+                    )}
+                    {profile.requires_age_verification && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                        Age Verification
+                      </span>
+                    )}
+                    {profile.requires_ttb_compliance && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                        TTB Compliance
+                      </span>
+                    )}
+                    {profile.has_state_restrictions && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                        State Restrictions
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-gray-500">
+                    <span className="font-medium">Container types:</span>{" "}
+                    {profile.allowed_container_types.join(", ")}
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+        )}
       </Card>
 
       {/* Settings */}
@@ -250,20 +341,45 @@ export default function ClientForm({
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
           Settings
         </h2>
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={formData.active}
-            onChange={(e) => handleChange("active", e.target.checked)}
-            className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-          />
+        <div className="space-y-4">
           <div>
-            <span className="font-medium text-gray-900">Active</span>
-            <p className="text-sm text-gray-500">
-              Inactive clients won&apos;t appear in dropdowns for new orders
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Service Tier
+            </label>
+            <select
+              value={formData.service_tier_id}
+              onChange={(e) => handleChange("service_tier_id", e.target.value)}
+              disabled={tiersLoading}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500"
+            >
+              <option value="">No tier selected</option>
+              {serviceTiers.map((tier) => (
+                <option key={tier.id} value={tier.id}>
+                  {tier.name}
+                  {tier.description ? ` - ${tier.description}` : ""}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-sm text-gray-500">
+              Assign a service tier to set default pricing for this client
             </p>
           </div>
-        </label>
+
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.active}
+              onChange={(e) => handleChange("active", e.target.checked)}
+              className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div>
+              <span className="font-medium text-gray-900">Active</span>
+              <p className="text-sm text-gray-500">
+                Inactive clients won&apos;t appear in dropdowns for new orders
+              </p>
+            </div>
+          </label>
+        </div>
       </Card>
 
       {/* Actions */}

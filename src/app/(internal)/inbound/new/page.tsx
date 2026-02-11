@@ -17,11 +17,24 @@ import {
   CreateInboundOrderData,
   CreateInboundItemData,
 } from "@/lib/api/inbound";
+import { getClientInboundRules } from "@/lib/api/workflow-profiles";
+import { Info } from "lucide-react";
 
 interface OrderItem {
   id: string;
   product_id: string;
   qty_expected: number;
+}
+
+interface InboundRules {
+  enabled: boolean;
+  requiresPo: boolean;
+  requiresAppointment: boolean;
+  autoCreateLots: boolean;
+  lotFormat: string | null;
+  requiresInspection: boolean;
+  requiresLotTracking: boolean;
+  requiresExpirationDates: boolean;
 }
 
 export default function NewInboundOrderPage() {
@@ -35,11 +48,16 @@ export default function NewInboundOrderPage() {
 
   // Form state
   const [supplier, setSupplier] = useState("");
+  const [poNumber, setPoNumber] = useState("");
   const [clientId, setClientId] = useState("");
   const [expectedDate, setExpectedDate] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<OrderItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Workflow rules for selected client
+  const [workflowRules, setWorkflowRules] = useState<InboundRules | null>(null);
+  const [loadingRules, setLoadingRules] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -60,6 +78,29 @@ export default function NewInboundOrderPage() {
 
     fetchData();
   }, []);
+
+  // Fetch workflow rules when client changes
+  useEffect(() => {
+    const fetchRules = async () => {
+      if (!clientId) {
+        setWorkflowRules(null);
+        return;
+      }
+
+      setLoadingRules(true);
+      try {
+        const rules = await getClientInboundRules(clientId);
+        setWorkflowRules(rules);
+      } catch (err) {
+        console.error("Failed to fetch workflow rules:", err);
+        setWorkflowRules(null);
+      } finally {
+        setLoadingRules(false);
+      }
+    };
+
+    fetchRules();
+  }, [clientId]);
 
   const availableProducts = products.filter(
     (p) => !items.some((item) => item.product_id === p.id)
@@ -106,7 +147,17 @@ export default function NewInboundOrderPage() {
     const newErrors: Record<string, string> = {};
 
     if (!supplier.trim()) {
-      newErrors.supplier = "Supplier is required";
+      newErrors.supplier = "Ship From is required";
+    }
+
+    // Workflow-based validation
+    if (workflowRules?.enabled) {
+      if (workflowRules.requiresPo && !poNumber.trim()) {
+        newErrors.poNumber = "PO Number is required for this client's workflow";
+      }
+      if (workflowRules.requiresAppointment && !expectedDate) {
+        newErrors.expectedDate = "Appointment date is required for this client's workflow";
+      }
     }
 
     if (items.length === 0) {
@@ -140,11 +191,17 @@ export default function NewInboundOrderPage() {
 
     setSaving(true);
     try {
+      // Build notes with PO number if provided
+      const orderNotes = [
+        poNumber ? `PO: ${poNumber.trim()}` : null,
+        notes.trim() || null,
+      ].filter(Boolean).join("\n");
+
       const orderData: CreateInboundOrderData = {
         supplier: supplier.trim(),
         client_id: clientId || null,
         expected_date: expectedDate || null,
-        notes: notes.trim() || null,
+        notes: orderNotes || null,
       };
 
       const itemsData: CreateInboundItemData[] = items.map((item) => ({
@@ -156,7 +213,7 @@ export default function NewInboundOrderPage() {
       const createdOrder = await createInboundOrder(orderData, itemsData);
 
       // Show success message
-      setSuccess(`Purchase order ${createdOrder.po_number} created successfully!`);
+      setSuccess(`Inbound shipment ${createdOrder.po_number} created successfully!`);
 
       // Redirect to order detail page after brief delay
       setTimeout(() => {
@@ -177,14 +234,14 @@ export default function NewInboundOrderPage() {
       className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 transition-colors"
     >
       <ArrowLeft className="w-4 h-4" />
-      Back to Inbound Orders
+      Back to Inbound
     </Link>
   );
 
   return (
     <AppShell
-      title="Create Purchase Order"
-      subtitle="Add a new inbound order from a supplier"
+      title="New Inbound Shipment"
+      subtitle="Schedule an incoming inventory shipment"
       actions={backLink}
     >
       {error && (
@@ -208,16 +265,6 @@ export default function NewInboundOrderPage() {
                 Order Details
               </h2>
               <div className="space-y-4">
-                <Input
-                  label="Supplier"
-                  name="supplier"
-                  value={supplier}
-                  onChange={(e) => setSupplier(e.target.value)}
-                  error={errors.supplier}
-                  required
-                  placeholder="e.g., ABC Distributors"
-                />
-
                 <Select
                   label="Client"
                   name="client_id"
@@ -228,12 +275,59 @@ export default function NewInboundOrderPage() {
                   hint="For 3PL: Associate this order with a client"
                 />
 
+                {/* Workflow Rules Info */}
+                {clientId && workflowRules?.enabled && (
+                  <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-medium text-blue-900">Workflow Requirements</p>
+                      <ul className="mt-1 text-blue-700 space-y-0.5">
+                        {workflowRules.requiresPo && <li>• PO Number required</li>}
+                        {workflowRules.requiresAppointment && <li>• Appointment scheduling required</li>}
+                        {workflowRules.requiresLotTracking && <li>• Lot tracking required on receiving</li>}
+                        {workflowRules.requiresExpirationDates && <li>• Expiration dates required</li>}
+                        {workflowRules.requiresInspection && <li>• Quality inspection required</li>}
+                        {workflowRules.autoCreateLots && <li>• Lots will be auto-generated</li>}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {loadingRules && clientId && (
+                  <p className="text-sm text-gray-500">Loading workflow rules...</p>
+                )}
+
                 <Input
-                  label="Expected Delivery Date"
+                  label="Ship From"
+                  name="supplier"
+                  value={supplier}
+                  onChange={(e) => setSupplier(e.target.value)}
+                  error={errors.supplier}
+                  required
+                  placeholder="e.g., Client's supplier or warehouse"
+                />
+
+                {/* PO Number - required by workflow or optional */}
+                <Input
+                  label={workflowRules?.requiresPo ? "PO Number *" : "PO Number"}
+                  name="po_number"
+                  value={poNumber}
+                  onChange={(e) => setPoNumber(e.target.value)}
+                  error={errors.poNumber}
+                  required={workflowRules?.requiresPo}
+                  placeholder={workflowRules?.requiresPo ? "Required by workflow" : "Optional reference number"}
+                  hint={workflowRules?.requiresPo ? "Required by client workflow" : undefined}
+                />
+
+                <Input
+                  label={workflowRules?.requiresAppointment ? "Appointment Date *" : "Expected Delivery Date"}
                   name="expected_date"
                   type="date"
                   value={expectedDate}
                   onChange={(e) => setExpectedDate(e.target.value)}
+                  error={errors.expectedDate}
+                  required={workflowRules?.requiresAppointment}
+                  hint={workflowRules?.requiresAppointment ? "Required by client workflow" : undefined}
                 />
 
                 <div>
@@ -374,12 +468,6 @@ export default function NewInboundOrderPage() {
               </h2>
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Supplier</span>
-                  <span className="font-medium text-gray-900">
-                    {supplier || "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Client</span>
                   <span className="font-medium text-gray-900">
                     {clientId
@@ -388,7 +476,21 @@ export default function NewInboundOrderPage() {
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Expected Date</span>
+                  <span className="text-gray-600">Ship From</span>
+                  <span className="font-medium text-gray-900">
+                    {supplier || "—"}
+                  </span>
+                </div>
+                {poNumber && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">PO Number</span>
+                    <span className="font-medium text-gray-900">{poNumber}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">
+                    {workflowRules?.requiresAppointment ? "Appointment" : "Expected Date"}
+                  </span>
                   <span className="font-medium text-gray-900">
                     {expectedDate
                       ? new Date(expectedDate).toLocaleDateString("en-US", {
@@ -425,7 +527,7 @@ export default function NewInboundOrderPage() {
                   loading={saving}
                   disabled={saving}
                 >
-                  Create Purchase Order
+                  Create Shipment
                 </Button>
                 <Button
                   type="button"

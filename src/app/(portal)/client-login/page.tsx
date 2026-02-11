@@ -32,19 +32,34 @@ export default function ClientLoginPage() {
         return;
       }
 
-      const { data: client, error: clientError } = await supabase
+      // First check if user has access via client_users table
+      const { data: clientUserAccess } = await supabase
+        .from("client_users")
+        .select("id, client_id")
+        .eq("user_id", authData.user.id)
+        .limit(1);
+
+      if (clientUserAccess && clientUserAccess.length > 0) {
+        // User has portal access via client_users
+        router.push(redirectTo);
+        return;
+      }
+
+      // Fall back to legacy auth_id check on clients table
+      const { data: legacyClient } = await supabase
         .from("clients")
         .select("id")
         .eq("auth_id", authData.user.id)
         .single();
 
-      if (clientError || !client) {
-        await supabase.auth.signOut();
-        setError("Access denied");
+      if (legacyClient) {
+        router.push(redirectTo);
         return;
       }
 
-      router.push(redirectTo);
+      // No portal access found
+      await supabase.auth.signOut();
+      setError("Access denied. You don't have portal access. Please contact your administrator.");
     } catch {
       setError("An unexpected error occurred");
     } finally {

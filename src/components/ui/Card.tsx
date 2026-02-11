@@ -6,6 +6,8 @@ interface CardProps {
   subtitle?: string;
   actions?: ReactNode;
   padding?: "none" | "sm" | "md" | "lg";
+  className?: string;
+  onClick?: () => void;
 }
 
 const paddingStyles = {
@@ -21,11 +23,16 @@ export default function Card({
   subtitle,
   actions,
   padding = "md",
+  className = "",
+  onClick,
 }: CardProps) {
   const hasHeader = title || subtitle || actions;
 
   return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+    <div
+      className={`bg-white rounded-lg shadow-md overflow-hidden ${className} ${onClick ? "cursor-pointer" : ""}`}
+      onClick={onClick}
+    >
       {hasHeader && (
         <div className="flex items-start justify-between px-6 pt-6 pb-0">
           <div>

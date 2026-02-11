@@ -165,8 +165,18 @@ interface InboundArrivedAlertData {
   totalUnits: number;
 }
 
+interface OrderShippedAlertData {
+  orderNumber: string;
+  clientName: string;
+  carrier: string | null;
+  trackingNumber: string | null;
+  itemCount: number;
+  totalUnits: number;
+}
+
 type AlertData = {
   new_order: NewOrderAlertData;
+  order_shipped: OrderShippedAlertData;
   low_stock: LowStockAlertData;
   inbound_arrived: InboundArrivedAlertData;
 };
@@ -206,6 +216,22 @@ export async function sendInternalAlert<T extends keyof AlertData>(
       html = email.html;
       break;
     }
+    case "order_shipped": {
+      const alertData = data as OrderShippedAlertData;
+      subject = `Order ${alertData.orderNumber} shipped to ${alertData.clientName}`;
+      html = `
+        <h2>Order Shipped</h2>
+        <p>Order <strong>${alertData.orderNumber}</strong> for <strong>${alertData.clientName}</strong> has been shipped.</p>
+        <ul>
+          <li>Items: ${alertData.itemCount}</li>
+          <li>Total Units: ${alertData.totalUnits.toLocaleString()}</li>
+          ${alertData.carrier ? `<li>Carrier: ${alertData.carrier}</li>` : ""}
+          ${alertData.trackingNumber ? `<li>Tracking: ${alertData.trackingNumber}</li>` : ""}
+        </ul>
+        <p><a href="https://7degrees.co/outbound">View in System</a></p>
+      `;
+      break;
+    }
     case "inbound_arrived": {
       const alertData = data as InboundArrivedAlertData;
       subject = `Inbound shipment ${alertData.orderNumber} received`;
@@ -243,4 +269,120 @@ export async function sendInternalAlert<T extends keyof AlertData>(
   await Promise.all(sendPromises);
 
   return { success: errors === 0, sent, errors };
+}
+
+/**
+ * Send an automated order status notification to a client via the messaging system.
+ * Creates or finds an "Order Updates" conversation and posts a status message.
+ * Respects the client's notification_preferences.
+ */
+export async function sendPortalOrderNotification(params: {
+  clientId: string;
+  orderNumber: string;
+  status: string;
+  details?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const supabase = createClient();
+
+  try {
+    // Check client notification preferences
+    const { data: client } = await supabase
+      .from("clients")
+      .select("notification_preferences")
+      .eq("id", params.clientId)
+      .single();
+
+    const prefs = (client?.notification_preferences as Record<string, boolean> | null) || {};
+    if (prefs.order_updates === false) {
+      return { success: true }; // Client opted out
+    }
+
+    // Find or create an "Order Updates" conversation for this client
+    const { data: existingConv } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("client_id", params.clientId)
+      .eq("subject", "Order Updates")
+      .eq("status", "open")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let conversationId: string;
+
+    if (existingConv) {
+      conversationId = existingConv.id;
+    } else {
+      const { data: newConv, error: convError } = await supabase
+        .from("conversations")
+        .insert({
+          client_id: params.clientId,
+          subject: "Order Updates",
+          status: "open",
+        })
+        .select()
+        .single();
+
+      if (convError) {
+        return { success: false, error: convError.message };
+      }
+      conversationId = newConv.id;
+    }
+
+    // Build status message
+    const statusLabels: Record<string, string> = {
+      confirmed: "confirmed and queued for fulfillment",
+      picking: "being picked from the warehouse",
+      packed: "packed and ready for shipment",
+      shipped: "shipped",
+      delivered: "delivered",
+      cancelled: "cancelled",
+    };
+
+    const statusText = statusLabels[params.status] || params.status;
+    let message = `Order ${params.orderNumber} has been ${statusText}.`;
+    if (params.details) {
+      message += ` ${params.details}`;
+    }
+
+    // Get system user (first admin user) for sender_id
+    const { data: adminUser } = await supabase
+      .from("users")
+      .select("id")
+      .eq("role", "admin")
+      .limit(1)
+      .maybeSingle();
+
+    if (!adminUser?.id) {
+      console.warn("No admin user found for portal notification sender");
+      return { success: false, error: "No admin user found to send notification" };
+    }
+
+    const senderId = adminUser.id;
+
+    // Insert message
+    const { error: msgError } = await supabase
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        content: message,
+        sender_type: "user" as const,
+        sender_id: senderId,
+      });
+
+    if (msgError) {
+      return { success: false, error: msgError.message };
+    }
+
+    // Update conversation last_message_at
+    await supabase
+      .from("conversations")
+      .update({ last_message_at: new Date().toISOString() })
+      .eq("id", conversationId);
+
+    return { success: true };
+  } catch (err) {
+    console.error("Failed to send portal order notification:", err);
+    return { success: false, error: err instanceof Error ? err.message : "Unknown error" };
+  }
 }

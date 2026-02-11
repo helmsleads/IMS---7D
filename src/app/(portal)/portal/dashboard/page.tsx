@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Package, Truck, ClipboardList, Boxes, PackageCheck } from "lucide-react";
+import { Package, Truck, ClipboardList, Boxes, PackageCheck, MessageSquare, RotateCcw, TrendingUp, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import Card from "@/components/ui/Card";
 import { createClient } from "@/lib/supabase";
+import {
+  getPortalUnreadCount,
+  getPortalOpenReturnsCount,
+  getPortalMonthlyProfit,
+  MonthlyProfitability,
+} from "@/lib/api/portal-dashboard";
 
 interface DashboardStats {
   totalProducts: number;
@@ -28,6 +34,7 @@ interface RecentArrival {
   product_summary: string;
 }
 
+
 export default function PortalDashboardPage() {
   const { client } = useClient();
   const [stats, setStats] = useState<DashboardStats>({
@@ -39,11 +46,25 @@ export default function PortalDashboardPage() {
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [activeOrdersList, setActiveOrdersList] = useState<RecentOrder[]>([]);
   const [recentArrivalsList, setRecentArrivalsList] = useState<RecentArrival[]>([]);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [openReturns, setOpenReturns] = useState(0);
+  const [profitability, setProfitability] = useState<MonthlyProfitability>({
+    netProfit: 0,
+    totalRevenue: 0,
+    totalCost: 0,
+    marginPercentage: 0,
+    orderCount: 0,
+    unitsSold: 0,
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      if (!client) return;
+      // Skip if no client or staff preview mode without a real client
+      if (!client || client.id === "staff-preview") {
+        setLoading(false);
+        return;
+      }
 
       const supabase = createClient();
 
@@ -189,6 +210,18 @@ export default function PortalDashboardPage() {
         })
       );
 
+      // Fetch unread messages count using API function
+      const unreadCount = await getPortalUnreadCount(client.id);
+      setUnreadMessages(unreadCount);
+
+      // Fetch open returns count using API function
+      const returnsCount = await getPortalOpenReturnsCount(client.id);
+      setOpenReturns(returnsCount);
+
+      // Fetch this month's profitability using API function
+      const profitData = await getPortalMonthlyProfit(client.id);
+      setProfitability(profitData);
+
       setLoading(false);
     };
 
@@ -323,6 +356,94 @@ export default function PortalDashboardPage() {
                 {stats.recentArrivals}
               </p>
               <p className="text-xs text-gray-400">last 30 days</p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Secondary Stats Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Unread Messages Widget */}
+        <Card>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className={`p-3 rounded-xl ${unreadMessages > 0 ? "bg-red-100" : "bg-gray-100"}`}>
+                <MessageSquare className={`w-6 h-6 ${unreadMessages > 0 ? "text-red-600" : "text-gray-500"}`} />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Unread Messages</p>
+                <p className={`text-2xl font-bold ${unreadMessages > 0 ? "text-red-600" : "text-gray-900"}`}>
+                  {unreadMessages}
+                </p>
+              </div>
+            </div>
+            <a
+              href="/portal/messages"
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium whitespace-nowrap"
+            >
+              View Messages →
+            </a>
+          </div>
+        </Card>
+
+        {/* Open Returns Widget */}
+        <Card>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className={`p-3 rounded-xl ${openReturns > 0 ? "bg-orange-100" : "bg-gray-100"}`}>
+                <RotateCcw className={`w-6 h-6 ${openReturns > 0 ? "text-orange-600" : "text-gray-500"}`} />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Open Returns</p>
+                <p className={`text-2xl font-bold ${openReturns > 0 ? "text-orange-600" : "text-gray-900"}`}>
+                  {openReturns}
+                </p>
+              </div>
+            </div>
+            <a
+              href="/portal/returns"
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium whitespace-nowrap"
+            >
+              View Returns →
+            </a>
+          </div>
+        </Card>
+
+        {/* This Month's Profitability Widget */}
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className={`p-2 rounded-lg ${profitability.netProfit >= 0 ? "bg-green-100" : "bg-red-100"}`}>
+                <TrendingUp className={`w-5 h-5 ${profitability.netProfit >= 0 ? "text-green-600" : "text-red-600"}`} />
+              </div>
+              <p className="text-sm font-medium text-gray-700">This Month&apos;s Profitability</p>
+            </div>
+            <a
+              href="/portal/profitability"
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium whitespace-nowrap"
+            >
+              View Details →
+            </a>
+          </div>
+          <div className="flex items-end justify-between">
+            <div>
+              <p className={`text-2xl font-bold ${profitability.netProfit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {profitability.netProfit >= 0 ? "" : "-"}${Math.abs(profitability.netProfit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+              <p className="text-xs text-gray-500">net profit</p>
+            </div>
+            <div className="text-right">
+              <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm font-medium ${
+                profitability.marginPercentage >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+              }`}>
+                {profitability.marginPercentage >= 0 ? (
+                  <ArrowUpRight className="w-4 h-4" />
+                ) : (
+                  <ArrowDownRight className="w-4 h-4" />
+                )}
+                {Math.abs(profitability.marginPercentage).toFixed(1)}%
+              </div>
+              <p className="text-xs text-gray-500 mt-1">margin</p>
             </div>
           </div>
         </Card>

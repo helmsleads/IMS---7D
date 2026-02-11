@@ -14,7 +14,7 @@ import Modal from "@/components/ui/Modal";
 import Alert from "@/components/ui/Alert";
 import ProductForm from "@/components/internal/ProductForm";
 import StockAdjustmentModal from "@/components/internal/StockAdjustmentModal";
-import { getProduct, updateProduct, deleteProduct, Product } from "@/lib/api/products";
+import { getProduct, updateProduct, deleteProduct, Product, ProductWithCategory } from "@/lib/api/products";
 import { getProductInventory, InventoryWithLocation } from "@/lib/api/inventory";
 import Table from "@/components/ui/Table";
 
@@ -30,7 +30,7 @@ export default function ProductDetailPage() {
   const router = useRouter();
   const id = params.id as string;
 
-  const [product, setProduct] = useState<Product | null>(null);
+  const [product, setProduct] = useState<ProductWithCategory | null>(null);
   const [inventory, setInventory] = useState<InventoryWithLocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -164,9 +164,18 @@ export default function ProductDetailPage() {
               </Badge>
             </div>
 
-            <div className="flex gap-2 mb-4">
-              {product.category && (
-                <Badge variant="info">{product.category}</Badge>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {product.client && (
+                <Badge variant="warning">{product.client.company_name}</Badge>
+              )}
+              {product.product_category && (
+                <Badge variant="info">
+                  {product.product_category.icon && `${product.product_category.icon} `}
+                  {product.product_category.name}
+                </Badge>
+              )}
+              {product.product_subcategory && (
+                <Badge variant="default">{product.product_subcategory.name}</Badge>
               )}
             </div>
 

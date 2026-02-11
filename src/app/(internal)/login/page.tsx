@@ -21,16 +21,39 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) {
-        setError(error.message);
-      } else {
-        router.push(redirectTo);
+      if (authError) {
+        setError(authError.message);
+        return;
       }
+
+      // Verify user is staff (exists in users table and is active)
+      const { data: staffUser, error: staffError } = await supabase
+        .from("users")
+        .select("id, active")
+        .eq("id", authData.user.id)
+        .single();
+
+      if (staffError || !staffUser) {
+        // Not a staff member - sign them out and show error
+        await supabase.auth.signOut();
+        setError("Access denied. This login is for staff members only.");
+        return;
+      }
+
+      if (!staffUser.active) {
+        await supabase.auth.signOut();
+        setError("Your account has been deactivated. Please contact an administrator.");
+        return;
+      }
+
+      router.push(redirectTo);
+    } catch {
+      setError("An unexpected error occurred");
     } finally {
       setLoading(false);
     }

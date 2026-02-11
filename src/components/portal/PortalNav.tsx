@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -9,35 +9,131 @@ import {
   PackageOpen,
   Truck,
   ClipboardList,
+  Briefcase,
+  CreditCard,
+  RotateCcw,
+  MessageSquare,
+  TrendingUp,
+  FileText,
   LogOut,
   Menu,
   X,
   Building2,
   ChevronRight,
+  ChevronDown,
+  Settings,
+  Check,
+  ArrowRightLeft,
+  Eye,
+  ArrowLeft,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
+import { useClient } from "@/lib/client-auth";
+import { getMyUnreadCount } from "@/lib/api/portal-messages";
 
 interface PortalNavProps {
   companyName: string;
 }
 
-const NAV_LINKS = [
+// Primary nav links shown in the main bar
+const PRIMARY_LINKS = [
   { href: "/portal/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/portal/inventory", label: "Inventory", icon: Package },
-  { href: "/portal/arrivals", label: "Arrivals", icon: PackageOpen },
-  { href: "/portal/request-shipment", label: "Request Shipment", icon: Truck },
-  { href: "/portal/orders", label: "My Orders", icon: ClipboardList },
+  { href: "/portal/request-shipment", label: "Ship", icon: Truck },
+  { href: "/portal/orders", label: "Orders", icon: ClipboardList },
+  { href: "/portal/messages", label: "Messages", icon: MessageSquare },
 ];
+
+// Secondary nav links shown in the "More" dropdown
+const SECONDARY_LINKS = [
+  { href: "/portal/arrivals", label: "Arrivals", icon: PackageOpen },
+  { href: "/portal/templates", label: "Templates", icon: FileText },
+  { href: "/portal/returns", label: "Returns", icon: RotateCcw },
+  { href: "/portal/profitability", label: "Profitability", icon: TrendingUp },
+  { href: "/portal/services", label: "Services", icon: Briefcase },
+  { href: "/portal/plan", label: "My Plan", icon: CreditCard },
+  { href: "/portal/settings", label: "Settings", icon: Settings },
+];
+
+// All links for mobile menu
+const ALL_LINKS = [...PRIMARY_LINKS, ...SECONDARY_LINKS];
 
 export default function PortalNav({ companyName }: PortalNavProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
+  const { client, availableClients, switchClient, currentRole, isStaffPreview, impersonatedClientId, impersonatedUser, exitImpersonation } = useClient();
 
-  // Close menu on navigation
+  // Staff can always switch clients (they see all clients)
+  const showClientSwitcher = availableClients.length > 1 || isStaffPreview;
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [activeOrdersCount, setActiveOrdersCount] = useState(0);
+  const [pendingReturnsCount, setPendingReturnsCount] = useState(0);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  // Fetch notification badge counts (messages, active orders, pending returns)
+  useEffect(() => {
+    const supabase = createClient();
+
+    const fetchBadgeCounts = async () => {
+      // Skip if no client or if in staff preview mode without a real client
+      // "staff-preview" is a fake ID used when staff views portal without impersonating
+      if (!client || client.id === "staff-preview") return;
+      try {
+        // Fetch all counts in parallel
+        const [unread, activeOrders, pendingReturns] = await Promise.all([
+          getMyUnreadCount(client.id),
+          supabase
+            .from("outbound_orders")
+            .select("*", { count: "exact", head: true })
+            .eq("client_id", client.id)
+            .in("status", ["pending", "confirmed", "processing", "packed"]),
+          supabase
+            .from("returns")
+            .select("*", { count: "exact", head: true })
+            .eq("client_id", client.id)
+            .in("status", ["requested", "approved"]),
+        ]);
+
+        setUnreadCount(unread);
+        setActiveOrdersCount(activeOrders.count || 0);
+        setPendingReturnsCount(pendingReturns.count || 0);
+      } catch (err) {
+        console.error("Failed to fetch badge counts:", err);
+      }
+    };
+
+    fetchBadgeCounts();
+
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchBadgeCounts, 30000);
+    return () => clearInterval(interval);
+  }, [client]);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setClientDropdownOpen(false);
+      }
+      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Close menus on navigation
   useEffect(() => {
     setMobileMenuOpen(false);
+    setClientDropdownOpen(false);
+    setMoreMenuOpen(false);
   }, [pathname]);
 
   // Prevent body scroll when menu is open
@@ -59,6 +155,13 @@ export default function PortalNav({ companyName }: PortalNavProps) {
     router.push("/client-login");
   };
 
+  const handleSwitchClient = (clientId: string) => {
+    switchClient(clientId);
+    setClientDropdownOpen(false);
+    // Refresh the current page to load new client data
+    router.refresh();
+  };
+
   const isActive = (href: string) => {
     if (href === "/portal/dashboard") {
       return pathname === "/portal" || pathname === "/portal/dashboard";
@@ -66,13 +169,56 @@ export default function PortalNav({ companyName }: PortalNavProps) {
     return pathname.startsWith(href);
   };
 
+  const getRoleBadgeColor = (role: string) => {
+    switch (role) {
+      case "owner":
+        return "bg-purple-100 text-purple-700";
+      case "admin":
+        return "bg-blue-100 text-blue-700";
+      case "member":
+        return "bg-gray-100 text-gray-700";
+      case "viewer":
+        return "bg-gray-100 text-gray-600";
+      case "staff":
+        return "bg-amber-100 text-amber-700";
+      default:
+        return "bg-gray-100 text-gray-700";
+    }
+  };
+
   return (
     <>
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
+      {/* Staff Impersonation Banner */}
+      {isStaffPreview && impersonatedUser && (
+        <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white py-2 px-4 sticky top-0 z-[60] w-full overflow-hidden">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <Eye className="w-4 h-4 flex-shrink-0" />
+              <span className="text-sm font-medium truncate">
+                Viewing <strong>{impersonatedUser.full_name || impersonatedUser.email}</strong>&apos;s Portal
+              </span>
+              {availableClients.length > 1 && (
+                <span className="text-xs bg-white/20 px-2 py-0.5 rounded flex-shrink-0 hidden sm:inline">
+                  {availableClients.length} clients
+                </span>
+              )}
+            </div>
+            <button
+              onClick={exitImpersonation}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-amber-600 hover:bg-amber-50 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">Exit to Dashboard</span>
+              <span className="sm:hidden">Exit</span>
+            </button>
+          </div>
+        </div>
+      )}
+      <nav className={`bg-white border-b border-gray-200 sticky ${isStaffPreview && impersonatedClientId ? 'top-10' : 'top-0'} z-50 w-full`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+          <div className="flex items-center h-16 min-w-0">
             {/* Logo */}
-            <div className="flex items-center">
+            <div className="flex items-center flex-shrink-0">
               <Link href="/portal/dashboard" className="flex items-center gap-2">
                 <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center">
                   <span className="text-white font-bold text-lg">7D</span>
@@ -84,25 +230,38 @@ export default function PortalNav({ companyName }: PortalNavProps) {
               </Link>
             </div>
 
-            {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center gap-1 h-full">
-              {NAV_LINKS.map((link) => {
+            {/* Desktop Navigation - Primary Links (centered) */}
+            <div className="hidden lg:flex items-center gap-1 h-full flex-1 justify-center">
+              {PRIMARY_LINKS.map((link) => {
                 const Icon = link.icon;
                 const active = isActive(link.href);
+                const badgeCount =
+                  link.href === "/portal/messages" ? unreadCount :
+                  link.href === "/portal/orders" ? activeOrdersCount : 0;
+                const showBadge = badgeCount > 0;
 
                 return (
                   <Link
                     key={link.href}
                     href={link.href}
                     className={`
-                      relative flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors
+                      relative flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap
                       ${active
                         ? "text-blue-600"
                         : "text-gray-600 hover:text-gray-900"
                       }
                     `}
                   >
-                    <Icon className="w-4 h-4" />
+                    <span className="relative">
+                      <Icon className="w-4 h-4" />
+                      {showBadge && (
+                        <span className={`absolute -top-1.5 -right-1.5 w-4 h-4 text-white text-[10px] font-bold rounded-full flex items-center justify-center ${
+                          link.href === "/portal/messages" ? "bg-red-500" : "bg-blue-500"
+                        }`}>
+                          {badgeCount > 9 ? "9+" : badgeCount}
+                        </span>
+                      )}
+                    </span>
                     {link.label}
                     {active && (
                       <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-blue-600 rounded-full" />
@@ -110,31 +269,173 @@ export default function PortalNav({ companyName }: PortalNavProps) {
                   </Link>
                 );
               })}
+
+              {/* More Dropdown */}
+              <div className="relative" ref={moreMenuRef}>
+                <button
+                  onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+                  className={`
+                    relative flex items-center gap-1 px-3 py-2 text-sm font-medium transition-colors
+                    ${SECONDARY_LINKS.some(link => isActive(link.href))
+                      ? "text-blue-600"
+                      : "text-gray-600 hover:text-gray-900"
+                    }
+                  `}
+                >
+                  <span className="relative">
+                    <Menu className="w-4 h-4" />
+                    {pendingReturnsCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-orange-500 rounded-full" />
+                    )}
+                  </span>
+                  More
+                  <ChevronDown className={`w-3 h-3 transition-transform ${moreMenuOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {moreMenuOpen && (
+                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-[100]">
+                    {SECONDARY_LINKS.map((link) => {
+                      const Icon = link.icon;
+                      const active = isActive(link.href);
+                      const returnsBadge = link.href === "/portal/returns" && pendingReturnsCount > 0;
+                      return (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          className={`
+                            flex items-center gap-3 px-4 py-2 text-sm transition-colors
+                            ${active
+                              ? "bg-blue-50 text-blue-600"
+                              : "text-gray-700 hover:bg-gray-50"
+                            }
+                          `}
+                        >
+                          <Icon className="w-4 h-4" />
+                          <span className="flex-1">{link.label}</span>
+                          {returnsBadge && (
+                            <span className="w-5 h-5 bg-orange-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                              {pendingReturnsCount > 9 ? "9+" : pendingReturnsCount}
+                            </span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                    <div className="border-t border-gray-100 mt-1 pt-1">
+                      <button
+                        onClick={handleLogout}
+                        disabled={loggingOut}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        {loggingOut ? "Logging out..." : "Logout"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* Right Side - Company & Logout (Desktop) */}
-            <div className="hidden md:flex items-center gap-4">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-lg">
-                <Building2 className="w-4 h-4 text-gray-500" />
-                <span className="text-sm font-medium text-gray-700 max-w-[200px] truncate">
-                  {companyName}
-                </span>
-              </div>
+            {/* Right Side - Company Switcher (Desktop) */}
+            <div className="hidden lg:flex items-center gap-2 flex-shrink-0 ml-auto">
+              {/* Client Switcher */}
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setClientDropdownOpen(!clientDropdownOpen)}
+                  className={`
+                    flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors
+                    ${showClientSwitcher
+                      ? "bg-gray-100 hover:bg-gray-200 cursor-pointer"
+                      : "bg-gray-100"
+                    }
+                  `}
+                >
+                  <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-blue-600 rounded-md flex items-center justify-center">
+                    <span className="text-white font-semibold text-xs">
+                      {companyName.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="text-left">
+                    <span className="text-sm font-medium text-gray-700 max-w-[150px] truncate block">
+                      {companyName}
+                    </span>
+                    {currentRole && (
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${getRoleBadgeColor(currentRole)}`}>
+                        {currentRole.charAt(0).toUpperCase() + currentRole.slice(1)}
+                      </span>
+                    )}
+                  </div>
+                  {showClientSwitcher && (
+                    <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${clientDropdownOpen ? "rotate-180" : ""}`} />
+                  )}
+                </button>
 
-              <button
-                onClick={handleLogout}
-                disabled={loggingOut}
-                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-              >
-                <LogOut className="w-4 h-4" />
-                {loggingOut ? "Logging out..." : "Logout"}
-              </button>
+                {/* Client Dropdown */}
+                {clientDropdownOpen && showClientSwitcher && (
+                  <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-[100]">
+                    <div className="px-3 py-2 border-b border-gray-100">
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Switch Account
+                      </p>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto py-1">
+                      {availableClients.map((access) => {
+                        const isSelected = client?.id === access.client_id;
+                        return (
+                          <button
+                            key={access.client_id}
+                            onClick={() => handleSwitchClient(access.client_id)}
+                            className={`
+                              w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors
+                              ${isSelected ? "bg-blue-50" : "hover:bg-gray-50"}
+                            `}
+                          >
+                            <div className={`
+                              w-9 h-9 rounded-lg flex items-center justify-center
+                              ${isSelected
+                                ? "bg-gradient-to-br from-blue-500 to-blue-600"
+                                : "bg-gray-200"
+                              }
+                            `}>
+                              <span className={`font-semibold text-sm ${isSelected ? "text-white" : "text-gray-600"}`}>
+                                {access.client.company_name.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`font-medium truncate ${isSelected ? "text-blue-700" : "text-gray-900"}`}>
+                                {access.client.company_name}
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${getRoleBadgeColor(access.role)}`}>
+                                  {access.role.charAt(0).toUpperCase() + access.role.slice(1)}
+                                </span>
+                                {access.is_primary && (
+                                  <span className="text-xs text-gray-500">Primary</span>
+                                )}
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <Check className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {availableClients.length > 3 && (
+                      <div className="px-3 py-2 border-t border-gray-100">
+                        <p className="text-xs text-gray-500 text-center">
+                          {availableClients.length} accounts available
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Mobile Menu Button - Touch friendly 44x44 */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden flex items-center justify-center w-11 h-11 -mr-2 rounded-lg text-gray-600 hover:bg-gray-100 active:bg-gray-200 transition-colors"
+              className="lg:hidden flex items-center justify-center w-11 h-11 -mr-2 ml-auto rounded-lg text-gray-600 hover:bg-gray-100 active:bg-gray-200 transition-colors"
               aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
             >
               {mobileMenuOpen ? (
@@ -150,7 +451,7 @@ export default function PortalNav({ companyName }: PortalNavProps) {
       {/* Mobile Menu Overlay */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
@@ -158,30 +459,100 @@ export default function PortalNav({ companyName }: PortalNavProps) {
       {/* Mobile Menu Panel */}
       <div
         className={`
-          fixed top-16 left-0 right-0 bottom-0 bg-white z-40 md:hidden
+          fixed top-16 left-0 right-0 bottom-0 bg-white z-40 lg:hidden
           transform transition-transform duration-300 ease-in-out
           ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}
         `}
       >
         <div className="flex flex-col h-full">
-          {/* Company Info */}
+          {/* Company Info / Switcher */}
           <div className="px-4 py-4 bg-gray-50 border-b border-gray-200">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                <Building2 className="w-5 h-5 text-blue-600" />
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+                <span className="text-white font-bold text-lg">
+                  {companyName.charAt(0).toUpperCase()}
+                </span>
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-gray-500">Logged in as</p>
                 <p className="font-semibold text-gray-900 truncate">{companyName}</p>
+                {currentRole && (
+                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${getRoleBadgeColor(currentRole)}`}>
+                    {currentRole.charAt(0).toUpperCase() + currentRole.slice(1)}
+                  </span>
+                )}
               </div>
             </div>
+
+            {/* Mobile Client Switcher */}
+            {showClientSwitcher && (
+              <div className="mt-3">
+                <button
+                  onClick={() => setClientDropdownOpen(!clientDropdownOpen)}
+                  className="w-full flex items-center justify-between px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700"
+                >
+                  <span className="flex items-center gap-2">
+                    <ArrowRightLeft className="w-4 h-4 text-gray-500" />
+                    Switch Account
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${clientDropdownOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {clientDropdownOpen && (
+                  <div className="mt-2 bg-white border border-gray-200 rounded-lg overflow-hidden">
+                    {availableClients.map((access) => {
+                      const isSelected = client?.id === access.client_id;
+                      return (
+                        <button
+                          key={access.client_id}
+                          onClick={() => handleSwitchClient(access.client_id)}
+                          className={`
+                            w-full flex items-center gap-3 px-3 py-3 text-left border-b border-gray-100 last:border-b-0
+                            ${isSelected ? "bg-blue-50" : "active:bg-gray-50"}
+                          `}
+                        >
+                          <div className={`
+                            w-8 h-8 rounded-lg flex items-center justify-center
+                            ${isSelected ? "bg-blue-600" : "bg-gray-200"}
+                          `}>
+                            <span className={`font-semibold text-sm ${isSelected ? "text-white" : "text-gray-600"}`}>
+                              {access.client.company_name.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`font-medium truncate ${isSelected ? "text-blue-700" : "text-gray-900"}`}>
+                              {access.client.company_name}
+                            </p>
+                            <span className={`text-xs font-medium ${getRoleBadgeColor(access.role)} px-1.5 py-0.5 rounded`}>
+                              {access.role}
+                            </span>
+                          </div>
+                          {isSelected && (
+                            <Check className="w-5 h-5 text-blue-600" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Navigation Links - Touch friendly with min-height 48px */}
           <nav className="flex-1 overflow-y-auto py-2">
-            {NAV_LINKS.map((link) => {
+            {ALL_LINKS.map((link) => {
               const Icon = link.icon;
               const active = isActive(link.href);
+              const badgeCount =
+                link.href === "/portal/messages" ? unreadCount :
+                link.href === "/portal/orders" ? activeOrdersCount :
+                link.href === "/portal/returns" ? pendingReturnsCount : 0;
+              const showBadge = badgeCount > 0;
+              const badgeColor =
+                link.href === "/portal/messages" ? "bg-red-500" :
+                link.href === "/portal/returns" ? "bg-orange-500" :
+                "bg-blue-500";
 
               return (
                 <Link
@@ -195,8 +566,20 @@ export default function PortalNav({ companyName }: PortalNavProps) {
                     }
                   `}
                 >
-                  <Icon className={`w-5 h-5 ${active ? "text-blue-600" : "text-gray-500"}`} />
+                  <span className="relative">
+                    <Icon className={`w-5 h-5 ${active ? "text-blue-600" : "text-gray-500"}`} />
+                    {showBadge && (
+                      <span className={`absolute -top-1 -right-1 w-4 h-4 ${badgeColor} text-white text-[10px] font-bold rounded-full flex items-center justify-center`}>
+                        {badgeCount > 9 ? "9+" : badgeCount}
+                      </span>
+                    )}
+                  </span>
                   <span className="flex-1">{link.label}</span>
+                  {showBadge && (
+                    <span className={`px-2 py-0.5 ${badgeColor} text-white text-xs font-bold rounded-full`}>
+                      {badgeCount}
+                    </span>
+                  )}
                   <ChevronRight className={`w-5 h-5 ${active ? "text-blue-400" : "text-gray-300"}`} />
                 </Link>
               );

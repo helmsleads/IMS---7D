@@ -1,13 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Package, DollarSign, AlertTriangle, Clock, FileText, Plus, ArrowRightLeft } from "lucide-react";
+import {
+  Package,
+  DollarSign,
+  AlertTriangle,
+  Clock,
+  FileText,
+  Plus,
+  ArrowRightLeft,
+  RotateCcw,
+  Mail,
+  Calendar,
+  CreditCard,
+  TrendingUp,
+  TrendingDown,
+  Archive,
+} from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Card from "@/components/ui/Card";
 import FetchError from "@/components/ui/FetchError";
 import StockAdjustmentModal from "@/components/internal/StockAdjustmentModal";
 import { createClient } from "@/lib/supabase";
-import { getDashboardStats, getLowStockItems, getExpectedArrivals, getOrdersToShip, DashboardStats, RecentActivity, ExpectedArrival, OrderToShip } from "@/lib/api/dashboard";
+import { getDashboardStats, getLowStockItems, getExpectedArrivals, getOrdersToShip, getOrdersRequiringAttention, getAgedInventory, getOrderVelocity, DashboardStats, RecentActivity, ExpectedArrival, OrderToShip, AgedInventorySummary, OrderVelocity } from "@/lib/api/dashboard";
+import { getReturns, ReturnWithItems } from "@/lib/api/returns";
+import { getExpiringLots, LotWithInventory } from "@/lib/api/lots";
+import { getInvoices, InvoiceWithItems } from "@/lib/api/invoices";
 import { handleApiError } from "@/lib/utils/error-handler";
 import Link from "next/link";
 
@@ -35,8 +53,18 @@ export default function DashboardPage() {
   const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
   const [expectedArrivals, setExpectedArrivals] = useState<ExpectedArrival[]>([]);
   const [ordersToShip, setOrdersToShip] = useState<OrderToShip[]>([]);
+  const [pendingReturns, setPendingReturns] = useState<ReturnWithItems[]>([]);
+  const [expiringLots, setExpiringLots] = useState<LotWithInventory[]>([]);
+  const [outstandingInvoices, setOutstandingInvoices] = useState<InvoiceWithItems[]>([]);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [agedInventory, setAgedInventory] = useState<AgedInventorySummary | null>(null);
+  const [orderVelocity, setOrderVelocity] = useState<OrderVelocity | null>(null);
+  const [attentionRequired, setAttentionRequired] = useState<{
+    urgentOutbound: { id: string; order_number: string; status: string; requested_at: string | null; client: { company_name: string } | null }[];
+    overdueInbound: { id: string; po_number: string; status: string; expected_date: string | null; supplier: string }[];
+  } | null>(null);
   const [showStockAdjustment, setShowStockAdjustment] = useState(false);
 
   const fetchData = async () => {
@@ -50,19 +78,38 @@ export default function DashboardPage() {
       setUserName(user.email.split("@")[0]);
     }
 
-    // Fetch dashboard stats, low stock items, expected arrivals, and orders to ship
+    // Fetch dashboard stats, low stock items, expected arrivals, orders to ship, and new widgets data
     try {
-      const [dashboardData, lowStock, arrivals, toShip] = await Promise.all([
+      const [dashboardData, lowStock, arrivals, toShip, returns, lots, invoices, aged, velocity, attention] = await Promise.all([
         getDashboardStats(),
         getLowStockItems(),
         getExpectedArrivals(),
         getOrdersToShip(),
+        getReturns({ status: "requested" }),
+        getExpiringLots(30),
+        getInvoices({ status: "sent" }),
+        getAgedInventory(),
+        getOrderVelocity(),
+        getOrdersRequiringAttention(),
       ]);
       setStats(dashboardData.stats);
       setRecentActivity(dashboardData.recentActivity);
       setLowStockItems(lowStock);
       setExpectedArrivals(arrivals);
       setOrdersToShip(toShip);
+      setPendingReturns(returns);
+      setExpiringLots(lots);
+      setOutstandingInvoices(invoices);
+      setAgedInventory(aged);
+      setOrderVelocity(velocity);
+      setAttentionRequired(attention);
+
+      // Fetch unread messages count
+      const { count } = await supabase
+        .from("messages")
+        .select("*", { count: "exact", head: true })
+        .eq("is_read", false);
+      setUnreadMessagesCount(count || 0);
     } catch (err) {
       setError(handleApiError(err));
     } finally {
@@ -329,18 +376,100 @@ export default function DashboardPage() {
           </div>
         </Card>
 
+        {/* Attention Required */}
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Attention Required</h3>
+          </div>
+          {(!attentionRequired || (attentionRequired.urgentOutbound.length === 0 && attentionRequired.overdueInbound.length === 0)) ? (
+            <div className="text-center py-4">
+              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
+                <AlertTriangle className="w-6 h-6 text-green-600" />
+              </div>
+              <p className="text-gray-500 text-sm">No items need attention</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {attentionRequired.urgentOutbound.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-red-600 mb-2">
+                    Stale Outbound ({attentionRequired.urgentOutbound.length})
+                  </p>
+                  {attentionRequired.urgentOutbound.map((order) => {
+                    const days = order.requested_at
+                      ? Math.floor((Date.now() - new Date(order.requested_at).getTime()) / (1000 * 60 * 60 * 24))
+                      : 0;
+                    return (
+                      <Link
+                        key={order.id}
+                        href={`/outbound/${order.id}`}
+                        className="flex items-center justify-between py-1.5 hover:bg-gray-50 -mx-2 px-2 rounded"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-gray-900 truncate">{order.order_number}</p>
+                          <p className="text-xs text-gray-500 truncate">{order.client?.company_name || "Unknown"}</p>
+                        </div>
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 ml-2">
+                          {days}d pending
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+              {attentionRequired.overdueInbound.length > 0 && (
+                <div className={attentionRequired.urgentOutbound.length > 0 ? "border-t border-gray-100 pt-3" : ""}>
+                  <p className="text-xs font-medium text-orange-600 mb-2">
+                    Overdue Inbound ({attentionRequired.overdueInbound.length})
+                  </p>
+                  {attentionRequired.overdueInbound.map((order) => {
+                    const daysOverdue = order.expected_date
+                      ? Math.floor((Date.now() - new Date(order.expected_date).getTime()) / (1000 * 60 * 60 * 24))
+                      : 0;
+                    return (
+                      <Link
+                        key={order.id}
+                        href={`/inbound/${order.id}`}
+                        className="flex items-center justify-between py-1.5 hover:bg-gray-50 -mx-2 px-2 rounded"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-gray-900 truncate">{order.po_number}</p>
+                          <p className="text-xs text-gray-500 truncate">{order.supplier}</p>
+                        </div>
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 ml-2">
+                          {daysOverdue}d overdue
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+
         {/* Low Stock Alerts */}
         <Card>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Low Stock Alerts</h3>
-            {lowStockItems.length > 0 && (
-              <Link
-                href="/inventory?filter=low-stock"
-                className="text-sm text-blue-600 hover:text-blue-800"
-              >
-                View All
-              </Link>
-            )}
+            <div className="flex items-center gap-3">
+              {lowStockItems.length > 0 && (
+                <>
+                  <Link
+                    href="/reports/reorder-suggestions"
+                    className="text-sm text-green-600 hover:text-green-800 font-medium"
+                  >
+                    Reorder
+                  </Link>
+                  <Link
+                    href="/inventory?filter=low-stock"
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    View All
+                  </Link>
+                </>
+              )}
+            </div>
           </div>
           {lowStockItems.length === 0 ? (
             <div className="text-center py-4">
@@ -586,6 +715,320 @@ export default function DashboardPage() {
               </span>
             </div>
           </div>
+        </Card>
+
+        {/* Pending Returns */}
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Pending Returns</h3>
+            <Link
+              href="/returns"
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              View All
+            </Link>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+              pendingReturns.length > 0 ? "bg-orange-100" : "bg-gray-100"
+            }`}>
+              <RotateCcw className={`w-6 h-6 ${
+                pendingReturns.length > 0 ? "text-orange-600" : "text-gray-400"
+              }`} />
+            </div>
+            <div>
+              <p className={`text-2xl font-semibold ${
+                pendingReturns.length > 0 ? "text-orange-600" : "text-gray-900"
+              }`}>
+                {loading ? "—" : pendingReturns.length}
+              </p>
+              <p className="text-sm text-gray-500">
+                {pendingReturns.length === 1 ? "Return" : "Returns"} awaiting approval
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Unread Messages */}
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Messages</h3>
+            <Link
+              href="/messages"
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              View Inbox
+            </Link>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+              unreadMessagesCount > 0 ? "bg-blue-100" : "bg-gray-100"
+            }`}>
+              <Mail className={`w-6 h-6 ${
+                unreadMessagesCount > 0 ? "text-blue-600" : "text-gray-400"
+              }`} />
+            </div>
+            <div>
+              <p className={`text-2xl font-semibold ${
+                unreadMessagesCount > 0 ? "text-blue-600" : "text-gray-900"
+              }`}>
+                {loading ? "—" : unreadMessagesCount}
+              </p>
+              <p className="text-sm text-gray-500">
+                Unread {unreadMessagesCount === 1 ? "message" : "messages"}
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Expiring Lots */}
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Expiring Lots</h3>
+            <Link
+              href="/reports/lot-expiration"
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              View All
+            </Link>
+          </div>
+          {expiringLots.length === 0 ? (
+            <div className="text-center py-4">
+              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
+                <Calendar className="w-6 h-6 text-green-600" />
+              </div>
+              <p className="text-gray-500 text-sm">No lots expiring soon</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 rounded-lg bg-orange-100 flex items-center justify-center">
+                  <Calendar className="w-6 h-6 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-semibold text-orange-600">
+                    {loading ? "—" : expiringLots.length}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Lots expiring in 30 days
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2 border-t border-gray-100 pt-3">
+                {expiringLots.slice(0, 3).map((lot) => {
+                  const daysLeft = lot.expiration_date
+                    ? Math.ceil(
+                        (new Date(lot.expiration_date).getTime() - new Date().getTime()) /
+                          (1000 * 60 * 60 * 24)
+                      )
+                    : 0;
+                  return (
+                    <Link
+                      key={lot.id}
+                      href={`/lots/${lot.id}`}
+                      className="flex items-center justify-between py-1 hover:bg-gray-50 -mx-2 px-2 rounded"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {lot.lot_number || lot.batch_number}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {lot.product?.name}
+                        </p>
+                      </div>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                        daysLeft <= 7
+                          ? "bg-red-100 text-red-700"
+                          : daysLeft <= 14
+                          ? "bg-orange-100 text-orange-700"
+                          : "bg-yellow-100 text-yellow-700"
+                      }`}>
+                        {daysLeft <= 0 ? "Expired" : `${daysLeft}d`}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </Card>
+
+        {/* Inventory Aging */}
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Inventory Aging</h3>
+            <Link
+              href="/reports"
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              View Reports
+            </Link>
+          </div>
+          {!agedInventory || (agedInventory.over30Days === 0 && agedInventory.over60Days === 0 && agedInventory.over90Days === 0) ? (
+            <div className="text-center py-4">
+              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
+                <Archive className="w-6 h-6 text-green-600" />
+              </div>
+              <p className="text-gray-500 text-sm">All inventory is moving</p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-3 mb-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">30-60 days</span>
+                  <span className={`font-medium ${agedInventory.over30Days > 0 ? "text-yellow-600" : "text-gray-900"}`}>
+                    {agedInventory.over30Days} items
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">60-90 days</span>
+                  <span className={`font-medium ${agedInventory.over60Days > 0 ? "text-orange-600" : "text-gray-900"}`}>
+                    {agedInventory.over60Days} items
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">90+ days</span>
+                  <span className={`font-medium ${agedInventory.over90Days > 0 ? "text-red-600" : "text-gray-900"}`}>
+                    {agedInventory.over90Days} items
+                  </span>
+                </div>
+              </div>
+              {agedInventory.oldestItems.length > 0 && (
+                <div className="border-t border-gray-100 pt-3">
+                  <p className="text-xs text-gray-500 mb-2">Oldest items</p>
+                  <div className="space-y-2">
+                    {agedInventory.oldestItems.slice(0, 3).map((item) => (
+                      <div key={`${item.productId}-${item.locationName}`} className="flex items-center justify-between text-sm">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-gray-900 truncate">{item.sku}</p>
+                          <p className="text-xs text-gray-500 truncate">{item.locationName}</p>
+                        </div>
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 ml-2">
+                          {item.daysSinceLastMove}d
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+
+        {/* Order Velocity */}
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Order Velocity</h3>
+          </div>
+          <div className="flex items-center gap-4 mb-4">
+            <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+              orderVelocity?.trend === "up" ? "bg-green-100" :
+              orderVelocity?.trend === "down" ? "bg-red-100" :
+              "bg-gray-100"
+            }`}>
+              {orderVelocity?.trend === "up" ? (
+                <TrendingUp className="w-6 h-6 text-green-600" />
+              ) : orderVelocity?.trend === "down" ? (
+                <TrendingDown className="w-6 h-6 text-red-600" />
+              ) : (
+                <TrendingUp className="w-6 h-6 text-gray-400" />
+              )}
+            </div>
+            <div>
+              <p className="text-2xl font-semibold text-gray-900">
+                {loading ? "—" : orderVelocity?.shippedThisWeek || 0}
+              </p>
+              <p className="text-sm text-gray-500">
+                Shipped this week
+                {orderVelocity && orderVelocity.trendPercent !== 0 && (
+                  <span className={`ml-1 ${
+                    orderVelocity.trend === "up" ? "text-green-600" : "text-red-600"
+                  }`}>
+                    ({orderVelocity.trendPercent > 0 ? "+" : ""}{orderVelocity.trendPercent}%)
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2 border-t border-gray-100 pt-3">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Shipped last week</span>
+              <span className="font-medium text-gray-900">
+                {orderVelocity?.shippedLastWeek || 0}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Received this week</span>
+              <span className="font-medium text-gray-900">
+                {orderVelocity?.receivedThisWeek || 0}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Received last week</span>
+              <span className="font-medium text-gray-900">
+                {orderVelocity?.receivedLastWeek || 0}
+              </span>
+            </div>
+          </div>
+        </Card>
+
+        {/* Outstanding Invoices */}
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Outstanding Invoices</h3>
+            <Link
+              href="/billing"
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              View Billing
+            </Link>
+          </div>
+          {(() => {
+            const totalOutstanding = outstandingInvoices.reduce(
+              (sum, inv) => sum + (inv.total - (inv.amount_paid || 0)),
+              0
+            );
+            const overdueCount = outstandingInvoices.filter((inv) => {
+              if (!inv.due_date) return false;
+              return new Date(inv.due_date) < new Date();
+            }).length;
+
+            return (
+              <>
+                <div className="flex items-center gap-4 mb-4">
+                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                    totalOutstanding > 0 ? "bg-green-100" : "bg-gray-100"
+                  }`}>
+                    <CreditCard className={`w-6 h-6 ${
+                      totalOutstanding > 0 ? "text-green-600" : "text-gray-400"
+                    }`} />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-semibold text-gray-900">
+                      {loading ? "—" : formatCurrency(totalOutstanding)}
+                    </p>
+                    <p className="text-sm text-gray-500">Outstanding balance</p>
+                  </div>
+                </div>
+                <div className="space-y-2 border-t border-gray-100 pt-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Open invoices</span>
+                    <span className="font-medium text-gray-900">
+                      {outstandingInvoices.length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Overdue</span>
+                    <span className={`font-medium ${
+                      overdueCount > 0 ? "text-red-600" : "text-gray-900"
+                    }`}>
+                      {overdueCount}
+                    </span>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </Card>
       </div>
 

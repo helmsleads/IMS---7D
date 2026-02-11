@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, PackageX, Eye, Truck, ExternalLink, Flag, AlertTriangle, ArrowUpDown } from "lucide-react";
+import { Plus, PackageX, Eye, Truck, ExternalLink, Flag, AlertTriangle, ArrowUpDown, Globe, Building2, Zap } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -17,9 +17,13 @@ const ITEMS_PER_PAGE = 25;
 
 interface OutboundOrderWithCount extends OutboundOrderWithClient {
   item_count: number;
+  source?: 'portal' | 'internal' | 'api';
+  is_rush?: boolean | null;
+  preferred_carrier?: string | null;
 }
 
 type StatusFilter = "all" | "pending" | "confirmed" | "processing" | "packed" | "shipped" | "delivered";
+type SourceFilter = "all" | "portal" | "internal";
 
 const STATUS_TABS: { key: StatusFilter; label: string; color: string }[] = [
   { key: "all", label: "All", color: "bg-gray-100 text-gray-700" },
@@ -85,6 +89,7 @@ export default function OutboundPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<StatusFilter>("all");
+  const [selectedSource, setSelectedSource] = useState<SourceFilter>("all");
   const [sortOldestFirst, setSortOldestFirst] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -125,11 +130,36 @@ export default function OutboundPage() {
     return counts;
   }, [orders]);
 
+  const sourceCounts = useMemo(() => {
+    const counts: Record<SourceFilter, number> = {
+      all: orders.length,
+      portal: 0,
+      internal: 0,
+    };
+
+    orders.forEach((order) => {
+      if (order.source === "portal") {
+        counts.portal++;
+      } else {
+        counts.internal++;
+      }
+    });
+
+    return counts;
+  }, [orders]);
+
   const filteredOrders = useMemo(() => {
     let filtered = orders;
 
     if (selectedStatus !== "all") {
       filtered = filtered.filter((order) => order.status === selectedStatus);
+    }
+
+    if (selectedSource !== "all") {
+      filtered = filtered.filter((order) => {
+        if (selectedSource === "portal") return order.source === "portal";
+        return order.source !== "portal"; // internal includes api and undefined
+      });
     }
 
     // Sort by requested_at
@@ -138,12 +168,12 @@ export default function OutboundPage() {
       const dateB = new Date(b.requested_at || 0).getTime();
       return sortOldestFirst ? dateA - dateB : dateB - dateA;
     });
-  }, [orders, selectedStatus, sortOldestFirst]);
+  }, [orders, selectedStatus, selectedSource, sortOldestFirst]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedStatus, sortOldestFirst]);
+  }, [selectedStatus, selectedSource, sortOldestFirst]);
 
   // Paginate the filtered results
   const paginatedOrders = useMemo(() => {
@@ -157,10 +187,27 @@ export default function OutboundPage() {
       header: "Order Number",
       render: (order: OutboundOrderWithCount) => (
         <div className="flex items-center gap-2">
+          {/* Source Badge */}
+          {order.source === "portal" ? (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded bg-purple-100 text-purple-700"
+              title="Portal Order - Customer requested"
+            >
+              <Globe className="w-3 h-3" />
+            </span>
+          ) : (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-600"
+              title="Internal Order - Staff created"
+            >
+              <Building2 className="w-3 h-3" />
+            </span>
+          )}
           <span className="font-medium text-gray-900">{order.order_number}</span>
-          {isUrgent(order) && (
-            <span title="Rush/Urgent order">
-              <Flag className="w-4 h-4 text-red-500" />
+          {/* Rush indicator - check both is_rush flag and notes */}
+          {(order.is_rush || isUrgent(order)) && (
+            <span title="Rush/Urgent order" className="flex items-center">
+              <Zap className="w-4 h-4 text-red-500" />
             </span>
           )}
           {isOldPending(order) && (
@@ -207,11 +254,20 @@ export default function OutboundPage() {
       key: "shipping",
       header: "Carrier / Tracking",
       render: (order: OutboundOrderWithCount) => {
-        if (!order.carrier && !order.tracking_number) {
+        const hasShippingInfo = order.carrier || order.tracking_number;
+        const hasPreferred = order.preferred_carrier && !order.carrier;
+
+        if (!hasShippingInfo && !hasPreferred) {
           return <span className="text-gray-400">—</span>;
         }
         return (
           <div className="text-sm">
+            {/* Show preferred carrier if no actual carrier set */}
+            {hasPreferred && (
+              <span className="text-purple-600 text-xs" title="Customer preferred carrier">
+                Preferred: {order.preferred_carrier}
+              </span>
+            )}
             {order.carrier && (
               <span className="text-gray-900">{order.carrier}</span>
             )}
@@ -306,9 +362,78 @@ export default function OutboundPage() {
       actions={actionButtons}
     >
       <div className="space-y-4 mb-4">
-        {/* Status Tabs and Sort */}
+        {/* Source Filter and Sort */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex gap-2 flex-wrap">
+          {/* Source Filter */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">Source:</span>
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+              <button
+                onClick={() => setSelectedSource("all")}
+                className={`
+                  inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors
+                  ${selectedSource === "all"
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                  }
+                `}
+              >
+                All
+                <span className="text-xs text-gray-400">({sourceCounts.all})</span>
+              </button>
+              <button
+                onClick={() => setSelectedSource("portal")}
+                className={`
+                  inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors
+                  ${selectedSource === "portal"
+                    ? "bg-purple-600 text-white shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                  }
+                `}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                Portal
+                <span className={`text-xs ${selectedSource === "portal" ? "text-purple-200" : "text-gray-400"}`}>
+                  ({sourceCounts.portal})
+                </span>
+              </button>
+              <button
+                onClick={() => setSelectedSource("internal")}
+                className={`
+                  inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors
+                  ${selectedSource === "internal"
+                    ? "bg-gray-700 text-white shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                  }
+                `}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                Internal
+                <span className={`text-xs ${selectedSource === "internal" ? "text-gray-300" : "text-gray-400"}`}>
+                  ({sourceCounts.internal})
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Sort Toggle */}
+          <button
+            onClick={() => setSortOldestFirst(!sortOldestFirst)}
+            className={`
+              inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors
+              ${sortOldestFirst
+                ? "bg-blue-600 text-white"
+                : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+              }
+            `}
+          >
+            <ArrowUpDown className="w-4 h-4" />
+            {sortOldestFirst ? "Oldest First (FIFO)" : "Newest First"}
+          </button>
+        </div>
+
+        {/* Status Tabs */}
+        <div className="flex gap-2 flex-wrap">
           {STATUS_TABS.map((tab) => {
             const isActive = selectedStatus === tab.key;
             const count = statusCounts[tab.key];
@@ -341,22 +466,6 @@ export default function OutboundPage() {
               </button>
             );
           })}
-          </div>
-
-          {/* Sort Toggle */}
-          <button
-            onClick={() => setSortOldestFirst(!sortOldestFirst)}
-            className={`
-              inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors
-              ${sortOldestFirst
-                ? "bg-blue-600 text-white"
-                : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
-              }
-            `}
-          >
-            <ArrowUpDown className="w-4 h-4" />
-            {sortOldestFirst ? "Oldest First (FIFO)" : "Newest First"}
-          </button>
         </div>
       </div>
 

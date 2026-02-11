@@ -370,3 +370,420 @@ export async function getOrdersRequiringAttention(): Promise<{
     }[],
   };
 }
+
+export async function getPendingReturnsCount(): Promise<number> {
+  const supabase = createClient();
+
+  const { count, error } = await supabase
+    .from("returns")
+    .select("*", { count: "exact", head: true })
+    .eq("status", "requested");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return count || 0;
+}
+
+export async function getUnreadMessagesCount(): Promise<number> {
+  const supabase = createClient();
+
+  const { count, error } = await supabase
+    .from("messages")
+    .select("*", { count: "exact", head: true })
+    .eq("is_read", false);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return count || 0;
+}
+
+export interface ExpiringLotsCount {
+  count: number;
+  soonest: {
+    id: string;
+    lot_number: string | null;
+    batch_number: string | null;
+    expiration_date: string;
+    days_until_expiration: number;
+    product: {
+      id: string;
+      name: string;
+      sku: string;
+    };
+  }[];
+}
+
+export async function getExpiringLotsCount(daysAhead: number = 30): Promise<ExpiringLotsCount> {
+  const supabase = createClient();
+
+  const futureDate = new Date();
+  futureDate.setDate(futureDate.getDate() + daysAhead);
+
+  const { data, error } = await supabase
+    .from("lots")
+    .select(`
+      id,
+      lot_number,
+      batch_number,
+      expiration_date,
+      product:products (id, name, sku)
+    `)
+    .eq("status", "active")
+    .not("expiration_date", "is", null)
+    .lte("expiration_date", futureDate.toISOString().split("T")[0])
+    .order("expiration_date", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const lotsWithDays = (data || []).map((lot) => {
+    const expDate = new Date(lot.expiration_date);
+    expDate.setHours(0, 0, 0, 0);
+    const daysUntil = Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    return {
+      id: lot.id,
+      lot_number: lot.lot_number,
+      batch_number: lot.batch_number,
+      expiration_date: lot.expiration_date,
+      days_until_expiration: daysUntil,
+      product: lot.product as unknown as { id: string; name: string; sku: string },
+    };
+  });
+
+  return {
+    count: lotsWithDays.length,
+    soonest: lotsWithDays.slice(0, 3),
+  };
+}
+
+export interface OutstandingInvoicesTotal {
+  totalOutstanding: number;
+  invoiceCount: number;
+  overdueCount: number;
+  overdueAmount: number;
+}
+
+export async function getOutstandingInvoicesTotal(): Promise<OutstandingInvoicesTotal> {
+  const supabase = createClient();
+  const today = new Date().toISOString().split("T")[0];
+
+  const { data, error } = await supabase
+    .from("invoices")
+    .select("id, total, amount_paid, due_date")
+    .eq("status", "sent");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const invoices = data || [];
+
+  let totalOutstanding = 0;
+  let overdueCount = 0;
+  let overdueAmount = 0;
+
+  invoices.forEach((inv) => {
+    const outstanding = (inv.total || 0) - (inv.amount_paid || 0);
+    totalOutstanding += outstanding;
+
+    if (inv.due_date && inv.due_date < today) {
+      overdueCount++;
+      overdueAmount += outstanding;
+    }
+  });
+
+  return {
+    totalOutstanding,
+    invoiceCount: invoices.length,
+    overdueCount,
+    overdueAmount,
+  };
+}
+
+// ============================================
+// Aged Inventory
+// ============================================
+
+export interface AgedInventorySummary {
+  over30Days: number;
+  over60Days: number;
+  over90Days: number;
+  oldestItems: {
+    productId: string;
+    productName: string;
+    sku: string;
+    locationName: string;
+    qtyOnHand: number;
+    daysSinceLastMove: number;
+  }[];
+}
+
+/**
+ * Get inventory aging summary — items that haven't had transactions recently.
+ * Uses the most recent inventory_transaction per product/location to determine age.
+ */
+export async function getAgedInventory(): Promise<AgedInventorySummary> {
+  const supabase = createClient();
+
+  // Get all inventory with qty > 0
+  const { data: inventory, error: invError } = await supabase
+    .from("inventory")
+    .select(`
+      product_id,
+      location_id,
+      qty_on_hand,
+      product:products (id, name, sku),
+      location:locations (id, name)
+    `)
+    .gt("qty_on_hand", 0);
+
+  if (invError) {
+    throw new Error(invError.message);
+  }
+
+  if (!inventory || inventory.length === 0) {
+    return { over30Days: 0, over60Days: 0, over90Days: 0, oldestItems: [] };
+  }
+
+  // Get the most recent transaction for each product/location pair
+  const { data: recentTxns, error: txnError } = await supabase
+    .from("inventory_transactions")
+    .select("product_id, location_id, created_at")
+    .order("created_at", { ascending: false });
+
+  if (txnError) {
+    throw new Error(txnError.message);
+  }
+
+  // Build a map of the most recent transaction per product+location
+  const lastMoveMap = new Map<string, string>();
+  for (const txn of recentTxns || []) {
+    const key = `${txn.product_id}|${txn.location_id}`;
+    if (!lastMoveMap.has(key)) {
+      lastMoveMap.set(key, txn.created_at);
+    }
+  }
+
+  const now = Date.now();
+  let over30 = 0;
+  let over60 = 0;
+  let over90 = 0;
+
+  const itemsWithAge = inventory.map((item) => {
+    const key = `${item.product_id}|${item.location_id}`;
+    const lastMove = lastMoveMap.get(key);
+    const daysSince = lastMove
+      ? Math.floor((now - new Date(lastMove).getTime()) / (1000 * 60 * 60 * 24))
+      : 999; // No transaction ever — very old
+
+    const product = Array.isArray(item.product) ? item.product[0] : item.product;
+    const location = Array.isArray(item.location) ? item.location[0] : item.location;
+
+    return {
+      productId: item.product_id,
+      productName: (product as { name: string })?.name || "Unknown",
+      sku: (product as { sku: string })?.sku || "",
+      locationName: (location as { name: string })?.name || "Unknown",
+      qtyOnHand: item.qty_on_hand,
+      daysSinceLastMove: daysSince,
+    };
+  });
+
+  for (const item of itemsWithAge) {
+    if (item.daysSinceLastMove >= 90) over90++;
+    else if (item.daysSinceLastMove >= 60) over60++;
+    else if (item.daysSinceLastMove >= 30) over30++;
+  }
+
+  // Sort by age descending, take top 5
+  const oldestItems = itemsWithAge
+    .sort((a, b) => b.daysSinceLastMove - a.daysSinceLastMove)
+    .slice(0, 5);
+
+  return {
+    over30Days: over30,
+    over60Days: over60,
+    over90Days: over90,
+    oldestItems,
+  };
+}
+
+// ============================================
+// Order Velocity
+// ============================================
+
+export interface OrderVelocity {
+  shippedThisWeek: number;
+  shippedLastWeek: number;
+  receivedThisWeek: number;
+  receivedLastWeek: number;
+  trend: "up" | "down" | "flat";
+  trendPercent: number;
+}
+
+/**
+ * Get order velocity — shipped and received counts for this week vs last week.
+ */
+export async function getOrderVelocity(): Promise<OrderVelocity> {
+  const supabase = createClient();
+
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=Sun
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+  // This week (Monday to now)
+  const thisWeekStart = new Date(now);
+  thisWeekStart.setDate(now.getDate() + mondayOffset);
+  thisWeekStart.setHours(0, 0, 0, 0);
+
+  // Last week (Monday to Sunday)
+  const lastWeekStart = new Date(thisWeekStart);
+  lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+  const lastWeekEnd = new Date(thisWeekStart);
+  lastWeekEnd.setMilliseconds(-1);
+
+  const [shippedThis, shippedLast, receivedThis, receivedLast] =
+    await Promise.all([
+      supabase
+        .from("outbound_orders")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "shipped")
+        .gte("shipped_date", thisWeekStart.toISOString()),
+
+      supabase
+        .from("outbound_orders")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "shipped")
+        .gte("shipped_date", lastWeekStart.toISOString())
+        .lt("shipped_date", thisWeekStart.toISOString()),
+
+      supabase
+        .from("inbound_orders")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "received")
+        .gte("received_date", thisWeekStart.toISOString()),
+
+      supabase
+        .from("inbound_orders")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "received")
+        .gte("received_date", lastWeekStart.toISOString())
+        .lt("received_date", thisWeekStart.toISOString()),
+    ]);
+
+  const stw = shippedThis.count || 0;
+  const slw = shippedLast.count || 0;
+  const rtw = receivedThis.count || 0;
+  const rlw = receivedLast.count || 0;
+
+  // Trend based on shipped orders
+  let trend: "up" | "down" | "flat" = "flat";
+  let trendPercent = 0;
+
+  if (slw > 0) {
+    trendPercent = Math.round(((stw - slw) / slw) * 100);
+    trend = trendPercent > 5 ? "up" : trendPercent < -5 ? "down" : "flat";
+  } else if (stw > 0) {
+    trend = "up";
+    trendPercent = 100;
+  }
+
+  return {
+    shippedThisWeek: stw,
+    shippedLastWeek: slw,
+    receivedThisWeek: rtw,
+    receivedLastWeek: rlw,
+    trend,
+    trendPercent,
+  };
+}
+
+// ============================================
+// Reorder Suggestions
+// ============================================
+
+export interface ReorderSuggestion {
+  productId: string;
+  productName: string;
+  sku: string;
+  clientId: string | null;
+  clientName: string | null;
+  locationId: string;
+  locationName: string;
+  currentQty: number;
+  reorderPoint: number;
+  suggestedQty: number;
+  supplier: string | null;
+}
+
+/**
+ * Generate reorder suggestions for products below their reorder point.
+ * Suggested quantity = 2x reorder point - current quantity (brings to 2x safety stock).
+ */
+export async function getReorderSuggestions(): Promise<ReorderSuggestion[]> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("inventory")
+    .select(`
+      product_id,
+      location_id,
+      qty_on_hand,
+      client_id,
+      product:products (id, name, sku, reorder_point, supplier),
+      location:locations (id, name),
+      client:clients (id, company_name)
+    `)
+    .gt("qty_on_hand", -1);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const suggestions: ReorderSuggestion[] = [];
+
+  for (const row of data || []) {
+    const product = Array.isArray(row.product) ? row.product[0] : row.product;
+    const location = Array.isArray(row.location) ? row.location[0] : row.location;
+    const client = Array.isArray(row.client) ? row.client[0] : row.client;
+
+    const reorderPoint = (product as { reorder_point?: number })?.reorder_point || 0;
+    if (reorderPoint <= 0) continue;
+    if (row.qty_on_hand > reorderPoint) continue;
+
+    // Suggest ordering enough to reach 2x reorder point
+    const suggestedQty = reorderPoint * 2 - row.qty_on_hand;
+
+    suggestions.push({
+      productId: row.product_id,
+      productName: (product as { name: string })?.name || "Unknown",
+      sku: (product as { sku: string })?.sku || "",
+      clientId: row.client_id || null,
+      clientName: (client as { company_name: string })?.company_name || null,
+      locationId: row.location_id,
+      locationName: (location as { name: string })?.name || "Unknown",
+      currentQty: row.qty_on_hand,
+      reorderPoint,
+      suggestedQty,
+      supplier: (product as { supplier?: string })?.supplier || null,
+    });
+  }
+
+  // Sort by urgency (lowest qty relative to reorder point first)
+  suggestions.sort((a, b) => {
+    const aRatio = a.currentQty / a.reorderPoint;
+    const bRatio = b.currentQty / b.reorderPoint;
+    return aRatio - bRatio;
+  });
+
+  return suggestions;
+}

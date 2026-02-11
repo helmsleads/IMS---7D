@@ -1,12 +1,10 @@
 import { createClient } from "@/lib/supabase";
+import { ClientIndustry } from "@/types/database";
 
 export interface Client {
   id: string;
   auth_id: string | null;
   company_name: string;
-  contact_name: string | null;
-  email: string;
-  phone: string | null;
   address_line1: string | null;
   address_line2: string | null;
   city: string | null;
@@ -14,6 +12,10 @@ export interface Client {
   zip: string | null;
   active: boolean;
   created_at: string;
+  industries: ClientIndustry[];  // Multiple industries supported
+  workflow_profile_id: string | null;
+  service_tier_id: string | null;
+  allow_product_workflow_override: boolean;  // Allow products to have their own workflow profiles
 }
 
 export interface ClientWithSummary extends Client {
@@ -27,6 +29,18 @@ export interface ClientWithSummary extends Client {
     pending_outbound: number;
     total_orders: number;
   };
+  workflow_profile?: {
+    id: string;
+    code: string;
+    name: string;
+    description: string | null;
+    allowed_container_types: string[];
+    requires_lot_tracking: boolean;
+    requires_expiration_dates: boolean;
+    requires_age_verification: boolean;
+    requires_ttb_compliance: boolean;
+    has_state_restrictions: boolean;
+  } | null;
 }
 
 export interface ClientInventoryItem {
@@ -78,10 +92,24 @@ export async function getClients(): Promise<Client[]> {
 export async function getClient(id: string): Promise<ClientWithSummary | null> {
   const supabase = createClient();
 
-  // Get client data
+  // Get client data with workflow profile
   const { data: client, error } = await supabase
     .from("clients")
-    .select("*")
+    .select(`
+      *,
+      workflow_profile:workflow_profiles (
+        id,
+        code,
+        name,
+        description,
+        allowed_container_types,
+        requires_lot_tracking,
+        requires_expiration_dates,
+        requires_age_verification,
+        requires_ttb_compliance,
+        has_state_restrictions
+      )
+    `)
     .eq("id", id)
     .single();
 
@@ -91,6 +119,11 @@ export async function getClient(id: string): Promise<ClientWithSummary | null> {
     }
     throw new Error(error.message);
   }
+
+  // Handle Supabase array return for joined table
+  const workflowProfile = Array.isArray(client.workflow_profile)
+    ? client.workflow_profile[0]
+    : client.workflow_profile;
 
   // Get inventory summary for this client
   const { data: inventoryData } = await supabase
@@ -139,6 +172,7 @@ export async function getClient(id: string): Promise<ClientWithSummary | null> {
 
   return {
     ...client,
+    workflow_profile: workflowProfile || null,
     inventory_summary: {
       total_products: totalProducts,
       total_units: totalUnits,
@@ -215,12 +249,13 @@ export async function getClientInventory(clientId: string): Promise<ClientInvent
       qty_on_hand,
       qty_reserved,
       updated_at,
-      product:products (
+      product:products!inner (
         id,
         sku,
         name,
         category,
-        unit_cost
+        unit_cost,
+        client_id
       ),
       location:locations (
         id,
@@ -229,7 +264,7 @@ export async function getClientInventory(clientId: string): Promise<ClientInvent
         state
       )
     `)
-    .eq("client_id", clientId)
+    .eq("product.client_id", clientId)
     .gt("qty_on_hand", 0)
     .order("updated_at", { ascending: false });
 

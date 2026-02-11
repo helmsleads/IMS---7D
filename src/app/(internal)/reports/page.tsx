@@ -1,6 +1,18 @@
 "use client";
 
-import { Package, Users, DollarSign, AlertTriangle, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
+import {
+  Package,
+  Users,
+  DollarSign,
+  AlertTriangle,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Calendar,
+  TrendingUp,
+  RotateCcw,
+  Boxes,
+  Wrench,
+} from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Card from "@/components/ui/Card";
 import Link from "next/link";
@@ -62,6 +74,46 @@ const reports: ReportCard[] = [
     icon: <Users className="w-6 h-6" />,
     href: "/reports/client-activity",
     color: "bg-amber-100 text-amber-600",
+  },
+  {
+    id: "lot-expiration",
+    title: "Lot Expiration Report",
+    description: "Track lot and batch expiration dates with alerts for upcoming expirations",
+    icon: <Calendar className="w-6 h-6" />,
+    href: "/reports/lot-expiration",
+    color: "bg-orange-100 text-orange-600",
+  },
+  {
+    id: "client-profitability",
+    title: "Client Profitability Report",
+    description: "Revenue, costs, and profit margins by client with trend analysis",
+    icon: <TrendingUp className="w-6 h-6" />,
+    href: "/reports/client-profitability",
+    color: "bg-emerald-100 text-emerald-600",
+  },
+  {
+    id: "returns-summary",
+    title: "Returns Summary",
+    description: "Overview of return requests, reasons, and processing status",
+    icon: <RotateCcw className="w-6 h-6" />,
+    href: "/reports/returns-summary",
+    color: "bg-rose-100 text-rose-600",
+  },
+  {
+    id: "supply-usage",
+    title: "Supply Usage Report",
+    description: "Packing materials, supplies consumption, and cost tracking by client",
+    icon: <Boxes className="w-6 h-6" />,
+    href: "/reports/supply-usage",
+    color: "bg-indigo-100 text-indigo-600",
+  },
+  {
+    id: "service-usage",
+    title: "Service Usage Report",
+    description: "Billable services rendered, add-ons used, and service tier utilization",
+    icon: <Wrench className="w-6 h-6" />,
+    href: "/reports/service-usage",
+    color: "bg-teal-100 text-teal-600",
   },
 ];
 

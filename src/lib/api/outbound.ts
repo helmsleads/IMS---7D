@@ -4,14 +4,26 @@ import {
   sendOrderShippedEmail,
   sendOrderDeliveredEmail,
 } from "@/lib/api/email";
-import { sendInternalAlert } from "@/lib/api/notifications";
+import { sendInternalAlert, sendPortalOrderNotification } from "@/lib/api/notifications";
+import { reserveOrderItems, releaseOrderReservations, releaseReservation } from "./reservations";
+import { updateInventoryWithTransaction } from "./inventory-transactions";
+import { autoAssignBoxesForOrder } from "./box-usage";
+import { syncFulfillmentToShopify } from "./shopify/fulfillment-sync";
+
+export type OrderSource = 'portal' | 'internal' | 'api';
 
 export interface OutboundOrder {
   id: string;
   order_number: string;
   client_id: string | null;
   status: string;
+  source: OrderSource;
   ship_to_address: string | null;
+  ship_to_address2: string | null;
+  ship_to_city: string | null;
+  ship_to_state: string | null;
+  ship_to_postal_code: string | null;
+  ship_to_country: string | null;
   notes: string | null;
   carrier: string | null;
   tracking_number: string | null;
@@ -20,6 +32,9 @@ export interface OutboundOrder {
   requested_at: string | null;
   confirmed_at: string | null;
   confirmed_by: string | null;
+  is_rush: boolean | null;
+  preferred_carrier: string | null;
+  requires_repack: boolean;
   created_at: string;
 }
 
@@ -56,6 +71,8 @@ export interface CreateOutboundOrderData {
   ship_to_address?: string | null;
   notes?: string | null;
   status?: string;
+  source?: OrderSource;
+  requires_repack?: boolean;
 }
 
 export interface CreateOutboundItemData {
@@ -143,12 +160,15 @@ export async function createOutboundOrder(
 
   // Determine status and confirmation fields
   const status = order.status || "pending";
+  const source = order.source || "internal";
   const insertData: Record<string, unknown> = {
     order_number: orderNumber,
     client_id: order.client_id || null,
     status,
+    source,
     ship_to_address: order.ship_to_address || null,
     notes: order.notes || null,
+    requires_repack: order.requires_repack ?? true, // Default to true (repack needed)
   };
 
   // If creating as confirmed, set confirmation fields
@@ -262,17 +282,45 @@ export async function createOutboundOrder(
 export async function updateOutboundOrderStatus(
   id: string,
   status: string,
-  additionalFields?: UpdateOutboundStatusFields
+  additionalFields?: UpdateOutboundStatusFields & { locationId?: string }
 ): Promise<OutboundOrder> {
   const supabase = createClient();
 
+  // Get current order status to determine if we need to reserve/release
+  const { data: currentOrder, error: currentError } = await supabase
+    .from("outbound_orders")
+    .select("status")
+    .eq("id", id)
+    .single();
+
+  if (currentError) {
+    throw new Error(currentError.message);
+  }
+
   const updateData: Record<string, unknown> = { status };
+  const { data: { user } } = await supabase.auth.getUser();
 
   // Add additional fields based on status
   if (status === "confirmed") {
-    const { data: { user } } = await supabase.auth.getUser();
     updateData.confirmed_at = new Date().toISOString();
     updateData.confirmed_by = user?.id || null;
+
+    // Reserve inventory when order is confirmed
+    if (additionalFields?.locationId && currentOrder.status !== "confirmed") {
+      try {
+        const reservationResult = await reserveOrderItems(
+          id,
+          additionalFields.locationId,
+          user?.id
+        );
+        if (!reservationResult.success) {
+          console.warn("Some items could not be reserved:", reservationResult.errors);
+        }
+      } catch (reserveError) {
+        console.error("Failed to reserve inventory:", reserveError);
+        // Don't block the status update, just log the error
+      }
+    }
   }
 
   if (status === "shipped") {
@@ -287,6 +335,15 @@ export async function updateOutboundOrderStatus(
 
   if (status === "delivered") {
     updateData.delivered_date = new Date().toISOString();
+  }
+
+  // Release reservations when order is cancelled
+  if (status === "cancelled" && currentOrder.status === "confirmed" && additionalFields?.locationId) {
+    try {
+      await releaseOrderReservations(id, additionalFields.locationId, user?.id);
+    } catch (releaseError) {
+      console.error("Failed to release reservations:", releaseError);
+    }
   }
 
   const { data, error } = await supabase
@@ -307,6 +364,7 @@ export async function updateOutboundOrderStatus(
     action: "status_changed",
     details: {
       new_status: status,
+      previous_status: currentOrder.status,
       ...additionalFields,
     },
   });
@@ -316,13 +374,86 @@ export async function updateOutboundOrderStatus(
     sendOrderConfirmedEmail(id).catch((err) =>
       console.error("Failed to send confirmation email:", err)
     );
+  } else if (status === "packed") {
+    // Auto-assign boxes when order is packed based on products being shipped
+    autoAssignBoxesForOrder(id).then((result) => {
+      if (result.success && result.boxesAssigned.length > 0) {
+        console.log(`Auto-assigned boxes for order ${id}:`, result.boxesAssigned, `Total: $${result.totalCost}`);
+      } else if (result.error) {
+        console.warn(`Box auto-assignment skipped for order ${id}:`, result.error);
+      }
+    }).catch((err) =>
+      console.error("Failed to auto-assign boxes:", err)
+    );
   } else if (status === "shipped") {
     sendOrderShippedEmail(id).catch((err) =>
       console.error("Failed to send shipped email:", err)
     );
+    // Record billable events for shipping
+    recordOutboundUsage(id).catch((err) =>
+      console.error("Failed to record outbound usage:", err)
+    );
+    // Send internal alert for order shipped
+    (async () => {
+      try {
+        const { data: orderDetails } = await supabase
+          .from("outbound_orders")
+          .select(`
+            order_number,
+            carrier,
+            tracking_number,
+            client:clients (company_name),
+            items:outbound_items (qty_shipped)
+          `)
+          .eq("id", id)
+          .single();
+
+        if (orderDetails) {
+          const client = Array.isArray(orderDetails.client) ? orderDetails.client[0] : orderDetails.client;
+          const items = orderDetails.items as { qty_shipped: number }[];
+          sendInternalAlert("order_shipped", {
+            orderNumber: orderDetails.order_number,
+            clientName: (client as { company_name: string })?.company_name || "Unknown",
+            carrier: orderDetails.carrier,
+            trackingNumber: orderDetails.tracking_number,
+            itemCount: items.length,
+            totalUnits: items.reduce((sum, i) => sum + (i.qty_shipped || 0), 0),
+          }).catch((err) => console.error("Failed to send order_shipped alert:", err));
+        }
+      } catch (err) {
+        console.error("Failed to prepare order_shipped alert:", err);
+      }
+    })();
+    // Sync fulfillment to Shopify if this order came from Shopify
+    // The function internally checks if the order is from Shopify and has valid integration
+    if (additionalFields?.tracking_number && additionalFields?.carrier) {
+      syncFulfillmentToShopify(
+        id,
+        additionalFields.tracking_number,
+        additionalFields.carrier
+      ).catch((err) =>
+        console.error("Failed to sync fulfillment to Shopify:", err)
+      );
+    }
   } else if (status === "delivered") {
     sendOrderDeliveredEmail(id).catch((err) =>
       console.error("Failed to send delivered email:", err)
+    );
+  }
+
+  // Send portal notification to client for all status changes
+  if (data.client_id) {
+    const trackingDetails = (status === "shipped" && additionalFields?.tracking_number)
+      ? `Tracking: ${additionalFields.carrier || ""} ${additionalFields.tracking_number}`
+      : undefined;
+
+    sendPortalOrderNotification({
+      clientId: data.client_id,
+      orderNumber: data.order_number,
+      status,
+      details: trackingDetails,
+    }).catch((err) =>
+      console.error("Failed to send portal order notification:", err)
     );
   }
 
@@ -332,11 +463,12 @@ export async function updateOutboundOrderStatus(
 export async function shipOutboundItem(
   itemId: string,
   qtyShipped: number,
-  locationId: string
+  locationId: string,
+  performedBy?: string
 ): Promise<OutboundItemWithProduct> {
   const supabase = createClient();
 
-  // Get the item first
+  // Get the item first with order info
   const { data: item, error: itemError } = await supabase
     .from("outbound_items")
     .select(`
@@ -352,6 +484,12 @@ export async function shipOutboundItem(
 
   if (itemError) {
     throw new Error(itemError.message);
+  }
+
+  // Get user if not provided
+  if (!performedBy) {
+    const { data: { user } } = await supabase.auth.getUser();
+    performedBy = user?.id;
   }
 
   // Update the item's shipped quantity
@@ -376,21 +514,39 @@ export async function shipOutboundItem(
   // Calculate the difference to remove from inventory
   const qtyDiff = qtyShipped - item.qty_shipped;
 
-  if (qtyDiff !== 0) {
-    // Update inventory (negative qty_change to reduce stock)
-    const { error: inventoryError } = await supabase.rpc("update_inventory", {
-      p_product_id: item.product_id,
-      p_location_id: locationId,
-      p_qty_change: -qtyDiff,
-    });
-
-    if (inventoryError) {
-      // Rollback the item update
-      await supabase
-        .from("outbound_items")
-        .update({ qty_shipped: item.qty_shipped })
-        .eq("id", itemId);
-      throw new Error(inventoryError.message);
+  if (qtyDiff > 0) {
+    try {
+      // Release reservation and deduct from inventory using transaction logging
+      await releaseReservation({
+        productId: item.product_id,
+        locationId,
+        qtyToRelease: qtyDiff,
+        alsoDeduct: true, // This is a ship, so deduct from inventory
+        referenceType: "outbound_order",
+        referenceId: item.order_id,
+        performedBy,
+      });
+    } catch (reserveError) {
+      // If no reservation exists, fall back to direct transaction
+      console.warn("No reservation found, using direct deduction:", reserveError);
+      try {
+        await updateInventoryWithTransaction({
+          productId: item.product_id,
+          locationId,
+          qtyChange: -qtyDiff,
+          transactionType: "ship",
+          referenceType: "outbound_order",
+          referenceId: item.order_id,
+          performedBy,
+        });
+      } catch (inventoryError) {
+        // Rollback the item update
+        await supabase
+          .from("outbound_items")
+          .update({ qty_shipped: item.qty_shipped })
+          .eq("id", itemId);
+        throw new Error((inventoryError as Error).message);
+      }
     }
 
     // Log activity
@@ -405,6 +561,23 @@ export async function shipOutboundItem(
         location_id: locationId,
       },
     });
+  } else if (qtyDiff < 0) {
+    // Quantity decreased (rare case - shipping less than before)
+    // Add back to inventory
+    try {
+      await updateInventoryWithTransaction({
+        productId: item.product_id,
+        locationId,
+        qtyChange: Math.abs(qtyDiff),
+        transactionType: "adjust",
+        referenceType: "outbound_order",
+        referenceId: item.order_id,
+        reason: "Ship quantity adjustment - reduced",
+        performedBy,
+      });
+    } catch (inventoryError) {
+      console.error("Failed to adjust inventory for reduced ship qty:", inventoryError);
+    }
   }
 
   return updatedItem;
@@ -436,4 +609,181 @@ export async function deleteOutboundOrder(id: string): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export interface OutboundUsageRecord {
+  id: string;
+  client_id: string;
+  service_id: string | null;
+  addon_id: string | null;
+  usage_type: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
+  reference_type: string | null;
+  reference_id: string | null;
+  usage_date: string;
+  invoiced: boolean;
+  invoice_id: string | null;
+  notes: string | null;
+}
+
+export interface OutboundSupplyUsage {
+  id: string;
+  supply_id: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
+  supply: {
+    id: string;
+    sku: string;
+    name: string;
+  };
+}
+
+export interface OutboundWithUsage extends OutboundOrderWithItems {
+  usage_records: OutboundUsageRecord[];
+  supply_usage: OutboundSupplyUsage[];
+}
+
+export async function recordOutboundUsage(orderId: string): Promise<void> {
+  const supabase = createClient();
+
+  // Get the order with items
+  const { data: order, error: orderError } = await supabase
+    .from("outbound_orders")
+    .select(`
+      *,
+      items:outbound_items (
+        qty_shipped,
+        product:products (id, sku, name)
+      )
+    `)
+    .eq("id", orderId)
+    .single();
+
+  if (orderError) {
+    throw new Error(orderError.message);
+  }
+
+  if (!order.client_id) {
+    return; // No client, no usage to record
+  }
+
+  // Calculate total items shipped
+  const totalItemsShipped = (order.items || []).reduce(
+    (sum: number, item: any) => sum + (item.qty_shipped || 0),
+    0
+  );
+
+  if (totalItemsShipped === 0) {
+    return; // No items shipped, no usage to record
+  }
+
+  const usageDate = new Date().toISOString().split("T")[0];
+
+  // Record billable events using rate cards
+  // 7 Degrees pricing: $1.00/unit for outgoing handling (cases/bottles)
+  try {
+    await supabase.rpc("record_billable_event", {
+      p_client_id: order.client_id,
+      p_rate_code: "PICK_UNIT",
+      p_quantity: totalItemsShipped,
+      p_reference_type: "outbound_order",
+      p_reference_id: orderId,
+      p_usage_date: usageDate,
+      p_notes: `Order ${order.order_number} - Outgoing handling: ${totalItemsShipped} cases/bottles`,
+    });
+  } catch (billingError) {
+    // Log error but don't fail the operation
+    console.error("Failed to record billable events:", billingError);
+  }
+
+  // Also record to legacy fulfillment service if configured
+  const { data: clientService } = await supabase
+    .from("client_services")
+    .select(`
+      id,
+      service_id,
+      custom_price,
+      service:services (id, name, base_price, price_unit)
+    `)
+    .eq("client_id", order.client_id)
+    .eq("is_active", true)
+    .single();
+
+  if (clientService) {
+    const service = clientService.service as any;
+    const unitPrice = clientService.custom_price ?? service?.base_price ?? 0;
+
+    const { error: usageError } = await supabase
+      .from("usage_records")
+      .insert({
+        client_id: order.client_id,
+        service_id: clientService.service_id,
+        usage_type: "fulfillment",
+        quantity: totalItemsShipped,
+        unit_price: unitPrice,
+        total: totalItemsShipped * unitPrice,
+        reference_type: "outbound_order",
+        reference_id: orderId,
+        usage_date: usageDate,
+        invoiced: false,
+        notes: `Order ${order.order_number} - ${totalItemsShipped} items`,
+      });
+
+    if (usageError) {
+      console.error("Failed to record fulfillment usage:", usageError.message);
+    }
+  }
+}
+
+export async function getOutboundWithUsage(id: string): Promise<OutboundWithUsage | null> {
+  const supabase = createClient();
+
+  // Get the order with items
+  const order = await getOutboundOrder(id);
+  if (!order) {
+    return null;
+  }
+
+  // Get usage records for this order
+  const { data: usageRecords, error: usageError } = await supabase
+    .from("usage_records")
+    .select("*")
+    .eq("reference_type", "outbound_order")
+    .eq("reference_id", id);
+
+  if (usageError) {
+    throw new Error(usageError.message);
+  }
+
+  // Get supply usage for this order
+  const { data: supplyUsage, error: supplyError } = await supabase
+    .from("supply_usage")
+    .select(`
+      id,
+      supply_id,
+      quantity,
+      unit_price,
+      total,
+      supply:supplies (id, sku, name)
+    `)
+    .eq("order_id", id);
+
+  if (supplyError) {
+    throw new Error(supplyError.message);
+  }
+
+  // Transform supply_usage to handle Supabase's array return for joins
+  const transformedSupplyUsage = (supplyUsage || []).map((usage: any) => ({
+    ...usage,
+    supply: Array.isArray(usage.supply) ? usage.supply[0] : usage.supply,
+  }));
+
+  return {
+    ...order,
+    usage_records: usageRecords || [],
+    supply_usage: transformedSupplyUsage,
+  };
 }

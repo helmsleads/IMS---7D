@@ -5,7 +5,7 @@ import { Inbox, LayoutGrid, LayoutList } from "lucide-react";
 
 interface Column<T> {
   key: string;
-  header: string;
+  header: ReactNode;
   render?: (item: T) => ReactNode;
   /** Hide this column on mobile table view */
   hideOnMobile?: boolean;
@@ -22,6 +22,8 @@ interface TableProps<T> {
   emptyIcon?: ReactNode;
   /** Force a specific view mode */
   mobileView?: "table" | "cards";
+  /** Custom row class name function for conditional styling */
+  rowClassName?: (item: T) => string;
 }
 
 export default function Table<T extends object>({
@@ -32,6 +34,7 @@ export default function Table<T extends object>({
   emptyMessage = "No data available",
   emptyIcon,
   mobileView = "cards",
+  rowClassName,
 }: TableProps<T>) {
   const [viewMode, setViewMode] = useState<"table" | "cards">(mobileView);
 
@@ -140,7 +143,7 @@ export default function Table<T extends object>({
               onClick={() => onRowClick?.(item)}
               className={`p-4 ${
                 onRowClick ? "cursor-pointer hover:bg-gray-50 active:bg-gray-100" : ""
-              }`}
+              } ${rowClassName?.(item) || ""}`}
             >
               {/* Primary row: title + actions */}
               <div className="flex items-start justify-between gap-3">
@@ -212,6 +215,7 @@ export default function Table<T extends object>({
                   className={`
                     border-b border-gray-100
                     ${onRowClick ? "cursor-pointer hover:bg-gray-50" : ""}
+                    ${rowClassName?.(item) || ""}
                   `}
                 >
                   {mobileTableColumns.map((column) => (
@@ -252,6 +256,7 @@ export default function Table<T extends object>({
                 className={`
                   border-b border-gray-100
                   ${onRowClick ? "cursor-pointer hover:bg-gray-50" : ""}
+                  ${rowClassName?.(item) || ""}
                 `}
               >
                 {columns.map((column) => (

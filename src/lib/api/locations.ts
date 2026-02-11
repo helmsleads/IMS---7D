@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase";
+import { LocationType } from "@/types/database";
 
 export interface Location {
   id: string;
@@ -10,6 +11,10 @@ export interface Location {
   zip: string | null;
   active: boolean;
   created_at: string;
+  location_type: LocationType;
+  is_pickable: boolean;
+  capacity: number | null;
+  current_occupancy: number;
 }
 
 export async function getLocations(): Promise<Location[]> {
@@ -126,4 +131,91 @@ export async function deleteLocation(id: string): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export async function getLocationsByType(type: LocationType): Promise<Location[]> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("locations")
+    .select("*")
+    .eq("location_type", type)
+    .eq("active", true)
+    .order("name");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data || [];
+}
+
+export async function updateLocationType(
+  id: string,
+  type: LocationType
+): Promise<Location> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("locations")
+    .update({ location_type: type })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+export async function getPickableLocations(): Promise<Location[]> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("locations")
+    .select("*")
+    .eq("is_pickable", true)
+    .eq("active", true)
+    .order("name");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data || [];
+}
+
+export async function updateLocationOccupancy(id: string): Promise<Location> {
+  const supabase = createClient();
+
+  // Calculate total inventory quantity at this location
+  const { data: inventory, error: invError } = await supabase
+    .from("inventory")
+    .select("qty_on_hand")
+    .eq("location_id", id);
+
+  if (invError) {
+    throw new Error(invError.message);
+  }
+
+  const currentOccupancy = (inventory || []).reduce(
+    (sum, item) => sum + (item.qty_on_hand || 0),
+    0
+  );
+
+  // Update the location
+  const { data, error } = await supabase
+    .from("locations")
+    .update({ current_occupancy: currentOccupancy })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
 }

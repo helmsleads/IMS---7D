@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Package, MapPin, ClipboardCheck, Check, Plus, Building2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Package, MapPin, ClipboardCheck, Check, Plus, Building2, AlertCircle, CheckCircle2, FileText, Zap, X, FolderOpen, DollarSign, Truck } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
+import { getMyTemplate, getMyTemplates, PortalTemplate } from "@/lib/api/portal-templates";
+import { getMyServices } from "@/lib/api/portal-services";
 
 interface ShippingAddress {
   id: string;
@@ -40,6 +42,7 @@ interface AdditionalInfo {
   notes: string;
   isRushOrder: boolean;
   preferredCarrier: string;
+  requiresRepack: boolean;
 }
 
 const CARRIERS = [
@@ -61,10 +64,15 @@ const STEPS = [
 
 export default function RequestShipmentPage() {
   const { client } = useClient();
+  const searchParams = useSearchParams();
+  const templateId = searchParams.get("templateId");
+
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<SelectedProduct[]>([]);
   const [loadingInventory, setLoadingInventory] = useState(true);
+  const [templateName, setTemplateName] = useState<string | null>(null);
+  const [templateLoading, setTemplateLoading] = useState(!!templateId);
   const [savedAddresses, setSavedAddresses] = useState<ShippingAddress[]>([]);
   const [shippingAddress, setShippingAddress] = useState<ShippingAddress>({
     id: "new",
@@ -81,7 +89,12 @@ export default function RequestShipmentPage() {
     notes: "",
     isRushOrder: false,
     preferredCarrier: "",
+    requiresRepack: true,
   });
+  const [hasRushAddon, setHasRushAddon] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templates, setTemplates] = useState<PortalTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
 
   // Fetch inventory items for this client
   useEffect(() => {
@@ -121,9 +134,66 @@ export default function RequestShipmentPage() {
 
       setInventoryItems(items);
       setLoadingInventory(false);
+
+      // Check for items from localStorage cart (from inventory quick add)
+      const cartData = localStorage.getItem("shipment_cart");
+      if (cartData) {
+        try {
+          const cartItems = JSON.parse(cartData);
+          if (Array.isArray(cartItems) && cartItems.length > 0) {
+            // Validate and add cart items to selected products
+            const validCartItems = cartItems.filter((cartItem: SelectedProduct) => {
+              const inventoryItem = items.find((inv) => inv.product_id === cartItem.product_id);
+              return inventoryItem && cartItem.qty_to_ship > 0;
+            }).map((cartItem: SelectedProduct) => {
+              const inventoryItem = items.find((inv) => inv.product_id === cartItem.product_id);
+              return {
+                ...cartItem,
+                qty_available: inventoryItem?.qty_available || cartItem.qty_available,
+                qty_to_ship: Math.min(cartItem.qty_to_ship, inventoryItem?.qty_available || cartItem.qty_to_ship),
+              };
+            });
+
+            if (validCartItems.length > 0) {
+              setSelectedProducts(validCartItems);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to parse shipment cart:", e);
+        }
+        // Clear the cart after loading
+        localStorage.removeItem("shipment_cart");
+      }
     };
 
     fetchInventory();
+  }, [client]);
+
+  // Check if client has rush processing add-on
+  useEffect(() => {
+    const checkRushAddon = async () => {
+      if (!client) return;
+
+      try {
+        const services = await getMyServices(client.id);
+        // Check if any active service has an active "rush" add-on
+        const hasRush = services.some((service) =>
+          service.is_active &&
+          service.addons.some(
+            (addon) =>
+              addon.is_active &&
+              (addon.addon_name.toLowerCase().includes("rush") ||
+                addon.addon_name.toLowerCase().includes("priority") ||
+                addon.addon_name.toLowerCase().includes("expedited"))
+          )
+        );
+        setHasRushAddon(hasRush);
+      } catch (err) {
+        console.error("Failed to check rush add-on:", err);
+      }
+    };
+
+    checkRushAddon();
   }, [client]);
 
   // Fetch saved addresses from client profile
@@ -164,6 +234,121 @@ export default function RequestShipmentPage() {
     fetchAddresses();
   }, [client]);
 
+  // Load template data if templateId is provided
+  useEffect(() => {
+    const loadTemplate = async () => {
+      if (!client || !templateId || inventoryItems.length === 0) return;
+
+      try {
+        const template = await getMyTemplate(client.id, templateId);
+        if (!template) {
+          setTemplateLoading(false);
+          return;
+        }
+
+        setTemplateName(template.name);
+
+        // Pre-fill products from template
+        const products: SelectedProduct[] = [];
+        for (const item of template.items) {
+          // Find matching inventory item
+          const invItem = inventoryItems.find((inv) => inv.product_id === item.product_id);
+          if (invItem) {
+            products.push({
+              inventory_id: invItem.id,
+              product_id: item.product_id,
+              product_name: item.product_name,
+              sku: item.product_sku,
+              qty_to_ship: Math.min(item.quantity, invItem.qty_available),
+              qty_available: invItem.qty_available,
+            });
+          }
+        }
+        setSelectedProducts(products);
+
+        // Pre-fill address from template if available
+        if (template.address) {
+          const templateAddr = savedAddresses.find((a) => a.id === template.address_id);
+          if (templateAddr) {
+            setShippingAddress(templateAddr);
+          }
+        }
+
+        setTemplateLoading(false);
+      } catch (err) {
+        console.error("Failed to load template:", err);
+        setTemplateLoading(false);
+      }
+    };
+
+    loadTemplate();
+  }, [client, templateId, inventoryItems, savedAddresses]);
+
+  // Open template modal and fetch templates
+  const openTemplateModal = async () => {
+    if (!client) return;
+
+    setShowTemplateModal(true);
+    setLoadingTemplates(true);
+
+    try {
+      const data = await getMyTemplates(client.id);
+      setTemplates(data);
+    } catch (err) {
+      console.error("Failed to fetch templates:", err);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
+  // Apply selected template
+  const applyTemplate = async (selectedTemplateId: string) => {
+    if (!client) return;
+
+    try {
+      const template = await getMyTemplate(client.id, selectedTemplateId);
+      if (!template) return;
+
+      setTemplateName(template.name);
+
+      // Pre-fill products from template
+      const products: SelectedProduct[] = [];
+      for (const item of template.items) {
+        // Find matching inventory item
+        const invItem = inventoryItems.find((inv) => inv.product_id === item.product_id);
+        if (invItem) {
+          products.push({
+            inventory_id: invItem.id,
+            product_id: item.product_id,
+            product_name: item.product_name,
+            sku: item.product_sku,
+            qty_to_ship: Math.min(item.quantity, invItem.qty_available),
+            qty_available: invItem.qty_available,
+          });
+        }
+      }
+      setSelectedProducts(products);
+
+      // Pre-fill address from template if available
+      if (template.address_id) {
+        const templateAddr = savedAddresses.find((a) => a.id === template.address_id);
+        if (templateAddr) {
+          setShippingAddress(templateAddr);
+        }
+      }
+
+      setShowTemplateModal(false);
+    } catch (err) {
+      console.error("Failed to apply template:", err);
+    }
+  };
+
+  // Clear template
+  const clearTemplate = () => {
+    setTemplateName(null);
+    setSelectedProducts([]);
+  };
+
   const goToStep = (step: Step) => {
     setCurrentStep(step);
   };
@@ -180,14 +365,45 @@ export default function RequestShipmentPage() {
     }
   };
 
+  // Show loading state while template is being loaded
+  if (templateLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Request Shipment</h1>
-        <p className="text-gray-500 mt-1">
-          Create a new outbound order to ship your products
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Request Shipment</h1>
+          <p className="text-gray-500 mt-1">
+            Create a new outbound order to ship your products
+          </p>
+          {templateName && (
+            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm">
+              <FileText className="w-4 h-4" />
+              Using template: <span className="font-medium">{templateName}</span>
+              <button
+                onClick={clearTemplate}
+                className="ml-1 p-0.5 hover:bg-blue-100 rounded"
+                title="Clear template"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+        <button
+          onClick={openTemplateModal}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+        >
+          <FolderOpen className="w-4 h-4" />
+          Load from Template
+        </button>
       </div>
 
       {/* Step Indicator */}
@@ -280,6 +496,7 @@ export default function RequestShipmentPage() {
             setShippingAddress={setShippingAddress}
             additionalInfo={additionalInfo}
             setAdditionalInfo={setAdditionalInfo}
+            hasRushAddon={hasRushAddon}
           />
         )}
         {currentStep === 3 && client && (
@@ -293,6 +510,90 @@ export default function RequestShipmentPage() {
           />
         )}
       </div>
+
+      {/* Template Selection Modal */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Load from Template</h2>
+                <p className="text-sm text-gray-500">Select a template to pre-fill your order</p>
+              </div>
+              <button
+                onClick={() => setShowTemplateModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {loadingTemplates ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+                </div>
+              ) : templates.length === 0 ? (
+                <div className="text-center py-12">
+                  <FolderOpen className="w-12 h-12 mx-auto text-gray-300 mb-4" />
+                  <p className="text-gray-500">No templates found</p>
+                  <p className="text-sm text-gray-400 mt-1">
+                    Create templates from the Templates page to use them here
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {templates.map((template) => (
+                    <button
+                      key={template.id}
+                      onClick={() => applyTemplate(template.id)}
+                      className="w-full text-left p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="p-2 bg-gray-100 rounded-lg">
+                          <FileText className="w-5 h-5 text-gray-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900">{template.name}</p>
+                          {template.description && (
+                            <p className="text-sm text-gray-500 mt-0.5 truncate">
+                              {template.description}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                            <span className="flex items-center gap-1">
+                              <Package className="w-3.5 h-3.5" />
+                              {template.item_count} item{template.item_count !== 1 ? "s" : ""}
+                            </span>
+                            {template.address && (
+                              <span className="flex items-center gap-1">
+                                <MapPin className="w-3.5 h-3.5" />
+                                {template.address.city}, {template.address.state}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-gray-200">
+              <button
+                onClick={() => setShowTemplateModal(false)}
+                className="w-full px-4 py-2.5 text-gray-700 font-medium rounded-xl border border-gray-300 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -621,6 +922,7 @@ function StepShippingDetails({
   setShippingAddress,
   additionalInfo,
   setAdditionalInfo,
+  hasRushAddon,
 }: {
   onNext: () => void;
   onBack: () => void;
@@ -629,14 +931,10 @@ function StepShippingDetails({
   setShippingAddress: (address: ShippingAddress) => void;
   additionalInfo: AdditionalInfo;
   setAdditionalInfo: (info: AdditionalInfo) => void;
+  hasRushAddon: boolean;
 }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [showNewAddressForm, setShowNewAddressForm] = useState(false);
-
   const handleSelectAddress = (address: ShippingAddress) => {
     setShippingAddress(address);
-    setIsEditing(false);
-    setShowNewAddressForm(false);
   };
 
   const handleNewAddress = () => {
@@ -651,9 +949,9 @@ function StepShippingDetails({
       country: "USA",
       is_default: false,
     });
-    setShowNewAddressForm(true);
-    setIsEditing(true);
   };
+
+  const isNewAddress = shippingAddress.id === "new";
 
   const handleFieldChange = (field: keyof ShippingAddress, value: string) => {
     setShippingAddress({ ...shippingAddress, [field]: value });
@@ -671,83 +969,85 @@ function StepShippingDetails({
         </p>
       </div>
 
-      {/* Saved Addresses */}
-      {savedAddresses.length > 0 && !showNewAddressForm && (
-        <div className="space-y-3">
-          <p className="text-sm font-medium text-gray-700">Saved Addresses</p>
-          <div className="grid gap-3">
-            {savedAddresses.map((address) => (
-              <button
-                key={address.id}
-                onClick={() => handleSelectAddress(address)}
-                className={`
-                  text-left p-4 rounded-xl border-2 transition-colors
-                  ${shippingAddress.id === address.id && !isEditing
-                    ? "border-blue-600 bg-blue-50"
-                    : "border-gray-200 hover:border-gray-300"
-                  }
-                `}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-gray-100 rounded-lg">
-                    <Building2 className="w-4 h-4 text-gray-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900">{address.label || "Address"}</span>
-                      {address.is_default && (
-                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
-                          Default
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {address.address_line1}
-                      {address.address_line2 && `, ${address.address_line2}`}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      {address.city}, {address.state} {address.postal_code}
-                    </p>
-                  </div>
-                  {shippingAddress.id === address.id && !isEditing && (
-                    <Check className="w-5 h-5 text-blue-600" />
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {/* Add New Address Button */}
-          <button
-            onClick={handleNewAddress}
-            className="flex items-center gap-2 text-blue-600 hover:text-blue-700 text-sm font-medium mt-2"
+      {/* Address Dropdown - Only show if there are saved addresses */}
+      {savedAddresses.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Ship To
+          </label>
+          <select
+            value={shippingAddress.id}
+            onChange={(e) => {
+              const selectedId = e.target.value;
+              if (selectedId === "new") {
+                handleNewAddress();
+              } else {
+                const selected = savedAddresses.find((a) => a.id === selectedId);
+                if (selected) {
+                  handleSelectAddress(selected);
+                }
+              }
+            }}
+            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            <Plus className="w-4 h-4" />
-            Use a different address
-          </button>
+            {savedAddresses.map((address) => (
+              <option key={address.id} value={address.id}>
+                {address.label || "Address"} - {address.address_line1}, {address.city}, {address.state} {address.postal_code}
+                {address.is_default ? " (Default)" : ""}
+              </option>
+            ))}
+            <option value="new">+ Use New Address</option>
+          </select>
         </div>
       )}
 
-      {/* Address Form - Show if no saved addresses, editing, or adding new */}
-      {(savedAddresses.length === 0 || isEditing || showNewAddressForm) && (
-        <div className="space-y-4">
-          {savedAddresses.length > 0 && showNewAddressForm && (
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-gray-700">New Address</p>
+      {/* Selected Address Preview (when saved address is selected) */}
+      {!isNewAddress && savedAddresses.length > 0 && shippingAddress.address_line1 && (
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Building2 className="w-4 h-4 text-blue-600" />
+            </div>
+            <div className="flex-1">
+              <p className="font-medium text-gray-900">
+                {shippingAddress.label || "Shipping Address"}
+                {shippingAddress.is_default && (
+                  <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
+                    Default
+                  </span>
+                )}
+              </p>
+              <p className="text-sm text-gray-600 mt-1">{shippingAddress.address_line1}</p>
+              {shippingAddress.address_line2 && (
+                <p className="text-sm text-gray-600">{shippingAddress.address_line2}</p>
+              )}
+              <p className="text-sm text-gray-600">
+                {shippingAddress.city}, {shippingAddress.state} {shippingAddress.postal_code}
+              </p>
+              <p className="text-sm text-gray-500">{shippingAddress.country}</p>
+            </div>
+            <Check className="w-5 h-5 text-blue-600" />
+          </div>
+        </div>
+      )}
+
+      {/* New Address Form - Show when "Use New Address" is selected OR no saved addresses */}
+      {(isNewAddress || savedAddresses.length === 0) && (
+        <div className="space-y-4 p-4 bg-gray-50 border border-gray-200 rounded-xl">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-gray-700">New Address Details</p>
+            {savedAddresses.length > 0 && (
               <button
                 onClick={() => {
-                  setShowNewAddressForm(false);
-                  setIsEditing(false);
-                  if (savedAddresses.length > 0) {
-                    setShippingAddress(savedAddresses[0]);
-                  }
+                  // Go back to first saved address
+                  setShippingAddress(savedAddresses[0]);
                 }}
                 className="text-sm text-gray-500 hover:text-gray-700"
               >
                 Cancel
               </button>
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
@@ -759,7 +1059,7 @@ function StepShippingDetails({
                 value={shippingAddress.address_line1}
                 onChange={(e) => handleFieldChange("address_line1", e.target.value)}
                 placeholder="Street address"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
@@ -772,7 +1072,7 @@ function StepShippingDetails({
                 value={shippingAddress.address_line2}
                 onChange={(e) => handleFieldChange("address_line2", e.target.value)}
                 placeholder="Apt, suite, unit, etc. (optional)"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
@@ -785,7 +1085,7 @@ function StepShippingDetails({
                 value={shippingAddress.city}
                 onChange={(e) => handleFieldChange("city", e.target.value)}
                 placeholder="City"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
@@ -798,7 +1098,7 @@ function StepShippingDetails({
                 value={shippingAddress.state}
                 onChange={(e) => handleFieldChange("state", e.target.value)}
                 placeholder="State"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
@@ -811,7 +1111,7 @@ function StepShippingDetails({
                 value={shippingAddress.postal_code}
                 onChange={(e) => handleFieldChange("postal_code", e.target.value)}
                 placeholder="ZIP / Postal code"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
@@ -824,34 +1124,9 @@ function StepShippingDetails({
                 value={shippingAddress.country}
                 onChange={(e) => handleFieldChange("country", e.target.value)}
                 placeholder="Country"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Selected Address Preview (when not editing and address selected) */}
-      {!isEditing && !showNewAddressForm && savedAddresses.length === 0 && shippingAddress.address_line1 && (
-        <div className="p-4 bg-gray-50 rounded-xl">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-1">Shipping to:</p>
-              <p className="text-gray-900">{shippingAddress.address_line1}</p>
-              {shippingAddress.address_line2 && (
-                <p className="text-gray-900">{shippingAddress.address_line2}</p>
-              )}
-              <p className="text-gray-900">
-                {shippingAddress.city}, {shippingAddress.state} {shippingAddress.postal_code}
-              </p>
-              <p className="text-gray-600">{shippingAddress.country}</p>
-            </div>
-            <button
-              onClick={() => setIsEditing(true)}
-              className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-            >
-              Edit
-            </button>
           </div>
         </div>
       )}
@@ -879,22 +1154,41 @@ function StepShippingDetails({
           />
         </div>
 
-        {/* Rush Order Checkbox */}
-        <div className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            id="rushOrder"
-            checked={additionalInfo.isRushOrder}
-            onChange={(e) => setAdditionalInfo({ ...additionalInfo, isRushOrder: e.target.checked })}
-            className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-          />
-          <label htmlFor="rushOrder" className="cursor-pointer">
-            <span className="block text-sm font-medium text-gray-900">Rush Order</span>
-            <span className="block text-sm text-gray-500">
-              Flag this shipment as urgent for priority processing
-            </span>
-          </label>
-        </div>
+        {/* Rush Processing Toggle - Only show if client has the add-on */}
+        {hasRushAddon && (
+          <div className="flex items-center justify-between p-4 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <Zap className="w-5 h-5 text-orange-600" />
+              </div>
+              <div>
+                <span className="block text-sm font-medium text-gray-900">Rush Processing</span>
+                <span className="block text-sm text-gray-500">
+                  Priority handling for faster fulfillment
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={additionalInfo.isRushOrder}
+              onClick={() => setAdditionalInfo({ ...additionalInfo, isRushOrder: !additionalInfo.isRushOrder })}
+              className={`
+                relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
+                transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2
+                ${additionalInfo.isRushOrder ? "bg-orange-500" : "bg-gray-200"}
+              `}
+            >
+              <span
+                className={`
+                  pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0
+                  transition duration-200 ease-in-out
+                  ${additionalInfo.isRushOrder ? "translate-x-5" : "translate-x-0"}
+                `}
+              />
+            </button>
+          </div>
+        )}
 
         {/* Preferred Carrier */}
         <div>
@@ -915,6 +1209,43 @@ function StepShippingDetails({
           <p className="text-xs text-gray-500 mt-1">
             We'll do our best to accommodate your preference
           </p>
+        </div>
+
+        {/* Packaging Option */}
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-white rounded-lg">
+              <Package className="w-5 h-5 text-gray-600" />
+            </div>
+            <div>
+              <span className="block text-sm font-medium text-gray-900">Requires Repacking</span>
+              <span className="block text-sm text-gray-500">
+                {additionalInfo.requiresRepack
+                  ? "Items will be packed into shipping boxes"
+                  : "Ship in original cases (no box fees)"
+                }
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={additionalInfo.requiresRepack}
+            onClick={() => setAdditionalInfo({ ...additionalInfo, requiresRepack: !additionalInfo.requiresRepack })}
+            className={`
+              relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
+              transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+              ${additionalInfo.requiresRepack ? "bg-blue-600" : "bg-gray-200"}
+            `}
+          >
+            <span
+              className={`
+                pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0
+                transition duration-200 ease-in-out
+                ${additionalInfo.requiresRepack ? "translate-x-5" : "translate-x-0"}
+              `}
+            />
+          </button>
         </div>
       </div>
 
@@ -1007,6 +1338,7 @@ function StepReviewSubmit({
           client_id: clientId,
           order_number: orderNumber,
           status: "pending",
+          source: "portal",
           ship_to_address: shippingAddress.address_line1,
           ship_to_address2: shippingAddress.address_line2 || null,
           ship_to_city: shippingAddress.city,
@@ -1016,6 +1348,7 @@ function StepReviewSubmit({
           notes: additionalInfo.notes || null,
           is_rush: additionalInfo.isRushOrder,
           preferred_carrier: additionalInfo.preferredCarrier || null,
+          requires_repack: additionalInfo.requiresRepack,
         })
         .select("id")
         .single();
@@ -1195,11 +1528,14 @@ function StepReviewSubmit({
           {(additionalInfo.notes || additionalInfo.isRushOrder || additionalInfo.preferredCarrier) ? (
             <div className="space-y-3">
               {additionalInfo.isRushOrder && (
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-1 bg-orange-100 text-orange-700 text-xs font-medium rounded-full">
-                    Rush Order
-                  </span>
-                  <span className="text-sm text-gray-600">Priority processing requested</span>
+                <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-lg">
+                  <div className="p-1.5 bg-orange-100 rounded-lg">
+                    <Zap className="w-4 h-4 text-orange-600" />
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-orange-700">Rush Processing Enabled</span>
+                    <span className="block text-xs text-orange-600">Priority handling for faster fulfillment</span>
+                  </div>
                 </div>
               )}
               {additionalInfo.preferredCarrier && (
@@ -1222,6 +1558,72 @@ function StepReviewSubmit({
           ) : (
             <p className="text-sm text-gray-500 italic">No additional details provided</p>
           )}
+        </div>
+      </div>
+
+      {/* Estimated Costs */}
+      <div className="border border-gray-200 rounded-xl overflow-hidden">
+        <div className="flex items-center gap-2 p-4 bg-gray-50 border-b border-gray-200">
+          <DollarSign className="w-4 h-4 text-gray-500" />
+          <h3 className="font-medium text-gray-900">Estimated Costs</h3>
+        </div>
+        <div className="p-4">
+          <div className="space-y-3">
+            {/* Fulfillment Fee */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Package className="w-4 h-4 text-gray-400" />
+                <span className="text-sm text-gray-600">Fulfillment Fee</span>
+                <span className="text-xs text-gray-400">({totalItems} items @ $0.50/item)</span>
+              </div>
+              <span className="text-sm font-medium text-gray-900">
+                ${(totalItems * 0.50).toFixed(2)}
+              </span>
+            </div>
+
+            {/* Estimated Shipping */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Truck className="w-4 h-4 text-gray-400" />
+                <span className="text-sm text-gray-600">Estimated Shipping</span>
+              </div>
+              <span className="text-sm font-medium text-gray-500 italic">
+                TBD
+              </span>
+            </div>
+
+            {/* Rush Fee - Only show if rush is selected */}
+            {additionalInfo.isRushOrder && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-orange-500" />
+                  <span className="text-sm text-gray-600">Rush Processing Fee</span>
+                </div>
+                <span className="text-sm font-medium text-orange-600">
+                  $15.00
+                </span>
+              </div>
+            )}
+
+            {/* Divider */}
+            <div className="border-t border-gray-200 pt-3 mt-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Estimated Total</span>
+                <span className="text-lg font-bold text-gray-900">
+                  ${((totalItems * 0.50) + (additionalInfo.isRushOrder ? 15 : 0)).toFixed(2)}
+                  <span className="text-sm font-normal text-gray-500 ml-1">+ shipping</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Disclaimer */}
+          <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-xs text-amber-700">
+              <span className="font-medium">Note:</span> Actual costs may vary based on final weight, dimensions, shipping destination, and carrier rates.
+              You will receive a final invoice after your order ships.
+            </p>
+          </div>
         </div>
       </div>
 

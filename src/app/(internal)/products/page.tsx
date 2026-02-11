@@ -13,7 +13,10 @@ import Modal from "@/components/ui/Modal";
 import Alert from "@/components/ui/Alert";
 import FetchError from "@/components/ui/FetchError";
 import ProductForm from "@/components/internal/ProductForm";
-import { getProducts, createProduct, updateProduct, deleteProduct, Product } from "@/lib/api/products";
+import { getProducts, createProduct, updateProduct, deleteProduct, Product, ProductWithCategory } from "@/lib/api/products";
+import { getCategories } from "@/lib/api/product-categories";
+import { getClients, Client } from "@/lib/api/clients";
+import { ProductCategory } from "@/types/database";
 import { handleApiError } from "@/lib/utils/error-handler";
 import Pagination from "@/components/ui/Pagination";
 
@@ -29,21 +32,45 @@ const formatCurrency = (value: number) => {
 const columns = [
   { key: "sku", header: "SKU" },
   { key: "name", header: "Name" },
-  { key: "category", header: "Category" },
+  {
+    key: "client",
+    header: "Client",
+    render: (product: ProductWithCategory) => (
+      <span className={product.client ? "text-gray-900" : "text-gray-400"}>
+        {product.client?.company_name || "—"}
+      </span>
+    ),
+  },
+  {
+    key: "category",
+    header: "Category",
+    render: (product: ProductWithCategory) => {
+      const categoryName = product.product_category?.name || product.category || "—";
+      const subcategoryName = product.product_subcategory?.name;
+      return (
+        <div>
+          <div className="font-medium">{categoryName}</div>
+          {subcategoryName && (
+            <div className="text-xs text-gray-500">{subcategoryName}</div>
+          )}
+        </div>
+      );
+    },
+  },
   {
     key: "unit_cost",
     header: "Cost",
-    render: (product: Product) => formatCurrency(product.unit_cost),
+    render: (product: ProductWithCategory) => formatCurrency(product.unit_cost),
   },
   {
     key: "base_price",
     header: "Price",
-    render: (product: Product) => formatCurrency(product.base_price),
+    render: (product: ProductWithCategory) => formatCurrency(product.base_price),
   },
   {
     key: "active",
     header: "Status",
-    render: (product: Product) => (
+    render: (product: ProductWithCategory) => (
       <Badge variant={product.active ? "success" : "default"}>
         {product.active ? "Active" : "Inactive"}
       </Badge>
@@ -52,22 +79,31 @@ const columns = [
 ];
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<ProductWithCategory[]>([]);
+  const [categoryList, setCategoryList] = useState<ProductCategory[]>([]);
+  const [clientList, setClientList] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedClient, setSelectedClient] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingProduct, setEditingProduct] = useState<ProductWithCategory | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
 
   const fetchProducts = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getProducts();
-      setProducts(data);
+      const [productsData, categoriesData, clientsData] = await Promise.all([
+        getProducts(),
+        getCategories(),
+        getClients(),
+      ]);
+      setProducts(productsData);
+      setCategoryList(categoriesData);
+      setClientList(clientsData);
     } catch (err) {
       setError(handleApiError(err));
     } finally {
@@ -79,6 +115,8 @@ export default function ProductsPage() {
     fetchProducts();
   }, []);
 
+  const [errorMessage, setErrorMessage] = useState("");
+
   const handleSaveProduct = async (productData: Partial<Product>) => {
     try {
       await createProduct(productData);
@@ -87,7 +125,10 @@ export default function ProductsPage() {
       setSuccessMessage("Product created successfully");
       setTimeout(() => setSuccessMessage(""), 3000);
     } catch (error) {
-      console.error("Failed to create product:", error);
+      const message = error instanceof Error ? error.message : "Failed to create product";
+      setErrorMessage(message);
+      setTimeout(() => setErrorMessage(""), 5000);
+      throw error; // Re-throw so form knows save failed
     }
   };
 
@@ -100,7 +141,10 @@ export default function ProductsPage() {
       setSuccessMessage("Product updated successfully");
       setTimeout(() => setSuccessMessage(""), 3000);
     } catch (error) {
-      console.error("Failed to update product:", error);
+      const message = error instanceof Error ? error.message : "Failed to update product";
+      setErrorMessage(message);
+      setTimeout(() => setErrorMessage(""), 5000);
+      throw error; // Re-throw so form knows save failed
     }
   };
 
@@ -118,9 +162,18 @@ export default function ProductsPage() {
   };
 
   const categoryOptions = useMemo(() => {
-    const categories = [...new Set(products.map((p) => p.category).filter(Boolean))];
-    return categories.map((cat) => ({ value: cat!, label: cat! }));
-  }, [products]);
+    return categoryList.map((cat) => ({
+      value: cat.id,
+      label: `${cat.icon || ""} ${cat.name}`.trim(),
+    }));
+  }, [categoryList]);
+
+  const clientOptions = useMemo(() => {
+    return clientList.map((client) => ({
+      value: client.id,
+      label: client.company_name,
+    }));
+  }, [clientList]);
 
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
@@ -129,15 +182,17 @@ export default function ProductsPage() {
         product.sku.toLowerCase().includes(search) ||
         product.name.toLowerCase().includes(search);
       const matchesCategory =
-        !selectedCategory || product.category === selectedCategory;
-      return matchesSearch && matchesCategory;
+        !selectedCategory || product.category_id === selectedCategory;
+      const matchesClient =
+        !selectedClient || product.client_id === selectedClient;
+      return matchesSearch && matchesCategory && matchesClient;
     });
-  }, [products, searchTerm, selectedCategory]);
+  }, [products, searchTerm, selectedCategory, selectedClient]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedCategory]);
+  }, [searchTerm, selectedCategory, selectedClient]);
 
   // Paginate the filtered results
   const paginatedProducts = useMemo(() => {
@@ -196,7 +251,16 @@ export default function ProductsPage() {
           />
         </div>
       )}
-      <div className="mb-4 flex gap-4">
+      {errorMessage && (
+        <div className="mb-4">
+          <Alert
+            type="error"
+            message={errorMessage}
+            onClose={() => setErrorMessage("")}
+          />
+        </div>
+      )}
+      <div className="mb-4 flex flex-wrap gap-4">
         <input
           type="text"
           placeholder="Search by SKU or name..."
@@ -204,6 +268,15 @@ export default function ProductsPage() {
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full max-w-md px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
+        <div className="w-48">
+          <Select
+            name="client"
+            options={clientOptions}
+            value={selectedClient}
+            onChange={(e) => setSelectedClient(e.target.value)}
+            placeholder="All Clients"
+          />
+        </div>
         <div className="w-48">
           <Select
             name="category"
