@@ -370,6 +370,59 @@ export function SkeletonBadge({ className = "" }: SkeletonProps) {
 }
 
 /**
+ * Chart skeleton — animated bars mimicking a bar chart
+ */
+interface SkeletonChartProps {
+  height?: number;
+  bars?: number;
+  className?: string;
+}
+
+export function SkeletonChart({
+  height = 160,
+  bars = 6,
+  className = "",
+}: SkeletonChartProps) {
+  const barHeights = [40, 65, 50, 80, 55, 70, 45, 60];
+  return (
+    <div
+      className={`flex items-end gap-2 ${className}`}
+      style={{ height }}
+      aria-hidden="true"
+    >
+      {Array.from({ length: bars }).map((_, i) => (
+        <div
+          key={i}
+          className="flex-1 bg-gray-200 rounded-t animate-pulse"
+          style={{
+            height: `${barHeights[i % barHeights.length]}%`,
+            animationDelay: `${i * 100}ms`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Donut skeleton — thick circle border with pulse animation
+ */
+interface SkeletonDonutProps {
+  size?: number;
+  className?: string;
+}
+
+export function SkeletonDonut({ size = 160, className = "" }: SkeletonDonutProps) {
+  return (
+    <div
+      className={`mx-auto rounded-full border-[16px] border-gray-200 animate-pulse ${className}`}
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    />
+  );
+}
+
+/**
  * Wrapper to show skeleton while loading
  */
 interface SkeletonWrapperProps {

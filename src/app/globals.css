@@ -1,5 +1,50 @@
 @import "tailwindcss";
 
+/* Design Tokens */
+:root {
+  /* Admin brand — Deep indigo */
+  --color-primary: #4F46E5;
+  --color-primary-hover: #4338CA;
+  --color-primary-light: #EEF2FF;
+
+  /* Portal brand — Modern teal/cyan */
+  --color-portal: #0891B2;
+  --color-portal-hover: #0E7490;
+  --color-portal-light: #ECFEFF;
+
+  /* Semantic colors */
+  --color-success: #16a34a;
+  --color-success-light: #f0fdf4;
+  --color-warning: #d97706;
+  --color-warning-light: #fffbeb;
+  --color-error: #dc2626;
+  --color-error-light: #fef2f2;
+  --color-info: #4F46E5;
+  --color-info-light: #EEF2FF;
+
+  /* Cooler neutrals — slate instead of gray */
+  --color-bg-page: #F8FAFC;
+  --color-bg-subtle: #F1F5F9;
+  --color-bg-card: #ffffff;
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #64748B;
+  --color-border: #E2E8F0;
+  --color-border-light: #F1F5F9;
+
+  /* Layered shadow system */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.07), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-elevated: 0 8px 25px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.15), 0 4px 16px rgba(0, 0, 0, 0.05);
+
+  /* Radii */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
 /* Toast animations */
 @keyframes slide-in-from-right {
   from {
@@ -21,10 +66,126 @@
   }
 }
 
+/* Modal animations */
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-scale-up {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes modal-scale-down {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
+  }
+}
+
+/* Page transition */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .animate-in {
   animation: slide-in-from-right 0.3s ease-out;
 }
 
 .slide-in-from-right-full {
   animation: slide-in-from-right 0.3s ease-out;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.3s ease-out;
+}
+
+.animate-modal-fade-in {
+  animation: modal-fade-in 0.2s ease-out forwards;
+}
+
+.animate-modal-fade-out {
+  animation: modal-fade-out 0.15s ease-in forwards;
+}
+
+.animate-modal-scale-up {
+  animation: modal-scale-up 0.2s ease-out forwards;
+}
+
+.animate-modal-scale-down {
+  animation: modal-scale-down 0.15s ease-in forwards;
+}
+
+/* Widget entrance animations */
+@keyframes widget-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-widget-enter {
+  opacity: 0;
+  animation: widget-enter 0.4s ease-out forwards;
+}
+
+.stagger-1 { animation-delay: 50ms; }
+.stagger-2 { animation-delay: 100ms; }
+.stagger-3 { animation-delay: 150ms; }
+.stagger-4 { animation-delay: 200ms; }
+.stagger-5 { animation-delay: 250ms; }
+.stagger-6 { animation-delay: 300ms; }
+.stagger-7 { animation-delay: 350ms; }
+.stagger-8 { animation-delay: 400ms; }
+
+/* Chart entrance animation */
+@keyframes chart-grow {
+  from {
+    opacity: 0;
+    transform: scaleY(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+.animate-chart-enter {
+  animation: chart-grow 0.6s ease-out forwards;
+  transform-origin: bottom;
 }
