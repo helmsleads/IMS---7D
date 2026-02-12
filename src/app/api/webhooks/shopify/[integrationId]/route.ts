@@ -257,7 +257,36 @@ async function handleOrderCancelled(
 
     console.log(`Cancelled order ${order.id} from Shopify webhook`)
 
-    // TODO: Release reserved inventory
+    // Release reserved inventory
+    const defaultLocationId = (integration as Record<string, any>).settings?.default_location_id
+    if (defaultLocationId) {
+      try {
+        // Get order items to release reservations
+        const { data: items } = await supabase
+          .from('outbound_items')
+          .select('id, product_id, qty_requested, qty_shipped')
+          .eq('order_id', order.id)
+
+        for (const item of items || []) {
+          const qtyToRelease = (item.qty_requested || 0) - (item.qty_shipped || 0)
+          if (qtyToRelease <= 0) continue
+
+          await supabase.rpc('release_reservation', {
+            p_product_id: item.product_id,
+            p_location_id: defaultLocationId,
+            p_qty_to_release: qtyToRelease,
+            p_also_deduct: false,
+            p_reference_type: 'outbound_order',
+            p_reference_id: order.id,
+            p_performed_by: null,
+          })
+        }
+
+        console.log(`Released reservations for cancelled order ${order.id}`)
+      } catch (releaseError) {
+        console.error(`Failed to release reservations for order ${order.id}:`, releaseError)
+      }
+    }
   } else {
     console.log(`Order ${order.id} already ${order.status}, cannot cancel`)
   }

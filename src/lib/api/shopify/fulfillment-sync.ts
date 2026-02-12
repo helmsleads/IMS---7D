@@ -10,7 +10,8 @@ export async function syncFulfillmentToShopify(
   orderId: string,
   trackingNumber: string,
   carrier: string,
-  trackingUrl?: string
+  trackingUrl?: string,
+  items?: Array<{ product_id: string; qty: number }>
 ): Promise<void> {
   const supabase = createServiceClient()
 
@@ -61,14 +62,49 @@ export async function syncFulfillmentToShopify(
       return
     }
 
+    // Build fulfillment order line items (partial or full)
+    let fulfillmentOrderEntry: Record<string, unknown> = {
+      fulfillment_order_id: openFulfillmentOrder.id,
+    }
+
+    if (items?.length) {
+      // Partial fulfillment — map IMS product_ids to Shopify line_item IDs
+      const { data: mappings } = await supabase
+        .from('product_mappings')
+        .select('product_id, external_variant_id')
+        .eq('integration_id', integration.id)
+        .in('product_id', items.map((i) => i.product_id))
+
+      if (mappings?.length) {
+        const variantMap = new Map(mappings.map((m) => [m.product_id, m.external_variant_id]))
+        const fulfillmentLineItems: Array<{ id: number; quantity: number }> = []
+
+        for (const item of items) {
+          const variantId = variantMap.get(item.product_id)
+          if (!variantId) continue
+
+          // Find the matching line item in the fulfillment order
+          const lineItem = openFulfillmentOrder.line_items.find(
+            (li) => String(li.variant_id) === variantId
+          )
+          if (lineItem) {
+            fulfillmentLineItems.push({
+              id: lineItem.id,
+              quantity: Math.min(item.qty, lineItem.fulfillable_quantity),
+            })
+          }
+        }
+
+        if (fulfillmentLineItems.length > 0) {
+          fulfillmentOrderEntry.fulfillment_order_line_items = fulfillmentLineItems
+        }
+      }
+    }
+
     // Create fulfillment
     await client.post('/fulfillments.json', {
       fulfillment: {
-        line_items_by_fulfillment_order: [
-          {
-            fulfillment_order_id: openFulfillmentOrder.id,
-          },
-        ],
+        line_items_by_fulfillment_order: [fulfillmentOrderEntry],
         tracking_info: {
           number: trackingNumber,
           company: mapCarrierToShopify(carrier),
@@ -106,7 +142,9 @@ interface FulfillmentOrder {
   status: string
   line_items: Array<{
     id: number
+    variant_id: number
     quantity: number
+    fulfillable_quantity: number
   }>
 }
 

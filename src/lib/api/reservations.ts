@@ -144,7 +144,7 @@ export async function reserveOrderItems(
   // Get order items
   const { data: items, error: itemsError } = await supabase
     .from("outbound_items")
-    .select("id, product_id, qty_ordered")
+    .select("id, product_id, qty_requested")
     .eq("order_id", orderId);
 
   if (itemsError) {
@@ -159,7 +159,7 @@ export async function reserveOrderItems(
       const result = await reserveInventory({
         productId: item.product_id,
         locationId,
-        qtyToReserve: item.qty_ordered,
+        qtyToReserve: item.qty_requested,
         referenceType: "outbound_order",
         referenceId: orderId,
         performedBy,
@@ -194,7 +194,7 @@ export async function releaseOrderReservations(
   // Get order items with their reserved quantities
   const { data: items, error: itemsError } = await supabase
     .from("outbound_items")
-    .select("id, product_id, qty_ordered, qty_shipped")
+    .select("id, product_id, qty_requested, qty_shipped")
     .eq("order_id", orderId);
 
   if (itemsError) {
@@ -206,7 +206,7 @@ export async function releaseOrderReservations(
 
   for (const item of items || []) {
     // Only release what's still reserved (ordered - shipped)
-    const qtyToRelease = item.qty_ordered - (item.qty_shipped || 0);
+    const qtyToRelease = item.qty_requested - (item.qty_shipped || 0);
     if (qtyToRelease <= 0) continue;
 
     try {

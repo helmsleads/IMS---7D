@@ -313,6 +313,11 @@ export async function adjustStock({
     );
   }
 
+  // Trigger debounced Shopify inventory sync
+  import("./shopify/event-sync")
+    .then((mod) => mod.triggerInventorySync([productId]))
+    .catch((err) => console.error("Failed to trigger Shopify sync:", err));
+
   return inventoryData;
 }
 

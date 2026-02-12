@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Card from '@/components/ui/Card'
 import { useClient } from '@/lib/client-auth'
-import { getClientIntegrations } from '@/lib/api/integrations'
+import { getClientIntegrations, updateIntegrationSettings } from '@/lib/api/integrations'
 import type { ClientIntegration } from '@/types/database'
 
 export default function IntegrationsSettingsPage() {
@@ -253,6 +253,32 @@ function ShopifyConnectedStatus({
 }) {
   const [isSyncing, setIsSyncing] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
+  const [autoImportOrders, setAutoImportOrders] = useState(
+    integration.settings?.auto_import_orders ?? false
+  )
+  const [autoSyncInventory, setAutoSyncInventory] = useState(
+    integration.settings?.auto_sync_inventory ?? false
+  )
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
+
+  const handleSettingChange = async (
+    key: 'auto_import_orders' | 'auto_sync_inventory',
+    value: boolean
+  ) => {
+    if (key === 'auto_import_orders') setAutoImportOrders(value)
+    else setAutoSyncInventory(value)
+
+    setIsSavingSettings(true)
+    try {
+      await updateIntegrationSettings(integration.id, { [key]: value })
+    } catch (error) {
+      // Revert on failure
+      if (key === 'auto_import_orders') setAutoImportOrders(!value)
+      else setAutoSyncInventory(!value)
+      console.error('Failed to save setting:', error)
+    }
+    setIsSavingSettings(false)
+  }
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'Never'
@@ -411,7 +437,9 @@ function ShopifyConnectedStatus({
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
-              defaultChecked={integration.settings?.auto_import_orders}
+              checked={autoImportOrders}
+              onChange={(e) => handleSettingChange('auto_import_orders', e.target.checked)}
+              disabled={isSavingSettings}
               className="rounded"
             />
             <span className="text-sm">Auto-import new orders</span>
@@ -419,11 +447,16 @@ function ShopifyConnectedStatus({
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
-              defaultChecked={integration.settings?.auto_sync_inventory}
+              checked={autoSyncInventory}
+              onChange={(e) => handleSettingChange('auto_sync_inventory', e.target.checked)}
+              disabled={isSavingSettings}
               className="rounded"
             />
             <span className="text-sm">Auto-sync inventory to Shopify</span>
           </label>
+          {isSavingSettings && (
+            <p className="text-xs text-gray-500">Saving...</p>
+          )}
         </div>
       </details>
     </div>

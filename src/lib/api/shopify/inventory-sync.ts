@@ -116,12 +116,20 @@ export async function syncInventoryToShopify(
 
     try {
       // Get current IMS inventory for this product
-      const { data: inventoryData } = await supabase
+      // If default_location_id is set, only count inventory at that location
+      let inventoryQuery = supabase
         .from('inventory')
         .select('qty_on_hand, qty_reserved')
         .eq('product_id', mapping.product_id)
 
-      // Calculate total available across all locations
+      const defaultLocationId = integration.settings?.default_location_id
+      if (defaultLocationId) {
+        inventoryQuery = inventoryQuery.eq('location_id', defaultLocationId)
+      }
+
+      const { data: inventoryData } = await inventoryQuery
+
+      // Calculate total available (filtered by location if configured)
       const totalOnHand = (inventoryData || []).reduce(
         (sum, inv) => sum + (inv.qty_on_hand || 0),
         0

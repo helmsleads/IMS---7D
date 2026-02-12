@@ -343,6 +343,11 @@ export async function receiveInboundItem(
         console.error("Failed to record billable event:", billingError);
       }
     }
+
+    // Trigger debounced Shopify inventory sync
+    import("./shopify/event-sync")
+      .then((mod) => mod.triggerInventorySync([item.product_id]))
+      .catch((err) => console.error("Failed to trigger Shopify sync:", err));
   }
 
   return updatedItem;

@@ -427,10 +427,24 @@ export async function updateOutboundOrderStatus(
     // Sync fulfillment to Shopify if this order came from Shopify
     // The function internally checks if the order is from Shopify and has valid integration
     if (additionalFields?.tracking_number && additionalFields?.carrier) {
+      // Fetch shipped items for partial fulfillment support
+      const { data: shippedItems } = await supabase
+        .from("outbound_items")
+        .select("product_id, qty_shipped")
+        .eq("order_id", id)
+        .gt("qty_shipped", 0);
+
+      const fulfillmentItems = (shippedItems || []).map((item) => ({
+        product_id: item.product_id,
+        qty: item.qty_shipped,
+      }));
+
       syncFulfillmentToShopify(
         id,
         additionalFields.tracking_number,
-        additionalFields.carrier
+        additionalFields.carrier,
+        undefined,
+        fulfillmentItems.length > 0 ? fulfillmentItems : undefined
       ).catch((err) =>
         console.error("Failed to sync fulfillment to Shopify:", err)
       );
@@ -561,6 +575,10 @@ export async function shipOutboundItem(
         location_id: locationId,
       },
     });
+    // Trigger immediate Shopify inventory sync for shipped product
+    import("./shopify/event-sync")
+      .then((mod) => mod.triggerImmediateInventorySync([item.product_id]))
+      .catch((err) => console.error("Failed to trigger Shopify sync:", err));
   } else if (qtyDiff < 0) {
     // Quantity decreased (rare case - shipping less than before)
     // Add back to inventory

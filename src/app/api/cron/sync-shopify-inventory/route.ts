@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { syncInventoryToShopify } from '@/lib/api/shopify/inventory-sync'
+import { calculateIncomingInventory, syncIncomingToShopify } from '@/lib/api/shopify/incoming-sync'
 
 /**
  * Scheduled Inventory Sync to Shopify
@@ -95,6 +96,14 @@ export async function POST(request: NextRequest) {
 
         // Sync inventory
         const syncResult = await syncInventoryToShopify(integration.id)
+
+        // Also calculate and sync incoming inventory
+        try {
+          await calculateIncomingInventory(integration.id)
+          await syncIncomingToShopify(integration.id)
+        } catch (incomingError) {
+          console.error(`Failed to sync incoming inventory for ${integration.shop_domain}:`, incomingError)
+        }
 
         results.push({
           integrationId: integration.id,

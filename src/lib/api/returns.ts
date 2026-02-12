@@ -169,6 +169,13 @@ export async function updateReturnStatus(
     throw new Error(error.message);
   }
 
+  // Sync completed returns to Shopify (fire-and-forget, server-side only)
+  if (status === "completed") {
+    import("./shopify/returns-sync")
+      .then((mod) => mod.syncReturnToShopify(id))
+      .catch((err) => console.error("Failed to sync return to Shopify:", err));
+  }
+
   return data;
 }
 
