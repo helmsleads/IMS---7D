@@ -2,11 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Package, Truck, ClipboardList, Boxes, PackageCheck, MessageSquare, RotateCcw, TrendingUp, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { Package, Truck, Boxes, PackageCheck, Settings } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
-import Card from "@/components/ui/Card";
 import StatCard from "@/components/ui/StatCard";
 import Spinner from "@/components/ui/Spinner";
+import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
+import DynamicWidgetGrid from "@/components/dashboard/DynamicWidgetGrid";
+import { PORTAL_WIDGET_COMPONENTS } from "@/components/dashboard/portal";
+import { PORTAL_WIDGETS } from "@/lib/dashboard/portal-widgets";
+import { useDashboardLayout } from "@/lib/hooks/useDashboardLayout";
 import { createClient } from "@/lib/supabase";
 import {
   getPortalUnreadCount,
@@ -15,7 +19,6 @@ import {
   MonthlyProfitability,
 } from "@/lib/api/portal-dashboard";
 import { formatDate, formatCurrency, getGreeting } from "@/lib/utils/formatting";
-import StatusBadge from "@/components/ui/StatusBadge";
 
 interface DashboardStats {
   totalProducts: number;
@@ -39,36 +42,6 @@ interface RecentArrival {
   product_summary: string;
 }
 
-/* ── Order Progress Dots ── */
-const ORDER_STAGES = ["pending", "confirmed", "processing", "packed", "shipped", "delivered"] as const;
-
-function OrderProgressDots({ status }: { status: string }) {
-  const currentIdx = ORDER_STAGES.indexOf(status as typeof ORDER_STAGES[number]);
-
-  return (
-    <div className="flex items-center gap-1 mt-1.5">
-      {ORDER_STAGES.map((stage, idx) => {
-        const isCompleted = idx < currentIdx;
-        const isCurrent = idx === currentIdx;
-        return (
-          <div
-            key={stage}
-            className={`h-1.5 rounded-full transition-all duration-500 ${
-              isCurrent
-                ? "w-5 bg-cyan-500"
-                : isCompleted
-                ? "w-1.5 bg-cyan-400"
-                : "w-1.5 bg-slate-200"
-            }`}
-            title={stage}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-
 export default function PortalDashboardPage() {
   const { client } = useClient();
   const [stats, setStats] = useState<DashboardStats>({
@@ -91,10 +64,21 @@ export default function PortalDashboardPage() {
     unitsSold: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [showCustomizer, setShowCustomizer] = useState(false);
+
+  const {
+    widgets,
+    enabledWidgets,
+    isCustomized,
+    toggleWidget,
+    moveWidget,
+    reorderByIds,
+    resizeWidget,
+    resetToDefaults,
+  } = useDashboardLayout("portal", PORTAL_WIDGETS);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      // Skip if no client or staff preview mode without a real client
       if (!client || client.id === "staff-preview") {
         setLoading(false);
         return;
@@ -102,7 +86,6 @@ export default function PortalDashboardPage() {
 
       const supabase = createClient();
 
-      // Fetch inventory stats for this client
       const { data: inventoryData } = await supabase
         .from("inventory")
         .select(`
@@ -120,14 +103,12 @@ export default function PortalDashboardPage() {
         0
       );
 
-      // Fetch active orders count
       const { count: activeOrders } = await supabase
         .from("outbound_orders")
         .select("id", { count: "exact", head: true })
         .eq("client_id", client.id)
         .in("status", ["pending", "confirmed", "processing", "packed", "shipped"]);
 
-      // Fetch recent arrivals (inbound orders received in last 30 days)
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -145,7 +126,6 @@ export default function PortalDashboardPage() {
         recentArrivals: recentArrivals || 0,
       });
 
-      // Fetch recent orders
       const { data: recentData } = await supabase
         .from("outbound_orders")
         .select(`
@@ -169,7 +149,6 @@ export default function PortalDashboardPage() {
         }))
       );
 
-      // Fetch active orders (not yet delivered)
       const { data: activeData } = await supabase
         .from("outbound_orders")
         .select(`
@@ -194,7 +173,6 @@ export default function PortalDashboardPage() {
         }))
       );
 
-      // Fetch recent arrivals (inbound orders with status "received")
       const { data: arrivalsData } = await supabase
         .from("inbound_orders")
         .select(`
@@ -220,7 +198,6 @@ export default function PortalDashboardPage() {
             product: { name: string } | { name: string }[];
           }>;
 
-          // Build product summary (e.g., "Product A, Product B +2 more")
           const productNames = items.map((item) => {
             const product = Array.isArray(item.product) ? item.product[0] : item.product;
             return product?.name || "Unknown";
@@ -244,15 +221,12 @@ export default function PortalDashboardPage() {
         })
       );
 
-      // Fetch unread messages count using API function
       const unreadCount = await getPortalUnreadCount(client.id);
       setUnreadMessages(unreadCount);
 
-      // Fetch open returns count using API function
       const returnsCount = await getPortalOpenReturnsCount(client.id);
       setOpenReturns(returnsCount);
 
-      // Fetch this month's profitability using API function
       const profitData = await getPortalMonthlyProfit(client.id);
       setProfitability(profitData);
 
@@ -269,6 +243,21 @@ export default function PortalDashboardPage() {
       </div>
     );
   }
+
+  // Build widget props map
+  const widgetProps: Record<string, Record<string, unknown>> = {
+    "unread-messages": { unreadMessages },
+    "open-returns": { openReturns },
+    "profitability": { profitability },
+    "recent-orders": { recentOrders },
+    "recent-arrivals": { recentArrivalsList },
+    "active-orders": { activeOrdersList },
+    "quick-actions": {},
+  };
+
+  const handleQuickAdd = (id: string) => {
+    toggleWidget(id);
+  };
 
   return (
     <div className="space-y-8">
@@ -312,9 +301,9 @@ export default function PortalDashboardPage() {
         </div>
       </div>
 
-      {/* Stats Grid — Staggered */}
+      {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="animate-widget-enter stagger-1">
+        <div className="animate-widget-enter" style={{ animationDelay: "50ms" }}>
           <StatCard
             icon={<Package className="w-6 h-6 text-blue-600" />}
             iconColor="bg-blue-100"
@@ -322,7 +311,7 @@ export default function PortalDashboardPage() {
             value={stats.totalProducts}
           />
         </div>
-        <div className="animate-widget-enter stagger-2">
+        <div className="animate-widget-enter" style={{ animationDelay: "100ms" }}>
           <StatCard
             icon={<Boxes className="w-6 h-6 text-green-600" />}
             iconColor="bg-green-100"
@@ -330,7 +319,7 @@ export default function PortalDashboardPage() {
             value={stats.totalUnits}
           />
         </div>
-        <div className="animate-widget-enter stagger-3">
+        <div className="animate-widget-enter" style={{ animationDelay: "150ms" }}>
           <StatCard
             icon={<Truck className="w-6 h-6 text-purple-600" />}
             iconColor="bg-purple-100"
@@ -338,7 +327,7 @@ export default function PortalDashboardPage() {
             value={stats.activeOrders}
           />
         </div>
-        <div className="animate-widget-enter stagger-4">
+        <div className="animate-widget-enter" style={{ animationDelay: "200ms" }}>
           <StatCard
             icon={<PackageCheck className="w-6 h-6 text-cyan-600" />}
             iconColor="bg-cyan-100"
@@ -348,292 +337,51 @@ export default function PortalDashboardPage() {
         </div>
       </div>
 
-      {/* Secondary Stats Row — Staggered */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* Unread Messages Widget */}
-        <div className="animate-widget-enter stagger-5">
-          <Card>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-xl ${unreadMessages > 0 ? "bg-red-100" : "bg-slate-100"}`}>
-                  <MessageSquare className={`w-6 h-6 ${unreadMessages > 0 ? "text-red-600" : "text-slate-500"}`} />
-                </div>
-                <div>
-                  <p className="text-sm text-slate-500">Unread Messages</p>
-                  <p className={`text-2xl font-bold ${unreadMessages > 0 ? "text-red-600" : "text-slate-900"}`}>
-                    {unreadMessages}
-                  </p>
-                </div>
-              </div>
-              <Link
-                href="/portal/messages"
-                className="text-sm text-cyan-600 hover:text-cyan-700 font-medium whitespace-nowrap"
-              >
-                View Messages
-              </Link>
-            </div>
-          </Card>
-        </div>
-
-        {/* Open Returns Widget */}
-        <div className="animate-widget-enter stagger-6">
-          <Card>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-xl ${openReturns > 0 ? "bg-orange-100" : "bg-slate-100"}`}>
-                  <RotateCcw className={`w-6 h-6 ${openReturns > 0 ? "text-orange-600" : "text-slate-500"}`} />
-                </div>
-                <div>
-                  <p className="text-sm text-slate-500">Open Returns</p>
-                  <p className={`text-2xl font-bold ${openReturns > 0 ? "text-orange-600" : "text-slate-900"}`}>
-                    {openReturns}
-                  </p>
-                </div>
-              </div>
-              <Link
-                href="/portal/returns"
-                className="text-sm text-cyan-600 hover:text-cyan-700 font-medium whitespace-nowrap"
-              >
-                View Returns
-              </Link>
-            </div>
-          </Card>
-        </div>
-
-        {/* This Month's Profitability Widget — Accent Card */}
-        <div className="animate-widget-enter stagger-7">
-          <Card accent={profitability.netProfit >= 0 ? "green" : "red"}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className={`p-2 rounded-lg ${profitability.netProfit >= 0 ? "bg-green-100" : "bg-red-100"}`}>
-                  <TrendingUp className={`w-5 h-5 ${profitability.netProfit >= 0 ? "text-green-600" : "text-red-600"}`} />
-                </div>
-                <p className="text-sm font-medium text-slate-700">This Month&apos;s Profitability</p>
-              </div>
-              <Link
-                href="/portal/profitability"
-                className="text-sm text-cyan-600 hover:text-cyan-700 font-medium whitespace-nowrap"
-              >
-                Details
-              </Link>
-            </div>
-            <div className="flex items-end justify-between">
-              <div>
-                <p className={`text-2xl font-bold ${profitability.netProfit >= 0 ? "text-green-600" : "text-red-600"}`}>
-                  {formatCurrency(profitability.netProfit)}
-                </p>
-                <p className="text-xs text-slate-500">net profit</p>
-              </div>
-              <div className="text-right">
-                <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm font-medium ${
-                  profitability.marginPercentage >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                }`}>
-                  {profitability.marginPercentage >= 0 ? (
-                    <ArrowUpRight className="w-4 h-4" />
-                  ) : (
-                    <ArrowDownRight className="w-4 h-4" />
-                  )}
-                  {Math.abs(profitability.marginPercentage).toFixed(1)}%
-                </div>
-                <p className="text-xs text-slate-500 mt-1">margin</p>
-              </div>
-            </div>
-          </Card>
-        </div>
+      {/* Customize button + Customizer Panel */}
+      <div className="flex justify-end">
+        <button
+          onClick={() => setShowCustomizer(!showCustomizer)}
+          className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+            showCustomizer
+              ? "bg-cyan-100 text-cyan-700"
+              : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+          }`}
+        >
+          <Settings className="w-4 h-4" />
+          Customize
+        </button>
       </div>
 
-      {/* Two Column Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Orders */}
-        <div className="animate-widget-enter stagger-1">
-          <Card>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-slate-900">Recent Orders</h2>
-              <Link
-                href="/portal/orders"
-                className="text-sm text-cyan-600 hover:text-cyan-700 font-medium"
-              >
-                View All
-              </Link>
-            </div>
+      {showCustomizer && (
+        <DashboardCustomizer
+          widgets={widgets}
+          registry={PORTAL_WIDGETS}
+          isCustomized={isCustomized}
+          onToggle={toggleWidget}
+          onMove={moveWidget}
+          onReorder={reorderByIds}
+          onResize={resizeWidget}
+          onReset={resetToDefaults}
+          onClose={() => setShowCustomizer(false)}
+          accent="cyan"
+        />
+      )}
 
-            {recentOrders.length > 0 ? (
-              <div className="space-y-3">
-                {recentOrders.map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0"
-                  >
-                    <div>
-                      <p className="font-medium text-slate-900">{order.order_number}</p>
-                      <p className="text-sm text-slate-500">
-                        {order.item_count} items &middot; {formatDate(order.created_at)}
-                      </p>
-                    </div>
-                    <StatusBadge status={order.status} entityType="outbound" />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-slate-500">
-                <ClipboardList className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                <p>No orders yet</p>
-                <Link
-                  href="/portal/request-shipment"
-                  className="text-cyan-600 hover:underline text-sm mt-1 inline-block"
-                >
-                  Request your first shipment
-                </Link>
-              </div>
-            )}
-          </Card>
-        </div>
-
-        {/* Recent Arrivals */}
-        <div className="animate-widget-enter stagger-2">
-          <Card>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-slate-900">Recent Arrivals</h2>
-              <Link
-                href="/portal/inventory"
-                className="text-sm text-cyan-600 hover:text-cyan-700 font-medium"
-              >
-                View All
-              </Link>
-            </div>
-
-            {recentArrivalsList.length > 0 ? (
-              <div className="space-y-3">
-                {recentArrivalsList.map((arrival) => (
-                  <div
-                    key={arrival.id}
-                    className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0"
-                  >
-                    <div>
-                      <p className="font-medium text-slate-900">{arrival.order_number}</p>
-                      <p className="text-sm text-slate-500">{arrival.product_summary}</p>
-                    </div>
-                    <span className="text-sm text-slate-400">
-                      {formatDate(arrival.received_at)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-slate-500">
-                <PackageCheck className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                <p>No recent arrivals</p>
-                <p className="text-sm mt-1">
-                  Inbound shipments will appear here
-                </p>
-              </div>
-            )}
-          </Card>
-        </div>
-
-        {/* Active Orders — with Progress Dots */}
-        <div className="animate-widget-enter stagger-3">
-          <Card>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-slate-900">Active Orders</h2>
-              <Link
-                href="/portal/orders"
-                className="text-sm text-cyan-600 hover:text-cyan-700 font-medium"
-              >
-                View All
-              </Link>
-            </div>
-
-            {activeOrdersList.length > 0 ? (
-              <div className="space-y-3">
-                {activeOrdersList.map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <p className="font-medium text-slate-900">{order.order_number}</p>
-                        <p className="text-sm text-slate-500">
-                          {formatDate(order.created_at)}
-                        </p>
-                        <OrderProgressDots status={order.status} />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <StatusBadge status={order.status} entityType="outbound" />
-                      <Link
-                        href={`/portal/orders/${order.id}`}
-                        className="text-sm text-cyan-600 hover:text-cyan-700 font-medium"
-                      >
-                        Track
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-slate-500">
-                <Truck className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                <p>No active orders</p>
-                <Link
-                  href="/portal/request-shipment"
-                  className="text-cyan-600 hover:underline text-sm mt-1 inline-block"
-                >
-                  Request a shipment
-                </Link>
-              </div>
-            )}
-          </Card>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="animate-widget-enter stagger-4">
-          <Card>
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">Quick Actions</h2>
-            <div className="space-y-3">
-              <Link
-                href="/portal/request-shipment"
-                className="flex items-center gap-4 p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition-all group"
-              >
-                <div className="p-3 bg-cyan-100 rounded-xl group-hover:bg-cyan-200 transition-colors">
-                  <Truck className="w-5 h-5 text-cyan-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-slate-900">Request Shipment</p>
-                  <p className="text-sm text-slate-500">Create a new outbound order</p>
-                </div>
-              </Link>
-
-              <Link
-                href="/portal/inventory"
-                className="flex items-center gap-4 p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition-all group"
-              >
-                <div className="p-3 bg-green-100 rounded-xl group-hover:bg-green-200 transition-colors">
-                  <Package className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-slate-900">View Inventory</p>
-                  <p className="text-sm text-slate-500">Check your current stock levels</p>
-                </div>
-              </Link>
-
-              <Link
-                href="/portal/orders"
-                className="flex items-center gap-4 p-4 rounded-xl border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition-all group"
-              >
-                <div className="p-3 bg-purple-100 rounded-xl group-hover:bg-purple-200 transition-colors">
-                  <ClipboardList className="w-5 h-5 text-purple-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-slate-900">Track Orders</p>
-                  <p className="text-sm text-slate-500">View order status and history</p>
-                </div>
-              </Link>
-            </div>
-          </Card>
-        </div>
-      </div>
+      {/* Dynamic Widget Grid */}
+      <DynamicWidgetGrid
+        layout={enabledWidgets}
+        componentMap={PORTAL_WIDGET_COMPONENTS}
+        widgetProps={widgetProps}
+        loading={loading}
+        onCustomize={() => setShowCustomizer(true)}
+        quickAddIds={["recent-orders", "quick-actions", "active-orders"]}
+        onQuickAdd={handleQuickAdd}
+        quickAddLabels={{
+          "recent-orders": "Recent Orders",
+          "quick-actions": "Quick Actions",
+          "active-orders": "Active Orders",
+        }}
+      />
     </div>
   );
 }
