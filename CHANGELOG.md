@@ -1,5 +1,74 @@
 # Changelog
 
+## [2.1.0] - 2026-02-12
+
+### Overview
+
+Critical Shopify integration fixes and missing features for 3PL operations. Fixes bugs that could cause overselling and ghost reservations, adds partial fulfillment, returns sync, incoming inventory visibility, and real-time event-driven inventory updates.
+
+---
+
+### Bug Fixes
+
+| ID | Bug | File | Impact | Fix |
+|----|-----|------|--------|-----|
+| BF-1 | Inventory sync sums ALL IMS locations | `shopify/inventory-sync.ts` | Overselling when inventory is spread across multiple warehouses | Filters by `default_location_id` when set; preserves sum-all fallback |
+| BF-2 | Cancellation webhook never releases reserved inventory | `webhooks/shopify/[integrationId]/route.ts` | Ghost reservations block stock indefinitely after Shopify cancellations | After status update, fetches order items, calls `release_reservation` RPC for each (`qty_requested - qty_shipped`) |
+| BF-3 | Wrong column name `qty_ordered` (should be `qty_requested`) | `reservations.ts` | All reserve/release operations for outbound orders fail silently | Replaced 4 occurrences of `qty_ordered` with `qty_requested` |
+| BF-4 | Settings UI checkboxes are cosmetic only | `integrations/page.tsx` | Toggling auto-import/auto-sync settings doesn't persist | Added controlled state, `onChange` handler calling `updateIntegrationSettings()`, disabled state while saving |
+
+---
+
+### New Features
+
+#### Partial Fulfillment Sync (MF-1)
+Ships a subset of items to Shopify instead of all-or-nothing. When order status changes to `shipped`, queries `outbound_items` for items with `qty_shipped > 0` and maps them to Shopify fulfillment order line items via `product_mappings`.
+
+**Files:** `shopify/fulfillment-sync.ts`, `outbound.ts`
+
+#### Returns Sync to Shopify (MF-2)
+Completed returns automatically create Shopify refunds. Maps IMS product IDs to Shopify line items via variant ID lookups, calls `refunds/calculate.json` then `refunds.json`. Disposition `restock` maps to Shopify `restock_type: 'return'`, all others to `'no_restock'`.
+
+**Files:** `shopify/returns-sync.ts` (new), `returns.ts` (trigger)
+
+#### Incoming Inventory Sync (MF-3)
+Pushes expected inbound quantities to Shopify as product metafields (`ims_7d.incoming_qty`). Queries open inbound orders (status: ordered/in_transit/arrived), calculates remaining per product (`qty_expected - qty_received`), and updates `product_mappings.incoming_qty`. Runs automatically after the regular inventory cron sync.
+
+**Files:** `shopify/incoming-sync.ts` (new), `cron/sync-shopify-inventory/route.ts`
+
+#### Event-Driven Inventory Sync (MF-4)
+Real-time Shopify inventory updates triggered by IMS operations instead of waiting for the hourly cron. Two modes:
+- **Immediate** (no debounce) — triggered on `shipOutboundItem()` to prevent overselling
+- **Debounced** (5s window) — triggered on `adjustStock()` and `receiveInboundItem()` to batch rapid changes
+
+Both look up `product_mappings` to find active integrations with `auto_sync_inventory` enabled.
+
+**Files:** `shopify/event-sync.ts` (new), `inventory.ts`, `outbound.ts`, `inbound.ts`
+
+---
+
+### Files Changed
+
+**Modified (11):**
+1. `src/lib/api/reservations.ts` — BF-3
+2. `src/lib/api/shopify/inventory-sync.ts` — BF-1
+3. `src/app/(portal)/portal/settings/integrations/page.tsx` — BF-4
+4. `src/app/api/webhooks/shopify/[integrationId]/route.ts` — BF-2
+5. `src/lib/api/shopify/fulfillment-sync.ts` — MF-1
+6. `src/lib/api/outbound.ts` — MF-1 caller, MF-4 trigger
+7. `src/lib/api/returns.ts` — MF-2 trigger
+8. `src/app/api/cron/sync-shopify-inventory/route.ts` — MF-3
+9. `src/lib/api/shopify/index.ts` — barrel exports
+10. `src/lib/api/inventory.ts` — MF-4 trigger
+11. `src/lib/api/inbound.ts` — MF-4 trigger
+
+**Created (3):**
+1. `src/lib/api/shopify/returns-sync.ts` — MF-2
+2. `src/lib/api/shopify/incoming-sync.ts` — MF-3
+3. `src/lib/api/shopify/event-sync.ts` — MF-4
+
+---
+
 ## [2.0.0] - 2026-02-11
 
 ### Overview
