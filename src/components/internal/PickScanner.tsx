@@ -8,6 +8,7 @@ import BarcodeScanner from "@/components/ui/BarcodeScanner";
 import { createClient } from "@/lib/supabase";
 import { logScanEvent, resolveBarcode } from "@/lib/api/scan-events";
 import { updateInventoryWithTransaction } from "@/lib/api/inventory-transactions";
+import { getPickListItems, recordPickItem, recordShortPick, PickListItemWithRelations } from "@/lib/api/warehouse-tasks";
 
 interface PickItem {
   id: string;
@@ -25,11 +26,15 @@ interface PickItem {
     name: string;
     sublocation_code?: string;
   };
+  // Pick list item reference (when task-driven)
+  pickListItemId?: string;
+  lot_number?: string;
 }
 
 interface PickScannerProps {
   outboundOrderId: string;
   locationId: string;
+  taskId?: string;
   onComplete?: () => void;
 }
 
@@ -66,6 +71,7 @@ function playBeep(success: boolean = true) {
 export default function PickScanner({
   outboundOrderId,
   locationId,
+  taskId,
   onComplete,
 }: PickScannerProps) {
   const [items, setItems] = useState<PickItem[]>([]);
@@ -80,6 +86,42 @@ export default function PickScanner({
   const [audioEnabled, setAudioEnabled] = useState(true);
 
   const fetchItems = useCallback(async () => {
+    // If task-driven, load from pick_list_items instead
+    if (taskId) {
+      try {
+        const pickListItems = await getPickListItems(taskId);
+        const mapped: PickItem[] = pickListItems
+          .filter((pli) => pli.status !== "picked" && pli.status !== "skipped")
+          .map((pli) => ({
+            id: pli.outbound_item_id || pli.id,
+            product_id: pli.product_id || "",
+            qty_requested: pli.qty_allocated,
+            qty_picked: pli.qty_picked,
+            product: {
+              id: pli.product?.id || "",
+              name: pli.product?.name || "Unknown",
+              sku: pli.product?.sku || "",
+              barcode: pli.product?.barcode || null,
+            },
+            suggested_location: pli.sublocation ? {
+              id: pli.location?.id || "",
+              name: pli.location?.name || "",
+              sublocation_code: pli.sublocation.code,
+            } : pli.location ? {
+              id: pli.location.id,
+              name: pli.location.name,
+            } : undefined,
+            pickListItemId: pli.id,
+            lot_number: pli.lot?.lot_number,
+          }));
+        setItems(mapped);
+        setLoading(false);
+        return;
+      } catch (err) {
+        console.error("Failed to load pick list items:", err);
+      }
+    }
+
     const supabase = createClient();
 
     // Get order items with suggested pick locations
@@ -217,6 +259,38 @@ export default function PickScanner({
     setPendingQty(remainingQty);
   };
 
+  const handleShortPick = async () => {
+    if (!currentItem) return;
+    const shortQty = currentItem.qty_requested - currentItem.qty_picked;
+    if (shortQty <= 0) return;
+
+    setSaving(true);
+    try {
+      if (currentItem.pickListItemId) {
+        await recordShortPick(currentItem.pickListItemId, shortQty, "Short pick reported by scanner");
+      }
+
+      if (audioEnabled) playBeep(true);
+      setMessage({ type: "warning", text: `Short pick: ${shortQty} units of ${currentItem.product.sku}` });
+
+      // Move to next item
+      const nextIncomplete = items.findIndex((item, idx) =>
+        idx > currentItemIndex && item.qty_picked < item.qty_requested
+      );
+      if (nextIncomplete >= 0) {
+        setTimeout(() => {
+          setCurrentItemIndex(nextIncomplete);
+          setPendingQty(0);
+          setScanStatus("idle");
+        }, 1000);
+      }
+    } catch (err) {
+      setMessage({ type: "error", text: (err as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleConfirmPick = async () => {
     if (!currentItem || pendingQty <= 0) return;
 
@@ -224,29 +298,35 @@ export default function PickScanner({
     setMessage(null);
 
     try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-
-      // Update inventory with transaction logging (pick = deduct)
-      await updateInventoryWithTransaction({
-        productId: currentItem.product_id,
-        locationId,
-        qtyChange: -pendingQty,
-        transactionType: "pick",
-        referenceType: "outbound_order",
-        referenceId: outboundOrderId,
-        performedBy: user?.id,
-      });
-
-      // Update the outbound item qty_shipped
       const newQtyPicked = currentItem.qty_picked + pendingQty;
-      const { error: updateError } = await supabase
-        .from("outbound_items")
-        .update({ qty_shipped: newQtyPicked })
-        .eq("id", currentItem.id);
 
-      if (updateError) {
-        throw new Error(updateError.message);
+      // If task-driven, use recordPickItem which handles everything
+      if (currentItem.pickListItemId) {
+        await recordPickItem(currentItem.pickListItemId, pendingQty);
+      } else {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+
+        // Update inventory with transaction logging (pick = deduct)
+        await updateInventoryWithTransaction({
+          productId: currentItem.product_id,
+          locationId,
+          qtyChange: -pendingQty,
+          transactionType: "pick",
+          referenceType: "outbound_order",
+          referenceId: outboundOrderId,
+          performedBy: user?.id,
+        });
+
+        // Update the outbound item qty_shipped
+        const { error: updateError } = await supabase
+          .from("outbound_items")
+          .update({ qty_shipped: newQtyPicked })
+          .eq("id", currentItem.id);
+
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
       }
 
       // Update local state
@@ -372,6 +452,9 @@ export default function PickScanner({
                   <div>
                     <p className="font-semibold text-gray-900 dark:text-white">{currentItem.product.name}</p>
                     <p className="text-sm text-gray-600 dark:text-gray-400">{currentItem.product.sku}</p>
+                    {currentItem.lot_number && (
+                      <p className="text-xs text-slate-500 mt-0.5">Lot: {currentItem.lot_number}</p>
+                    )}
                     {currentItem.suggested_location && (
                       <p className="text-sm text-blue-600 flex items-center gap-1 mt-1">
                         <MapPin className="w-3 h-3" />
@@ -420,13 +503,25 @@ export default function PickScanner({
                   <Button size="sm" variant="outline" onClick={() => handleAddQty(1)}>+</Button>
                   <Button size="sm" variant="outline" onClick={handlePickAll}>Pick All ({remainingQty})</Button>
                 </div>
-                <Button
-                  onClick={handleConfirmPick}
-                  disabled={saving || pendingQty <= 0}
-                  className="w-full"
-                >
-                  {saving ? "Saving..." : `Confirm Pick (${pendingQty})`}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleConfirmPick}
+                    disabled={saving || pendingQty <= 0}
+                    className="flex-1"
+                  >
+                    {saving ? "Saving..." : `Confirm Pick (${pendingQty})`}
+                  </Button>
+                  {currentItem.pickListItemId && (
+                    <Button
+                      variant="secondary"
+                      onClick={handleShortPick}
+                      disabled={saving}
+                      className="text-amber-600 border-amber-300 hover:bg-amber-50"
+                    >
+                      Short
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
           </>

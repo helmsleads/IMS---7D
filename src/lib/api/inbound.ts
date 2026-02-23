@@ -348,6 +348,50 @@ export async function receiveInboundItem(
     import("./shopify/event-sync")
       .then((mod) => mod.triggerInventorySync([item.product_id]))
       .catch((err) => console.error("Failed to trigger Shopify sync:", err));
+
+    // Auto-create inspection or putaway task
+    if (order?.client_id && qtyDiff > 0) {
+      try {
+        const rules = await getClientInboundRules(order.client_id);
+        if (rules?.requiresInspection) {
+          // Set inventory to quarantine and create inspection task
+          await supabase
+            .from("inventory")
+            .update({ status: "quarantine", status_notes: "Pending inspection" })
+            .eq("product_id", item.product_id)
+            .eq("location_id", locationId);
+
+          import("./warehouse-tasks").then(({ createWarehouseTask }) => {
+            createWarehouseTask({
+              taskType: "inspection",
+              productId: item.product_id,
+              orderId: order.id,
+              orderType: "inbound",
+              clientId: order.client_id,
+              sourceLocationId: locationId,
+              qtyRequested: qtyDiff,
+              priority: 7,
+              metadata: { inboundItemId: itemId },
+            }).catch((err) => console.error("Failed to create inspection task:", err));
+          });
+        } else {
+          // No inspection needed — create putaway task directly
+          import("./warehouse-tasks").then(({ createPutawayTask }) => {
+            createPutawayTask({
+              productId: item.product_id,
+              orderId: order.id,
+              orderType: "inbound",
+              clientId: order.client_id,
+              sourceLocationId: locationId,
+              qtyRequested: qtyDiff,
+              metadata: { inboundItemId: itemId },
+            }).catch((err) => console.error("Failed to create putaway task:", err));
+          });
+        }
+      } catch (ruleErr) {
+        console.error("Failed to check inbound rules:", ruleErr);
+      }
+    }
   }
 
   return updatedItem;
@@ -642,6 +686,48 @@ export async function receiveWithLot(
     }
   }
 
+  // Auto-create inspection or putaway task
+  if (order?.client_id && qtyDiff > 0) {
+    try {
+      const rules = await getClientInboundRules(order.client_id);
+      if (rules?.requiresInspection) {
+        await supabase
+          .from("inventory")
+          .update({ status: "quarantine", status_notes: "Pending inspection" })
+          .eq("product_id", item.product_id)
+          .eq("location_id", locationId);
+
+        import("./warehouse-tasks").then(({ createWarehouseTask }) => {
+          createWarehouseTask({
+            taskType: "inspection",
+            productId: item.product_id,
+            orderId: order.id,
+            orderType: "inbound",
+            clientId: order.client_id,
+            sourceLocationId: locationId,
+            qtyRequested: qtyDiff,
+            priority: 7,
+            metadata: { inboundItemId: itemId, lotId, lotNumber },
+          }).catch((err) => console.error("Failed to create inspection task:", err));
+        });
+      } else {
+        import("./warehouse-tasks").then(({ createPutawayTask }) => {
+          createPutawayTask({
+            productId: item.product_id,
+            orderId: order.id,
+            orderType: "inbound",
+            clientId: order.client_id,
+            sourceLocationId: locationId,
+            qtyRequested: qtyDiff,
+            metadata: { inboundItemId: itemId, lotId, lotNumber },
+          }).catch((err) => console.error("Failed to create putaway task:", err));
+        });
+      }
+    } catch (ruleErr) {
+      console.error("Failed to check inbound rules:", ruleErr);
+    }
+  }
+
   return {
     ...updatedItem,
     lot_id: lotId,
@@ -836,6 +922,49 @@ export async function receiveInboundItemToPallet(params: {
     }
   }
 
+  // 6. Auto-create inspection or putaway task
+  if (order?.client_id && qtyDiff > 0) {
+    try {
+      const rules = await getClientInboundRules(order.client_id);
+      if (rules?.requiresInspection) {
+        await supabase
+          .from("inventory")
+          .update({ status: "quarantine", status_notes: "Pending inspection" })
+          .eq("product_id", item.product_id)
+          .eq("location_id", params.locationId);
+
+        import("./warehouse-tasks").then(({ createWarehouseTask }) => {
+          createWarehouseTask({
+            taskType: "inspection",
+            productId: item.product_id,
+            orderId: order.id,
+            orderType: "inbound",
+            clientId: order.client_id,
+            sourceLocationId: params.locationId,
+            qtyRequested: qtyDiff,
+            priority: 7,
+            metadata: { inboundItemId: params.itemId, palletId: params.palletId },
+          }).catch((err) => console.error("Failed to create inspection task:", err));
+        });
+      } else {
+        import("./warehouse-tasks").then(({ createPutawayTask }) => {
+          createPutawayTask({
+            productId: item.product_id,
+            orderId: order.id,
+            orderType: "inbound",
+            clientId: order.client_id,
+            sourceLocationId: params.locationId,
+            qtyRequested: qtyDiff,
+            lpnId: params.palletId,
+            metadata: { inboundItemId: params.itemId },
+          }).catch((err) => console.error("Failed to create putaway task:", err));
+        });
+      }
+    } catch (ruleErr) {
+      console.error("Failed to check inbound rules:", ruleErr);
+    }
+  }
+
   return updatedItem;
 }
 
@@ -973,6 +1102,7 @@ export function validateReceiveAgainstRules(
 
 /**
  * Place received items on inspection hold.
+ * Also creates an inspection warehouse task if one doesn't already exist.
  */
 export async function placeOnInspectionHold(
   itemId: string,
@@ -990,6 +1120,42 @@ export async function placeOnInspectionHold(
       reason: reason || "Required by workflow rules",
     },
   });
+
+  // Check if an inspection task already exists for this item
+  const { data: existingTask } = await supabase
+    .from("warehouse_tasks")
+    .select("id")
+    .eq("task_type", "inspection")
+    .eq("order_id", orderId)
+    .in("status", ["pending", "assigned", "in_progress"])
+    .containedBy("metadata", { inboundItemId: itemId })
+    .maybeSingle();
+
+  if (!existingTask) {
+    // Get item + order info for task creation
+    const { data: item } = await supabase
+      .from("inbound_items")
+      .select("product_id, qty_received, order:inbound_orders (id, client_id)")
+      .eq("id", itemId)
+      .single();
+
+    if (item) {
+      const order = Array.isArray(item.order) ? item.order[0] : item.order;
+      import("./warehouse-tasks").then(({ createWarehouseTask }) => {
+        createWarehouseTask({
+          taskType: "inspection",
+          productId: item.product_id,
+          orderId: orderId,
+          orderType: "inbound",
+          clientId: order?.client_id || undefined,
+          qtyRequested: item.qty_received || 0,
+          priority: 7,
+          metadata: { inboundItemId: itemId },
+          notes: reason || "Manual inspection hold",
+        }).catch((err) => console.error("Failed to create inspection task:", err));
+      });
+    }
+  }
 }
 
 /**

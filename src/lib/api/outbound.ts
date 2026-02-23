@@ -321,6 +321,15 @@ export async function updateOutboundOrderStatus(
         // Don't block the status update, just log the error
       }
     }
+
+    // Auto-generate pick list after reservation
+    if (additionalFields?.locationId) {
+      import("./warehouse-tasks")
+        .then(({ generatePickList }) =>
+          generatePickList(id, additionalFields.locationId!)
+        )
+        .catch((err) => console.error("Failed to generate pick list:", err));
+    }
   }
 
   if (status === "shipped") {

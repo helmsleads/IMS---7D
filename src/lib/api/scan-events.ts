@@ -10,7 +10,8 @@ export type WorkflowStage =
   | "cycle_count"
   | "transfer"
   | "return_processing"
-  | "damage_inspection";
+  | "damage_inspection"
+  | "inspection";
 export type ScanResult = "success" | "error" | "warning";
 
 export interface ScanEvent {

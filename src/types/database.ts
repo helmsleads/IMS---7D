@@ -916,6 +916,7 @@ export type ReferenceType =
   | 'stock_transfer'
   | 'manual'
   | 'lpn'
+  | 'warehouse_task'
 
 export type InventoryStage =
   | 'receiving'
@@ -963,6 +964,7 @@ export type WorkflowStage =
   | 'transfer'
   | 'return_processing'
   | 'damage_inspection'
+  | 'inspection'
 
 export type ScanResult = 'success' | 'error' | 'warning'
 
@@ -1434,4 +1436,88 @@ export interface SpreadsheetImport {
   completed_at: string | null
   created_at: string
   notes: string | null
+}
+
+// ============================================================
+// Warehouse Tasks
+// ============================================================
+
+export type WarehouseTaskType = 'inspection' | 'putaway' | 'pick'
+export type WarehouseTaskStatus = 'pending' | 'assigned' | 'in_progress' | 'completed' | 'failed' | 'cancelled'
+export type InspectionOverallResult = 'pass' | 'fail' | 'partial'
+export type PickListItemStatus = 'pending' | 'in_progress' | 'picked' | 'short' | 'skipped'
+
+export interface WarehouseTask {
+  id: string
+  task_number: string
+  task_type: WarehouseTaskType
+  status: WarehouseTaskStatus
+  priority: number
+  client_id: string | null
+  product_id: string | null
+  lpn_id: string | null
+  lot_id: string | null
+  order_id: string | null
+  order_type: 'inbound' | 'outbound' | null
+  source_location_id: string | null
+  source_sublocation_id: string | null
+  destination_location_id: string | null
+  destination_sublocation_id: string | null
+  qty_requested: number
+  qty_completed: number
+  assigned_to: string | null
+  assigned_at: string | null
+  started_at: string | null
+  completed_at: string | null
+  due_by: string | null
+  metadata: Record<string, unknown>
+  notes: string | null
+  created_by: string | null
+  completed_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface InspectionResultRecord {
+  id: string
+  task_id: string
+  results: Array<{
+    item_id: string
+    label: string
+    result: 'pass' | 'fail'
+    value?: string | number
+    notes?: string
+  }>
+  overall_result: InspectionOverallResult
+  inspector_notes: string | null
+  inspected_by: string | null
+  inspected_at: string
+  created_at: string
+}
+
+export interface PickListItem {
+  id: string
+  task_id: string
+  outbound_item_id: string | null
+  product_id: string | null
+  lot_id: string | null
+  location_id: string | null
+  sublocation_id: string | null
+  qty_allocated: number
+  qty_picked: number
+  qty_short: number
+  sequence_number: number
+  status: PickListItemStatus
+  picked_by: string | null
+  picked_at: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface InspectionCriterion {
+  id: string
+  label: string
+  type: 'pass_fail' | 'numeric' | 'text'
+  required: boolean
 }

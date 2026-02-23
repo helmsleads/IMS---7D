@@ -9,9 +9,11 @@ import { createClient } from "@/lib/supabase";
 import { logScanEvent, resolveBarcode } from "@/lib/api/scan-events";
 import { updateInventoryWithTransaction } from "@/lib/api/inventory-transactions";
 import { moveLPN, getLPNByNumber, updateLPNStatus } from "@/lib/api/lpns";
+import { getWarehouseTask, completePutawayTask, getWarehouseTasks, WarehouseTaskWithRelations } from "@/lib/api/warehouse-tasks";
 
 interface PutawayScannerProps {
   locationId?: string;
+  taskId?: string;
   onComplete?: () => void;
 }
 
@@ -78,6 +80,7 @@ function playBeep(success: boolean = true) {
 
 export default function PutawayScanner({
   locationId: defaultLocationId,
+  taskId,
   onComplete,
 }: PutawayScannerProps) {
   const [scanMode, setScanMode] = useState<ScanMode>("product_or_lpn");
@@ -87,6 +90,10 @@ export default function PutawayScanner({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  // Task-driven mode
+  const [currentTask, setCurrentTask] = useState<WarehouseTaskWithRelations | null>(null);
+  const [taskLoading, setTaskLoading] = useState(!!taskId);
+
   // Scanned items
   const [scannedProduct, setScannedProduct] = useState<ScannedProduct | null>(null);
   const [scannedLPN, setScannedLPN] = useState<ScannedLPN | null>(null);
@@ -95,6 +102,58 @@ export default function PutawayScanner({
 
   // Quantity input for products
   const [qty, setQty] = useState(1);
+
+  // Load task data when in task-driven mode
+  useEffect(() => {
+    if (taskId) {
+      loadTask(taskId);
+    }
+  }, [taskId]);
+
+  async function loadTask(id: string) {
+    setTaskLoading(true);
+    try {
+      const task = await getWarehouseTask(id);
+      if (task) {
+        setCurrentTask(task);
+        // Pre-populate product info from task
+        if (task.product) {
+          setScannedProduct({
+            id: task.product.id,
+            name: task.product.name,
+            sku: task.product.sku,
+            qty: task.qty_requested,
+          });
+          setQty(task.qty_requested);
+          setScanMode("location"); // Skip product scan, go straight to location
+          setScanStatus("found");
+          setMessage({ type: "success", text: "Task loaded. Scan destination location." });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load task:", err);
+    } finally {
+      setTaskLoading(false);
+    }
+  }
+
+  async function handleNextTask() {
+    // Find next pending putaway task
+    try {
+      const tasks = await getWarehouseTasks({
+        taskType: "putaway",
+        status: "pending",
+      });
+      if (tasks.length > 0) {
+        resetScan();
+        loadTask(tasks[0].id);
+      } else {
+        setMessage({ type: "success", text: "No more pending putaway tasks!" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Failed to load next task" });
+    }
+  }
 
   // Recent putaways for display
   const [recentPutaways, setRecentPutaways] = useState<Array<{
@@ -283,9 +342,23 @@ export default function PutawayScanner({
         setMessage({ type: "success", text: `${qty}x ${scannedProduct.sku} put away successfully!` });
       }
 
+      // If in task mode, complete the task
+      if (currentTask && scannedSublocation) {
+        try {
+          await completePutawayTask(currentTask.id, scannedSublocation.id);
+        } catch (err) {
+          console.error("Failed to complete putaway task:", err);
+        }
+      }
+
       // Reset for next scan
       setTimeout(() => {
-        resetScan();
+        if (currentTask) {
+          // In task mode, don't auto-reset — show "Next Task" button
+          setCurrentTask(null);
+        } else {
+          resetScan();
+        }
       }, 1500);
     } catch (error) {
       if (audioEnabled) playBeep(false);
@@ -295,8 +368,38 @@ export default function PutawayScanner({
     }
   };
 
+  if (taskLoading) {
+    return (
+      <div className="flex justify-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
+      {/* Task Info Banner */}
+      {currentTask && (
+        <Card>
+          <div className="flex items-center gap-3 p-1">
+            <div className="p-2 rounded-lg bg-blue-50">
+              <Package className="w-5 h-5 text-blue-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-slate-900">Task: {currentTask.task_number}</p>
+              <p className="text-xs text-slate-500">
+                {currentTask.product?.name} — {currentTask.qty_requested} units
+                {currentTask.destination_sublocation && (
+                  <span className="ml-1 text-indigo-600">
+                    (Suggested: {currentTask.destination_sublocation.code})
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Scanner Controls */}
       <Card>
         <div className="flex items-center justify-between mb-4">
@@ -439,6 +542,20 @@ export default function PutawayScanner({
           </Button>
         )}
       </Card>
+
+      {/* Next Task Button (task-driven mode) */}
+      {taskId && !currentTask && message?.type === "success" && (
+        <div className="flex gap-2">
+          <Button onClick={handleNextTask} className="flex-1">
+            Next Putaway Task
+          </Button>
+          {onComplete && (
+            <Button variant="secondary" onClick={onComplete}>
+              Done
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Recent Putaways */}
       {recentPutaways.length > 0 && (

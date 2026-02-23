@@ -35,9 +35,13 @@ import {
   PanelLeftClose,
   PanelLeft,
   Building2,
+  ClipboardCheck,
+  ShieldCheck,
+  ListChecks,
 } from "lucide-react";
 import { getUnreadCount } from "@/lib/api/messages";
 import { getPendingChecklistsCount } from "@/lib/api/checklists";
+import { getPendingTaskCount } from "@/lib/api/warehouse-tasks";
 
 interface NavLink {
   label: string;
@@ -66,6 +70,18 @@ const navGroups: NavGroup[] = [
       { label: "Outbound", icon: ArrowUpFromLine, path: "/outbound" },
       { label: "Returns", icon: RotateCcw, path: "/returns" },
       { label: "Damage Reports", icon: AlertTriangle, path: "/damage-reports" },
+      {
+        label: "Tasks",
+        icon: ClipboardCheck,
+        path: "/tasks",
+        badgeKey: "tasks",
+        children: [
+          { label: "All Tasks", path: "/tasks", icon: ClipboardCheck },
+          { label: "Inspection", path: "/tasks/inspection", icon: ShieldCheck },
+          { label: "Putaway", path: "/tasks/putaway", icon: ArrowDownToLine },
+          { label: "Pick Lists", path: "/tasks/pick", icon: ListChecks },
+        ],
+      },
     ],
   },
   {
@@ -143,6 +159,7 @@ export default function Sidebar() {
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [pendingChecklists, setPendingChecklists] = useState(0);
+  const [pendingTasks, setPendingTasks] = useState(0);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   // Load collapsed state from localStorage
@@ -199,6 +216,22 @@ export default function Sidebar() {
     // Poll every 60 seconds
     const interval = setInterval(fetchPendingChecklists, 60000);
 
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch pending tasks count
+  useEffect(() => {
+    const fetchPendingTasks = async () => {
+      try {
+        const count = await getPendingTaskCount();
+        setPendingTasks(count);
+      } catch (err) {
+        console.error("Failed to fetch pending tasks count:", err);
+      }
+    };
+
+    fetchPendingTasks();
+    const interval = setInterval(fetchPendingTasks, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -427,11 +460,19 @@ export default function Sidebar() {
                               {pendingChecklists > 99 ? "99+" : pendingChecklists}
                             </span>
                           )}
+                          {!isCollapsed && link.badgeKey === "tasks" && pendingTasks > 0 && (
+                            <span className="px-2 py-0.5 text-xs font-medium bg-indigo-500 text-white rounded-full min-w-[20px] text-center">
+                              {pendingTasks > 99 ? "99+" : pendingTasks}
+                            </span>
+                          )}
                           {isCollapsed && link.badgeKey === "messages" && unreadMessages > 0 && (
                             <span className="absolute top-1 right-1 w-2 h-2 bg-indigo-500 rounded-full" />
                           )}
                           {isCollapsed && link.badgeKey === "checklists" && pendingChecklists > 0 && (
                             <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full" />
+                          )}
+                          {isCollapsed && link.badgeKey === "tasks" && pendingTasks > 0 && (
+                            <span className="absolute top-1 right-1 w-2 h-2 bg-indigo-500 rounded-full" />
                           )}
                           {isCollapsed && (
                             <span className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">

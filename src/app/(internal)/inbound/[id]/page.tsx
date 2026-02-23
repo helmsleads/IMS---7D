@@ -45,6 +45,7 @@ import {
   RejectionReason,
 } from "@/lib/api/inbound";
 import { getLocations, Location } from "@/lib/api/locations";
+import { getWarehouseTasks, WarehouseTaskWithRelations } from "@/lib/api/warehouse-tasks";
 import {
   getDamageReports,
   createDamageReport,
@@ -187,6 +188,9 @@ export default function InboundOrderDetailPage() {
   const [workflowRules, setWorkflowRules] = useState<InboundWorkflowRules | null>(null);
   const [inspectionAcknowledged, setInspectionAcknowledged] = useState(false);
 
+  // Related warehouse tasks
+  const [relatedTasks, setRelatedTasks] = useState<WarehouseTaskWithRelations[]>([]);
+
   const fetchOrder = async () => {
     try {
       const [orderData, locationsData, damageData] = await Promise.all([
@@ -213,6 +217,17 @@ export default function InboundOrderDetailPage() {
           } catch (err) {
             console.error("Failed to fetch workflow rules:", err);
           }
+        }
+
+        // Fetch related warehouse tasks
+        try {
+          const tasks = await getWarehouseTasks({
+            orderId,
+            orderType: "inbound",
+          });
+          setRelatedTasks(tasks);
+        } catch (err) {
+          console.error("Failed to fetch related tasks:", err);
         }
       }
     } catch (err) {
@@ -937,6 +952,32 @@ export default function InboundOrderDetailPage() {
                                 {rejected} rejected
                               </p>
                             )}
+                            {/* Warehouse task badges */}
+                            {relatedTasks
+                              .filter((t) => t.product_id === item.product_id && ["pending", "assigned", "in_progress"].includes(t.status))
+                              .map((task) => (
+                                <Link
+                                  key={task.id}
+                                  href={`/tasks/${task.id}`}
+                                  className="inline-flex items-center gap-1 mt-1 mr-1"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded ${
+                                    task.task_type === "inspection"
+                                      ? "bg-amber-100 text-amber-700"
+                                      : task.task_type === "putaway"
+                                      ? "bg-blue-100 text-blue-700"
+                                      : "bg-green-100 text-green-700"
+                                  }`}>
+                                    {task.task_type === "inspection" ? (
+                                      <ShieldCheck className="w-3 h-3" />
+                                    ) : (
+                                      <ClipboardList className="w-3 h-3" />
+                                    )}
+                                    {task.task_type === "inspection" ? "Inspection" : "Putaway"} {task.status === "pending" ? "Pending" : "In Progress"}
+                                  </span>
+                                </Link>
+                              ))}
                             {hasDamage && (
                               <p className="text-xs text-orange-600 mt-1 flex items-center gap-1">
                                 <AlertTriangle className="w-3 h-3" />

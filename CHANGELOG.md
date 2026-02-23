@@ -1,5 +1,193 @@
 # Changelog
 
+## [2.4.0] - 2026-02-23
+
+### Overview
+
+Warehouse workflow automation adding a centralized task queue for inspection, putaway, and pick list operations. Replaces manual discovery-based work with directed task assignment, barcode-verified scanning, and FEFO-optimized pick allocation. Tasks auto-generate from existing receive/confirm flows and propagate through the pipeline (receive → inspect → putaway, confirm → pick).
+
+---
+
+### New Features
+
+#### Central Task Queue (`warehouse_tasks` table)
+Unified task management for all warehouse operations with lifecycle tracking, priority ordering, and user assignment.
+
+- **Task types:** inspection, putaway, pick
+- **Lifecycle:** pending → assigned → in_progress → completed/failed/cancelled
+- **Priority:** 1-10 scale (perishable products auto-elevated to 8)
+- **Auto-numbering:** Sequential task numbers via `generate_task_number` RPC (INS-YYYYMMDD-0001, PUT-..., PCK-...)
+- **Polymorphic orders:** Links to both inbound and outbound orders via `order_id` + `order_type`
+
+**Files:** `supabase/migrations/20260223_create_warehouse_tasks.sql`, `src/lib/api/warehouse-tasks.ts`
+
+#### Inspection Workflow
+Automated inspection task creation when clients have `requiresInspection` enabled in their workflow profile. Inventory is quarantined until inspection passes.
+
+- **Auto-creation:** Tasks generated in `receiveInboundItem()`, `receiveWithLot()`, and `receiveInboundItemToPallet()` when client rules require inspection
+- **Quarantine enforcement:** Inventory set to `status: 'quarantine'` until inspection completes
+- **Configurable criteria:** Stored in `workflow_profiles.inspection_criteria` JSONB — per-criterion pass/fail with required flag
+- **Result handling:** Pass → releases quarantine + auto-creates putaway task; Fail → creates damage report via `reportReceivingDamage()`
+- **InspectionScanner component:** Barcode verification, dynamic checklist, per-criterion notes, audio feedback
+
+**Files:** `src/components/internal/InspectionScanner.tsx` (new), `src/lib/api/inbound.ts` (modified), `src/app/(internal)/tasks/inspection/page.tsx` (new)
+
+#### Putaway Task Queue
+Directed putaway with suggested destinations and task-driven scanner mode.
+
+- **Auto-creation:** Tasks generated after receiving (when inspection not required) or after inspection passes
+- **Suggested destinations:** Pre-populated via `getSuggestedPutAway()` based on existing inventory locations
+- **Priority elevation:** Perishable products (food/pharma) auto-assigned priority 8
+- **Enhanced PutawayScanner:** Optional `taskId` prop enables task-driven mode — auto-loads product/LPN info, pre-displays suggested destination, "Next Task" button for batch putaway
+- **Bulk claim:** "Claim Next 5" button for batch putaway runs
+
+**Files:** `src/components/internal/PutawayScanner.tsx` (modified), `src/app/(internal)/tasks/putaway/page.tsx` (new)
+
+#### Pick List Generation (FEFO)
+Automatic pick list creation with First Expired, First Out allocation across lot and non-lot inventory.
+
+- **Auto-generation:** Pick lists created when outbound order status changes to `confirmed` (after reservation succeeds)
+- **FEFO allocation:** Allocates from earliest-expiring lots first, then falls back to non-lot inventory ordered by creation date
+- **Multi-location splitting:** Automatically splits picks across multiple sublocations when single location has insufficient stock
+- **Pick list items:** `pick_list_items` table tracks per-line allocation, pick progress, and short picks
+- **Enhanced PickScanner:** Optional `taskId` prop loads pick list items (pre-ordered by sequence), shows exact location + lot number, "Short" button for short-pick reporting
+- **Short pick handling:** Records short quantity without deducting inventory, logs activity
+- **Auto-completion:** Task auto-completes when all pick items are picked or accounted for
+
+**Files:** `src/components/internal/PickScanner.tsx` (modified), `src/app/(internal)/tasks/pick/page.tsx` (new)
+
+#### Unified Task Dashboard (`/tasks`)
+Central task management interface with filtering and real-time status.
+
+- **Tab filters:** All | Inspection | Putaway | Pick
+- **Status filters:** Active | Completed
+- **My Tasks toggle:** Filter to current user's assigned tasks
+- **Stat cards:** Pending counts per task type + total in-progress
+- **Sortable table:** Task number, type icon, product, client, quantity, priority badge, status badge, age
+
+**Files:** `src/app/(internal)/tasks/page.tsx` (new), `src/app/(internal)/tasks/layout.tsx` (new)
+
+#### Task Detail Page (`/tasks/[id]`)
+Renders differently per task type with integrated scanner launch.
+
+- **Product info card:** Name, SKU, quantity requested
+- **Locations card:** Source and destination with sublocation detail
+- **Pick list table:** (pick tasks only) All allocated items with location, lot, qty, progress
+- **Timeline:** Created → Assigned → Started → Completed with timestamps
+- **Scanner integration:** "Claim & Start" / "Continue" button opens appropriate scanner (InspectionScanner / PutawayScanner / PickScanner) in modal
+
+**Files:** `src/app/(internal)/tasks/[id]/page.tsx` (new)
+
+#### Sidebar Navigation
+Tasks nav group with sub-navigation and live badge count.
+
+- **Navigation:** Tasks group in Operations section with children: All Tasks, Inspection, Putaway, Pick Lists
+- **Badge count:** Polls pending task count every 60 seconds
+- **Icons:** ClipboardCheck, ShieldCheck, ArrowDownToLine, ListChecks
+
+**Files:** `src/components/internal/Sidebar.tsx` (modified)
+
+#### Order Detail Integration
+Task status visibility on inbound and outbound detail pages.
+
+- **Inbound detail:** Shows task status badges (amber "Inspection Pending", blue "Putaway Pending") on received items, linked to task detail
+- **Outbound detail:** Pick list section with progress (X of Y items picked, Z short), "Open Pick Scanner" button for task-driven picking
+
+**Files:** `src/app/(internal)/inbound/[id]/page.tsx` (modified), `src/app/(internal)/outbound/[id]/page.tsx` (modified)
+
+---
+
+### Database Migration
+
+**Tables created:**
+- `warehouse_tasks` — Central task queue with FKs to products, clients, locations, LPNs, lots; indexes on `(task_type, status)`, `(assigned_to)`, `(order_id, order_type)`, `(priority DESC, created_at ASC)`
+- `inspection_results` — Completed inspection records with JSONB results array and overall pass/fail/partial
+- `pick_list_items` — Allocated pick lines with FEFO ordering, sequence numbers, and per-line status tracking
+
+**RPCs created:**
+- `generate_task_number(p_prefix)` — Returns `{PREFIX}-{YYYYMMDD}-{SEQ}` with 4-digit zero-padded sequence
+
+**Columns added:**
+- `workflow_profiles.inspection_criteria` JSONB (default `'[]'`)
+
+**RLS policies:** Authenticated users can SELECT, INSERT, UPDATE on all three tables.
+
+**Migration file:** `supabase/migrations/20260223_create_warehouse_tasks.sql` (requires manual application)
+
+---
+
+### Types Added
+
+| Type | Description |
+|------|-------------|
+| `WarehouseTaskType` | `'inspection' \| 'putaway' \| 'pick'` |
+| `WarehouseTaskStatus` | `'pending' \| 'assigned' \| 'in_progress' \| 'completed' \| 'failed' \| 'cancelled'` |
+| `InspectionOverallResult` | `'pass' \| 'fail' \| 'partial'` |
+| `PickListItemStatus` | `'pending' \| 'in_progress' \| 'picked' \| 'short' \| 'skipped'` |
+| `WarehouseTask` | Full task interface (all columns) |
+| `InspectionResultRecord` | Inspection result with JSONB results array |
+| `PickListItem` | Pick line with allocation, pick, and short quantities |
+| `InspectionCriterion` | Checklist item definition (id, label, type, required) |
+
+Extended unions: `ReferenceType` += `'warehouse_task'`, `WorkflowStage` += `'inspection'`
+
+**File:** `src/types/database.ts`
+
+---
+
+### Files Changed
+
+**Created (10):**
+1. `supabase/migrations/20260223_create_warehouse_tasks.sql` — Database migration
+2. `src/lib/api/warehouse-tasks.ts` — Core task API: CRUD, lifecycle, queue queries, inspection, putaway, FEFO pick allocation (~910 lines)
+3. `src/components/internal/InspectionScanner.tsx` — Scan-to-inspect with dynamic checklist
+4. `src/app/(internal)/tasks/page.tsx` — Unified task dashboard
+5. `src/app/(internal)/tasks/layout.tsx` — Layout wrapper
+6. `src/app/(internal)/tasks/[id]/page.tsx` — Task detail page
+7. `src/app/(internal)/tasks/inspection/page.tsx` — Inspection queue
+8. `src/app/(internal)/tasks/putaway/page.tsx` — Putaway queue
+9. `src/app/(internal)/tasks/pick/page.tsx` — Pick list queue
+
+**Modified (10):**
+1. `src/types/database.ts` — +86 lines: task types, interfaces, extended unions
+2. `src/lib/api/inbound.ts` — +166 lines: auto-create inspection/putaway tasks in 3 receive functions + enhanced `placeOnInspectionHold`
+3. `src/lib/api/outbound.ts` — +9 lines: auto-generate pick list on order confirmation
+4. `src/lib/api/inventory-transactions.ts` — Added `'warehouse_task'` to local `ReferenceType`
+5. `src/lib/api/scan-events.ts` — Added `'inspection'` to local `WorkflowStage`
+6. `src/components/internal/PutawayScanner.tsx` — +119 lines: optional `taskId` prop, task-driven mode, "Next Task" button
+7. `src/components/internal/PickScanner.tsx` — +151 lines: optional `taskId` prop, pick-list-items mode, short-pick handling
+8. `src/components/internal/Sidebar.tsx` — +41 lines: Tasks nav group with children + badge count polling
+9. `src/app/(internal)/inbound/[id]/page.tsx` — +41 lines: task status badges on received items
+10. `src/app/(internal)/outbound/[id]/page.tsx` — +101 lines: pick list section, progress, task-driven scanner modal
+
+---
+
+### Workflow Diagram
+
+```
+Inbound Receive
+    │
+    ├── Client requires inspection?
+    │   ├── YES → Create inspection task (INS-...) + quarantine inventory
+    │   │           │
+    │   │           ├── Pass → Release quarantine + create putaway task (PUT-...)
+    │   │           └── Fail → Create damage report
+    │   │
+    │   └── NO → Create putaway task (PUT-...) directly
+    │
+    └── Putaway task → PutawayScanner confirms destination
+
+Outbound Confirm
+    │
+    └── Reserve inventory → Generate pick list (PCK-...)
+        │
+        └── FEFO allocation → pick_list_items with sequence numbers
+            │
+            └── PickScanner → pick/short each item → auto-complete task
+```
+
+---
+
 ## [2.3.0] - 2026-02-13
 
 ### Overview

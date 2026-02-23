@@ -71,6 +71,8 @@ import {
 } from "@/lib/api/box-usage";
 import { getClientSettings, ClientSetting } from "@/lib/api/settings";
 import PickingScanner from "@/components/internal/PickingScanner";
+import PickScanner from "@/components/internal/PickScanner";
+import { getWarehouseTasks, getPickListItems, WarehouseTaskWithRelations, PickListItemWithRelations } from "@/lib/api/warehouse-tasks";
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: Clock },
@@ -261,6 +263,9 @@ export default function OutboundOrderDetailPage() {
 
   // Picking scanner state
   const [showPickingScanner, setShowPickingScanner] = useState(false);
+  const [showPickScanner, setShowPickScanner] = useState(false);
+  const [pickTask, setPickTask] = useState<WarehouseTaskWithRelations | null>(null);
+  const [pickListItems, setPickListItems] = useState<PickListItemWithRelations[]>([]);
 
   // Supplies state
   const [supplies, setSupplies] = useState<SupplyWithInventory[]>([]);
@@ -352,6 +357,22 @@ export default function OutboundOrderDetailPage() {
 
           const suggestions = suggestBoxesForOrder(itemsForSuggestion);
           setBoxSuggestions(suggestions);
+        }
+
+        // Fetch pick task if order is confirmed or later
+        try {
+          const tasks = await getWarehouseTasks({
+            orderId,
+            orderType: "outbound",
+          });
+          const pickTaskData = tasks.find((t) => t.task_type === "pick");
+          if (pickTaskData) {
+            setPickTask(pickTaskData);
+            const items = await getPickListItems(pickTaskData.id);
+            setPickListItems(items);
+          }
+        } catch (err) {
+          console.error("Failed to fetch pick task:", err);
         }
       }
     } catch (err) {
@@ -931,12 +952,21 @@ export default function OutboundOrderDetailPage() {
 
               {order.status === "processing" && (
                 <div className="flex gap-3">
-                  <Button
-                    onClick={() => setShowPickingScanner(true)}
-                  >
-                    <ScanLine className="w-4 h-4 mr-2" />
-                    Scan to Pick
-                  </Button>
+                  {pickTask ? (
+                    <Button
+                      onClick={() => setShowPickScanner(true)}
+                    >
+                      <ScanLine className="w-4 h-4 mr-2" />
+                      Pick Scanner (Task)
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => setShowPickingScanner(true)}
+                    >
+                      <ScanLine className="w-4 h-4 mr-2" />
+                      Scan to Pick
+                    </Button>
+                  )}
                   <Button
                     variant="secondary"
                     onClick={() => handleStatusUpdate("packed")}
@@ -2139,6 +2169,45 @@ export default function OutboundOrderDetailPage() {
                 </div>
               </div>
 
+              {/* Pick Task Info */}
+              {pickTask && (
+                <div className="border-t border-gray-200 pt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">Pick Task</span>
+                    <Link
+                      href={`/tasks/${pickTask.id}`}
+                      className="text-xs text-indigo-600 hover:text-indigo-700"
+                    >
+                      {pickTask.task_number}
+                    </Link>
+                  </div>
+                  <div className="text-xs text-gray-500 space-y-1">
+                    <div className="flex justify-between">
+                      <span>Items</span>
+                      <span>
+                        {pickListItems.filter((i) => i.status === "picked").length} / {pickListItems.length} picked
+                      </span>
+                    </div>
+                    {pickListItems.some((i) => i.status === "short") && (
+                      <div className="flex justify-between text-amber-600">
+                        <span>Short Picks</span>
+                        <span>{pickListItems.filter((i) => i.status === "short").length}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span>Status</span>
+                      <span className={`font-medium ${
+                        pickTask.status === "completed" ? "text-green-600" :
+                        pickTask.status === "in_progress" ? "text-blue-600" :
+                        "text-amber-600"
+                      }`}>
+                        {pickTask.status.replace("_", " ")}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Ready to Ship */}
               {canPick && allItemsShipped && (
                 <div className="border-t border-gray-200 pt-4">
@@ -2454,6 +2523,26 @@ export default function OutboundOrderDetailPage() {
           }}
         />
       </Modal>
+
+      {/* Task-driven Pick Scanner Modal */}
+      {pickTask && (
+        <Modal
+          isOpen={showPickScanner}
+          onClose={() => setShowPickScanner(false)}
+          title="Pick Scanner (Task-Driven)"
+          size="lg"
+        >
+          <PickScanner
+            outboundOrderId={orderId}
+            locationId={pickTask.source_location_id || shipLocationId}
+            taskId={pickTask.id}
+            onComplete={() => {
+              setShowPickScanner(false);
+              fetchOrder();
+            }}
+          />
+        </Modal>
+      )}
     </AppShell>
   );
 }

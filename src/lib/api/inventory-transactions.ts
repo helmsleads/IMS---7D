@@ -46,7 +46,8 @@ export type ReferenceType =
   | "cycle_count"
   | "stock_transfer"
   | "manual"
-  | "lpn";
+  | "lpn"
+  | "warehouse_task";
 
 export interface TransactionFilters {
   productId?: string;
