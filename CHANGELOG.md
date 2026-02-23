@@ -1,5 +1,50 @@
 # Changelog
 
+## [2.4.1] - 2026-02-23
+
+### Overview
+
+UI polish pass across all warehouse task queue pages and inventory filtering improvements.
+
+---
+
+### Task Queue UI Polish
+
+Upgraded all 6 task queue files from raw HTML tables and inline error handling to platform UI components. No functionality changes.
+
+| Before | After |
+|--------|-------|
+| Raw `<table>/<thead>/<tbody>` | `<Table>` component with mobile card view, loading skeletons, empty states |
+| `console.error()` only | `handleApiError()` with user-friendly messages |
+| Inline error text or silent failures | `<FetchError>` component with retry button |
+| Browser `alert()` dialogs | `<Alert>` component with auto-dismiss (3s for success) |
+| No pagination | `usePagination(items, 20)` + `<Pagination>` component |
+| Inline CSS spinner divs | `<Spinner>` component |
+| `disabled={loading}` + manual spinner | Button `loading` prop |
+| No refresh button (most pages) | `<Button>` with animated `<RefreshCw>` icon |
+
+**Files modified (6):**
+1. `src/app/(internal)/tasks/page.tsx` — Unified dashboard
+2. `src/app/(internal)/tasks/[id]/page.tsx` — Task detail (pick list table)
+3. `src/app/(internal)/tasks/inspection/page.tsx` — Inspection queue
+4. `src/app/(internal)/tasks/putaway/page.tsx` — Putaway queue
+5. `src/app/(internal)/tasks/pick/page.tsx` — Pick list queue
+6. `src/components/internal/InspectionScanner.tsx` — Inspection scanner
+
+### Inventory Stock Filter Enhancement
+
+Renamed "Stock Level" dropdown to "Stock Available" and added "In Stock" filter option to the inventory page.
+
+| Filter | Shows |
+|--------|-------|
+| In Stock | Items with adequate stock (above reorder point) |
+| Low Stock | Items at or below reorder point |
+| Out of Stock | Items with zero quantity on hand |
+
+**File modified:** `src/app/(internal)/inventory/page.tsx`
+
+---
+
 ## [2.4.0] - 2026-02-23
 
 ### Overview

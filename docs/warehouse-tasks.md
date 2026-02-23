@@ -121,13 +121,15 @@ Single API file following the `cycle-counts.ts` pattern:
 
 ## UI Pages
 
+All task pages use the platform `<Table>` component (mobile card view, loading skeletons, empty states), `<FetchError>` with retry, `<Alert>` for action feedback (auto-dismiss 3s), `<Pagination>` at 20 items/page, and `<Spinner>` for loading states. Buttons use the `loading` prop instead of inline spinners.
+
 | Route | Description |
 |-------|-------------|
-| `/tasks` | Unified dashboard with tab filters (All/Inspection/Putaway/Pick), status filters, "My Tasks" toggle, stat cards |
-| `/tasks/[id]` | Task detail - renders differently per type, launches appropriate scanner in modal |
-| `/tasks/inspection` | Inspection queue - sorted by priority/age, "Claim & Start" opens InspectionScanner |
-| `/tasks/putaway` | Putaway queue - "Claim Next 5" for batch putaway, perishables highlighted |
-| `/tasks/pick` | Pick list queue - progress bars per order, rush orders highlighted |
+| `/tasks` | Unified dashboard with tab filters (All/Inspection/Putaway/Pick), status filters, "My Tasks" toggle, stat cards, refresh button, pagination |
+| `/tasks/[id]` | Task detail - renders differently per type, pick list in `<Table>`, `<Alert>` for action feedback, `<FetchError>` for load failures, Button `loading` prop on Claim/Cancel |
+| `/tasks/inspection` | Inspection queue - sorted by priority/age, "Claim & Start" with `loading` prop, refresh button, pagination |
+| `/tasks/putaway` | Putaway queue - "Claim Next 5" with `loading` prop, refresh button, `<Alert>` replacing `alert()`, pagination |
+| `/tasks/pick` | Pick list queue - progress bars per order, rush orders highlighted, refresh button, `<Alert>` for errors, pagination |
 
 ### Sidebar Integration
 
@@ -156,6 +158,8 @@ Props: `{ taskId: string; onComplete?: () => void }`
 - Per-criterion and overall notes
 - Submits via `submitInspectionResult()`
 - Audio feedback via `playBeep()`
+- Uses `<Spinner>` for loading state, `<Alert>` for messages, Button `loading` prop on submit
+- Error handling via `handleApiError()` in all catch blocks
 
 ### PutawayScanner Enhancement
 

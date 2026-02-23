@@ -218,6 +218,7 @@ export default function InventoryPage() {
   }, [clients, inventory]);
 
   const stockLevelOptions = [
+    { value: "available", label: "In Stock" },
     { value: "low", label: "Low Stock" },
     { value: "out", label: "Out of Stock" },
   ];
@@ -254,6 +255,9 @@ export default function InventoryPage() {
       // Stock level filter (only apply on "all" tab)
       if (activeTab === "all" && selectedStockLevel) {
         const status = getStockStatus(item);
+        if (selectedStockLevel === "available" && status.label !== "OK") {
+          return false;
+        }
         if (selectedStockLevel === "low" && status.label !== "Low") {
           return false;
         }
@@ -1096,7 +1100,7 @@ export default function InventoryPage() {
                   options={stockLevelOptions}
                   value={selectedStockLevel}
                   onChange={(e) => setSelectedStockLevel(e.target.value)}
-                  placeholder="Stock Level"
+                  placeholder="Stock Available"
                 />
               </div>
             )}
