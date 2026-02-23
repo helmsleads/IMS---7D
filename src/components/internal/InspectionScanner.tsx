@@ -3,11 +3,14 @@ import { useEffect, useState, useCallback } from "react";
 import { ShieldCheck, Package, ScanLine, CheckCircle, XCircle, AlertTriangle, Volume2, FileText } from "lucide-react";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
+import Spinner from "@/components/ui/Spinner";
+import Alert from "@/components/ui/Alert";
 import BarcodeScanner from "@/components/ui/BarcodeScanner";
 import Textarea from "@/components/ui/Textarea";
 import { logScanEvent, resolveBarcode } from "@/lib/api/scan-events";
 import { getWarehouseTask, getInspectionCriteria, submitInspectionResult, WarehouseTaskWithRelations } from "@/lib/api/warehouse-tasks";
 import { InspectionCriterion, InspectionOverallResult } from "@/types/database";
+import { handleApiError } from "@/lib/utils/error-handler";
 
 interface InspectionScannerProps {
   taskId: string;
@@ -71,8 +74,7 @@ export default function InspectionScanner({ taskId, onComplete }: InspectionScan
           setCriteria(criteriaData);
         }
       } catch (error) {
-        console.error('Failed to load inspection data:', error);
-        setMessage({ type: 'error', text: 'Failed to load inspection data' });
+        setMessage({ type: 'error', text: handleApiError(error) });
       } finally {
         setLoading(false);
       }
@@ -116,8 +118,7 @@ export default function InspectionScanner({ taskId, onComplete }: InspectionScan
         playBeep(false);
       }
     } catch (error) {
-      console.error('Scan error:', error);
-      setMessage({ type: 'error', text: 'Failed to process scan' });
+      setMessage({ type: 'error', text: handleApiError(error) });
       playBeep(false);
     }
   }, [task, taskId, playBeep]);
@@ -188,8 +189,7 @@ export default function InspectionScanner({ taskId, onComplete }: InspectionScan
         onComplete?.();
       }, 1500);
     } catch (error) {
-      console.error('Failed to submit inspection:', error);
-      setMessage({ type: 'error', text: 'Failed to submit inspection' });
+      setMessage({ type: 'error', text: handleApiError(error) });
       playBeep(false);
     } finally {
       setSubmitting(false);
@@ -199,7 +199,7 @@ export default function InspectionScanner({ taskId, onComplete }: InspectionScan
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <Spinner size="lg" />
       </div>
     );
   }
@@ -392,11 +392,11 @@ export default function InspectionScanner({ taskId, onComplete }: InspectionScan
 
       {/* Message Display */}
       {message && (
-        <div className={`p-4 rounded-lg ${
-          message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
-        }`}>
-          <p className="text-sm font-medium">{message.text}</p>
-        </div>
+        <Alert
+          type={message.type}
+          message={message.text}
+          onClose={() => setMessage(null)}
+        />
       )}
 
       {/* Submit Button */}
@@ -404,20 +404,12 @@ export default function InspectionScanner({ taskId, onComplete }: InspectionScan
         <Button
           variant="primary"
           onClick={handleSubmit}
-          disabled={!allRequiredChecked || submitting || Object.keys(checklistResults).length === 0}
+          disabled={!allRequiredChecked || Object.keys(checklistResults).length === 0}
+          loading={submitting}
           className="min-w-[200px]"
         >
-          {submitting ? (
-            <>
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-              Submitting...
-            </>
-          ) : (
-            <>
-              <CheckCircle className="h-4 w-4 mr-2" />
-              Submit Inspection
-            </>
-          )}
+          <CheckCircle className="h-4 w-4 mr-2" />
+          Submit Inspection
         </Button>
       </div>
     </div>

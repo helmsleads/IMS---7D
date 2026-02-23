@@ -1,18 +1,21 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDownToLine, Clock, Play, CheckCircle, Package, MapPin } from "lucide-react";
+import { ArrowDownToLine, Clock, Play, CheckCircle, Package, RefreshCw } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
-import Spinner from "@/components/ui/Spinner";
-import EmptyState from "@/components/ui/EmptyState";
+import Table from "@/components/ui/Table";
+import FetchError from "@/components/ui/FetchError";
+import Alert from "@/components/ui/Alert";
+import Pagination, { usePagination } from "@/components/ui/Pagination";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import PutawayScanner from "@/components/internal/PutawayScanner";
 import { getWarehouseTasks, assignTask, startTask, WarehouseTaskWithRelations } from "@/lib/api/warehouse-tasks";
 import { useAuth } from "@/lib/auth-context";
+import { handleApiError } from "@/lib/utils/error-handler";
 
 export default function PutawayQueuePage() {
   const router = useRouter();
@@ -20,6 +23,7 @@ export default function PutawayQueuePage() {
   const [tasks, setTasks] = useState<WarehouseTaskWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [alert, setAlert] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<WarehouseTaskWithRelations | null>(null);
   const [claimingBulk, setClaimingBulk] = useState(false);
@@ -27,6 +31,13 @@ export default function PutawayQueuePage() {
   useEffect(() => {
     loadTasks();
   }, []);
+
+  useEffect(() => {
+    if (alert?.type === "success") {
+      const timer = setTimeout(() => setAlert(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [alert]);
 
   const loadTasks = async () => {
     try {
@@ -47,8 +58,7 @@ export default function PutawayQueuePage() {
 
       setTasks(sorted);
     } catch (err) {
-      console.error('Failed to load putaway tasks:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load tasks');
+      setError(handleApiError(err));
     } finally {
       setLoading(false);
     }
@@ -69,9 +79,9 @@ export default function PutawayQueuePage() {
       // Open scanner
       setSelectedTask(task);
       setScannerOpen(true);
+      setAlert({ type: "success", message: `Started task ${task.task_number}` });
     } catch (err) {
-      console.error('Failed to claim and start task:', err);
-      alert(err instanceof Error ? err.message : 'Failed to start task');
+      setAlert({ type: "error", message: handleApiError(err) });
     }
   };
 
@@ -89,10 +99,9 @@ export default function PutawayQueuePage() {
       }
 
       await loadTasks();
-      alert(`Claimed ${pendingTasks.length} task(s)`);
+      setAlert({ type: "success", message: `Claimed ${pendingTasks.length} task(s)` });
     } catch (err) {
-      console.error('Failed to claim tasks:', err);
-      alert(err instanceof Error ? err.message : 'Failed to claim tasks');
+      setAlert({ type: "error", message: handleApiError(err) });
     } finally {
       setClaimingBulk(false);
     }
@@ -118,13 +127,9 @@ export default function PutawayQueuePage() {
   };
 
   const getPriorityBadge = (priority: number) => {
-    if (priority >= 8) {
-      return <Badge variant="error">Urgent</Badge>;
-    } else if (priority >= 6) {
-      return <Badge variant="warning">High</Badge>;
-    } else {
-      return <Badge variant="default">Normal</Badge>;
-    }
+    if (priority >= 8) return <Badge variant="error">Urgent</Badge>;
+    if (priority >= 6) return <Badge variant="warning">High</Badge>;
+    return <Badge variant="default">Normal</Badge>;
   };
 
   const getStatusBadge = (status: string) => {
@@ -146,64 +151,98 @@ export default function PutawayQueuePage() {
   const inProgressCount = tasks.filter(t => t.status === 'in_progress').length;
   const perishableCount = tasks.filter(t => t.priority >= 8).length;
 
-  const columns = [
-    { key: 'task_number', label: 'Task #' },
-    { key: 'product', label: 'Product' },
-    { key: 'quantity', label: 'Qty' },
-    { key: 'source', label: 'Source Location' },
-    { key: 'destination', label: 'Suggested Dest' },
-    { key: 'priority', label: 'Priority' },
-    { key: 'age', label: 'Age' },
-    { key: 'status', label: 'Status' },
-    { key: 'actions', label: 'Actions' }
-  ];
+  const { paginatedItems, ...pagination } = usePagination(tasks, 20);
 
-  const rows = tasks.map(task => ({
-    task_number: task.task_number || `#${task.id}`,
-    product: (
-      <div>
-        <div className="font-medium text-slate-900">
-          {task.product?.name || 'Unknown Product'}
+  const tableColumns: { key: string; header: React.ReactNode; render?: (item: WarehouseTaskWithRelations) => React.ReactNode; hideOnMobile?: boolean; mobilePriority?: number; align?: "left" | "center" | "right" }[] = [
+    {
+      key: "task_number",
+      header: "Task #",
+      mobilePriority: 1,
+      render: (task) => <span className="text-sm text-slate-900">{task.task_number || `#${task.id}`}</span>,
+    },
+    {
+      key: "product",
+      header: "Product",
+      mobilePriority: 2,
+      render: (task) => (
+        <div>
+          <div className="font-medium text-slate-900">{task.product?.name || 'Unknown Product'}</div>
+          <div className="text-sm text-slate-500">{task.product?.sku || '\u2014'}</div>
         </div>
-        <div className="text-sm text-slate-500">
-          {task.product?.sku || '—'}
+      ),
+    },
+    {
+      key: "qty",
+      header: "Qty",
+      hideOnMobile: true,
+      render: (task) => <span className="font-medium text-slate-900">{task.qty_requested || '\u2014'}</span>,
+    },
+    {
+      key: "source",
+      header: "Source Location",
+      hideOnMobile: true,
+      render: (task) => <span className="text-sm text-slate-900">{task.source_location?.name || '\u2014'}</span>,
+    },
+    {
+      key: "destination",
+      header: "Suggested Dest",
+      hideOnMobile: true,
+      render: (task) => (
+        <span className="text-sm text-slate-900">
+          {task.destination_sublocation?.code || task.destination_location?.name || '\u2014'}
+        </span>
+      ),
+    },
+    {
+      key: "priority",
+      header: "Priority",
+      mobilePriority: 3,
+      render: (task) => getPriorityBadge(task.priority),
+    },
+    {
+      key: "age",
+      header: "Age",
+      mobilePriority: 3,
+      render: (task) => <span className="text-sm text-slate-600">{getTaskAge(task.created_at)}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      mobilePriority: 2,
+      render: (task) => getStatusBadge(task.status),
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      render: (task) => (
+        <div className="flex gap-2">
+          {(task.status === 'pending' || task.status === 'assigned') && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => handleClaimAndStart(task)}
+            >
+              <Play className="w-4 h-4 mr-1.5" />
+              {task.status === 'pending' ? 'Claim & Start' : 'Start'}
+            </Button>
+          )}
+          {task.status === 'in_progress' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setSelectedTask(task);
+                setScannerOpen(true);
+              }}
+            >
+              <Play className="w-4 h-4 mr-1.5" />
+              Continue
+            </Button>
+          )}
         </div>
-      </div>
-    ),
-    quantity: task.qty_requested || '—',
-    source: task.source_location?.name || '—',
-    destination: task.destination_sublocation?.code || task.destination_location?.name || '—',
-    priority: getPriorityBadge(task.priority),
-    age: getTaskAge(task.created_at),
-    status: getStatusBadge(task.status),
-    actions: (
-      <div className="flex gap-2">
-        {(task.status === 'pending' || task.status === 'assigned') && (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => handleClaimAndStart(task)}
-          >
-            <Play className="w-4 h-4 mr-1.5" />
-            {task.status === 'pending' ? 'Claim & Start' : 'Start'}
-          </Button>
-        )}
-        {task.status === 'in_progress' && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              setSelectedTask(task);
-              setScannerOpen(true);
-            }}
-          >
-            <Play className="w-4 h-4 mr-1.5" />
-            Continue
-          </Button>
-        )}
-      </div>
-    )
-  }));
+      ),
+    },
+  ];
 
   return (
     <AppShell title="Putaway Queue">
@@ -213,125 +252,97 @@ export default function PutawayQueuePage() {
           { label: 'Putaway' }
         ]}
       />
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <Card className="border-slate-200/80">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-slate-100 rounded-lg">
-              <Clock className="w-6 h-6 text-slate-600" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-600">Pending</p>
-              <p className="text-2xl font-semibold text-slate-900">{pendingCount}</p>
-            </div>
-          </div>
-        </Card>
 
-        <Card className="border-slate-200/80">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-amber-100 rounded-lg">
-              <Play className="w-6 h-6 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-600">In Progress</p>
-              <p className="text-2xl font-semibold text-slate-900">{inProgressCount}</p>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="border-slate-200/80">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-red-100 rounded-lg">
-              <Package className="w-6 h-6 text-red-600" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-600">Perishable</p>
-              <p className="text-2xl font-semibold text-slate-900">{perishableCount}</p>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Actions */}
-      <div className="mb-6 flex gap-3">
-        <Button
-          variant="primary"
-          onClick={handleClaimNext5}
-          disabled={pendingCount === 0 || claimingBulk}
-        >
-          <ArrowDownToLine className="w-4 h-4 mr-1.5" />
-          {claimingBulk ? 'Claiming...' : 'Claim Next 5'}
-        </Button>
-      </div>
-
-      {/* Table */}
-      <Card className="border-slate-200/80">
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Spinner size="lg" />
-          </div>
-        ) : error ? (
-          <div className="p-6 text-center text-red-600">
-            {error}
-          </div>
-        ) : tasks.length === 0 ? (
-          <EmptyState
-            icon={<CheckCircle className="w-12 h-12" />}
-            title="No putaway tasks"
-            description="All items have been put away. Great work!"
+      <div className="space-y-6">
+        {alert && (
+          <Alert
+            type={alert.type}
+            message={alert.message}
+            onClose={() => setAlert(null)}
           />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  {columns.map((col) => (
-                    <th
-                      key={col.key}
-                      className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
-                    >
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-slate-200">
-                {rows.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                      {row.task_number}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {row.product}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                      {row.quantity}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                      {row.source}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                      {row.destination}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {row.priority}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                      {row.age}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {row.status}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {row.actions}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         )}
-      </Card>
+
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="border-slate-200/80">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-slate-100 rounded-lg">
+                <Clock className="w-6 h-6 text-slate-600" />
+              </div>
+              <div>
+                <p className="text-sm text-slate-600">Pending</p>
+                <p className="text-2xl font-semibold text-slate-900">{pendingCount}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="border-slate-200/80">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-amber-100 rounded-lg">
+                <Play className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm text-slate-600">In Progress</p>
+                <p className="text-2xl font-semibold text-slate-900">{inProgressCount}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="border-slate-200/80">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-red-100 rounded-lg">
+                <Package className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <p className="text-sm text-slate-600">Perishable</p>
+                <p className="text-2xl font-semibold text-slate-900">{perishableCount}</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3">
+          <Button
+            variant="primary"
+            onClick={handleClaimNext5}
+            disabled={pendingCount === 0}
+            loading={claimingBulk}
+          >
+            <ArrowDownToLine className="w-4 h-4 mr-1.5" />
+            Claim Next 5
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={loadTasks}
+            disabled={loading}
+          >
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
+
+        {/* Table */}
+        {error ? (
+          <FetchError message={error} onRetry={loadTasks} />
+        ) : (
+          <Card className="border-slate-200/80">
+            <Table
+              columns={tableColumns}
+              data={paginatedItems}
+              loading={loading}
+              emptyMessage="All items have been put away. Great work!"
+              emptyIcon={<CheckCircle className="w-10 h-10 text-slate-300 mx-auto mb-3" />}
+            />
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalItems={pagination.totalItems}
+              itemsPerPage={pagination.itemsPerPage}
+              onPageChange={pagination.setCurrentPage}
+            />
+          </Card>
+        )}
+      </div>
 
       {/* Scanner Modal */}
       <Modal

@@ -9,13 +9,16 @@ import {
   ListChecks,
   Play,
   User,
+  RefreshCw,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
-import Spinner from "@/components/ui/Spinner";
-import EmptyState from "@/components/ui/EmptyState";
+import Table from "@/components/ui/Table";
+import FetchError from "@/components/ui/FetchError";
+import Alert from "@/components/ui/Alert";
+import Pagination, { usePagination } from "@/components/ui/Pagination";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import {
   getWarehouseTasks,
@@ -25,6 +28,7 @@ import {
 } from "@/lib/api/warehouse-tasks";
 import { WarehouseTaskType, WarehouseTaskStatus } from "@/types/database";
 import { useAuth } from "@/lib/auth-context";
+import { handleApiError } from "@/lib/utils/error-handler";
 
 type TabFilter = "all" | "inspection" | "putaway" | "pick";
 type StatusFilter = "active" | "completed";
@@ -64,12 +68,102 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+const columns: { key: string; header: React.ReactNode; render?: (item: WarehouseTaskWithRelations) => React.ReactNode; hideOnMobile?: boolean; mobilePriority?: number; align?: "left" | "center" | "right" }[] = [
+  {
+    key: "task_number",
+    header: "Task",
+    mobilePriority: 1,
+    render: (task) => (
+      <span className="font-mono text-sm text-slate-700">{task.task_number}</span>
+    ),
+  },
+  {
+    key: "task_type",
+    header: "Type",
+    mobilePriority: 3,
+    render: (task) => (
+      <div className="flex items-center gap-1.5">
+        {getTaskTypeIcon(task.task_type)}
+        <span className="text-sm capitalize text-slate-700">{task.task_type}</span>
+      </div>
+    ),
+  },
+  {
+    key: "product",
+    header: "Product",
+    mobilePriority: 2,
+    render: (task) =>
+      task.product ? (
+        <div>
+          <p className="text-sm font-medium text-slate-900">{task.product.sku}</p>
+          <p className="text-xs text-slate-500">{task.product.name}</p>
+        </div>
+      ) : (
+        <span className="text-sm text-slate-400">-</span>
+      ),
+  },
+  {
+    key: "client",
+    header: "Client",
+    hideOnMobile: true,
+    render: (task) => (
+      <span className="text-sm text-slate-600">{task.client?.company_name || "-"}</span>
+    ),
+  },
+  {
+    key: "qty",
+    header: "Qty",
+    hideOnMobile: true,
+    render: (task) => (
+      <span className="text-sm font-medium text-slate-700">{task.qty_requested}</span>
+    ),
+  },
+  {
+    key: "priority",
+    header: "Priority",
+    mobilePriority: 3,
+    render: (task) => {
+      const info = getPriorityBadge(task.priority);
+      return (
+        <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${info.className}`}>
+          {info.label}
+        </span>
+      );
+    },
+  },
+  {
+    key: "status",
+    header: "Status",
+    mobilePriority: 2,
+    render: (task) => {
+      const info = getStatusBadge(task.status);
+      return <Badge variant={info.variant}>{info.label}</Badge>;
+    },
+  },
+  {
+    key: "age",
+    header: "Age",
+    hideOnMobile: true,
+    render: (task) => (
+      <span className="text-sm text-slate-500">{timeAgo(task.created_at)}</span>
+    ),
+  },
+  {
+    key: "actions",
+    header: "Actions",
+    align: "right" as const,
+    render: () => null, // Placeholder - overridden below with router access
+  },
+];
+
 export default function TaskDashboardPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [tasks, setTasks] = useState<WarehouseTaskWithRelations[]>([]);
   const [counts, setCounts] = useState<TaskCountsByType | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [alert, setAlert] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [tabFilter, setTabFilter] = useState<TabFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [myTasksOnly, setMyTasksOnly] = useState(false);
@@ -78,8 +172,16 @@ export default function TaskDashboardPage() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (alert?.type === "success") {
+      const timer = setTimeout(() => setAlert(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [alert]);
+
   async function loadData() {
     setLoading(true);
+    setError(null);
     try {
       const [taskData, countData] = await Promise.all([
         getWarehouseTasks(),
@@ -88,7 +190,7 @@ export default function TaskDashboardPage() {
       setTasks(taskData);
       setCounts(countData);
     } catch (err) {
-      console.error("Failed to load tasks:", err);
+      setError(handleApiError(err));
     } finally {
       setLoading(false);
     }
@@ -114,12 +216,36 @@ export default function TaskDashboardPage() {
     return result;
   }, [tasks, tabFilter, statusFilter, myTasksOnly, user]);
 
+  const { paginatedItems, ...pagination } = usePagination(filteredTasks, 20);
+
   const totalPending = counts
     ? counts.inspection.pending + counts.putaway.pending + counts.pick.pending
     : 0;
   const totalInProgress = counts
     ? counts.inspection.in_progress + counts.putaway.in_progress + counts.pick.in_progress
     : 0;
+
+  // Build columns with router access for actions
+  const tableColumns = columns.map((col) => {
+    if (col.key === "actions") {
+      return {
+        ...col,
+        render: (task: WarehouseTaskWithRelations) => (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(`/tasks/${task.id}`);
+            }}
+          >
+            View
+          </Button>
+        ),
+      };
+    }
+    return col;
+  });
 
   return (
     <AppShell title="Task Queue">
@@ -137,7 +263,24 @@ export default function TaskDashboardPage() {
               Manage inspection, putaway, and pick tasks
             </p>
           </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={loadData}
+            disabled={loading}
+          >
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         </div>
+
+        {alert && (
+          <Alert
+            type={alert.type}
+            message={alert.message}
+            onClose={() => setAlert(null)}
+          />
+        )}
 
         {/* Stat Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -262,95 +405,24 @@ export default function TaskDashboardPage() {
         </div>
 
         {/* Table */}
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Spinner />
-          </div>
-        ) : filteredTasks.length === 0 ? (
-          <EmptyState
-            icon={<ClipboardCheck className="w-12 h-12 text-slate-300" />}
-            title="No tasks found"
-            description={myTasksOnly ? "You have no assigned tasks" : "No tasks match the current filters"}
-          />
+        {error ? (
+          <FetchError message={error} onRetry={loadData} />
         ) : (
           <Card className="border-slate-200/80 overflow-hidden">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-slate-50">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Task</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Product</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Client</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Qty</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Priority</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Age</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredTasks.map((task) => {
-                  const statusInfo = getStatusBadge(task.status);
-                  const priorityInfo = getPriorityBadge(task.priority);
-                  return (
-                    <tr
-                      key={task.id}
-                      className="hover:bg-slate-50/50 cursor-pointer transition-colors"
-                      onClick={() => router.push(`/tasks/${task.id}`)}
-                    >
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-sm text-slate-700">{task.task_number}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          {getTaskTypeIcon(task.task_type)}
-                          <span className="text-sm capitalize text-slate-700">{task.task_type}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        {task.product ? (
-                          <div>
-                            <p className="text-sm font-medium text-slate-900">{task.product.sku}</p>
-                            <p className="text-xs text-slate-500">{task.product.name}</p>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-slate-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
-                        {task.client?.company_name || "-"}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-medium text-slate-700">
-                        {task.qty_requested}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${priorityInfo.className}`}>
-                          {priorityInfo.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-500">
-                        {timeAgo(task.created_at)}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/tasks/${task.id}`);
-                          }}
-                        >
-                          View
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <Table
+              columns={tableColumns}
+              data={paginatedItems}
+              loading={loading}
+              emptyMessage={myTasksOnly ? "You have no assigned tasks" : "No tasks match the current filters"}
+              emptyIcon={<ClipboardCheck className="w-10 h-10 text-slate-300 mx-auto mb-3" />}
+              onRowClick={(task) => router.push(`/tasks/${task.id}`)}
+            />
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalItems={pagination.totalItems}
+              itemsPerPage={pagination.itemsPerPage}
+              onPageChange={pagination.setCurrentPage}
+            />
           </Card>
         )}
       </div>

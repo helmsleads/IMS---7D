@@ -1,18 +1,21 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ListChecks, Clock, Play, CheckCircle, ShoppingCart, AlertTriangle } from "lucide-react";
+import { ListChecks, Clock, Play, CheckCircle, ShoppingCart, AlertTriangle, RefreshCw } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
-import Spinner from "@/components/ui/Spinner";
-import EmptyState from "@/components/ui/EmptyState";
+import Table from "@/components/ui/Table";
+import FetchError from "@/components/ui/FetchError";
+import Alert from "@/components/ui/Alert";
+import Pagination, { usePagination } from "@/components/ui/Pagination";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import PickScanner from "@/components/internal/PickScanner";
 import { getWarehouseTasks, assignTask, startTask, getPickListItems, WarehouseTaskWithRelations } from "@/lib/api/warehouse-tasks";
 import { useAuth } from "@/lib/auth-context";
+import { handleApiError } from "@/lib/utils/error-handler";
 
 interface TaskStats {
   pending: number;
@@ -27,6 +30,7 @@ export default function PickListQueuePage() {
   const [stats, setStats] = useState<TaskStats>({ pending: 0, inProgress: 0, completedToday: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [alert, setAlert] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [selectedTask, setSelectedTask] = useState<WarehouseTaskWithRelations | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -34,6 +38,13 @@ export default function PickListQueuePage() {
   useEffect(() => {
     loadTasks();
   }, []);
+
+  useEffect(() => {
+    if (alert?.type === "success") {
+      const timer = setTimeout(() => setAlert(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [alert]);
 
   async function loadTasks() {
     try {
@@ -50,15 +61,11 @@ export default function PickListQueuePage() {
       // Calculate stats
       const pending = fetchedTasks.filter(t => t.status === 'pending').length;
       const inProgress = fetchedTasks.filter(t => t.status === 'in_progress').length;
-
-      // Completed today would need a separate query with date filter
-      // For now, we'll set it to 0 as we're only fetching active tasks
       const completedToday = 0;
 
       setStats({ pending, inProgress, completedToday });
     } catch (err) {
-      console.error('Error loading pick tasks:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load pick tasks');
+      setError(handleApiError(err));
     } finally {
       setLoading(false);
     }
@@ -66,13 +73,12 @@ export default function PickListQueuePage() {
 
   async function handleClaimAndStart(task: WarehouseTaskWithRelations) {
     if (!user) {
-      setError('You must be logged in to claim tasks');
+      setAlert({ type: "error", message: "You must be logged in to claim tasks" });
       return;
     }
 
     try {
       setActionLoading(task.id);
-      setError(null);
 
       // Assign task if not already assigned
       if (task.status === 'pending') {
@@ -85,12 +91,12 @@ export default function PickListQueuePage() {
       // Set selected task and open scanner
       setSelectedTask(task);
       setScannerOpen(true);
+      setAlert({ type: "success", message: `Started picking ${task.task_number}` });
 
       // Reload tasks to update UI
       await loadTasks();
     } catch (err) {
-      console.error('Error claiming/starting task:', err);
-      setError(err instanceof Error ? err.message : 'Failed to start picking');
+      setAlert({ type: "error", message: handleApiError(err) });
     } finally {
       setActionLoading(null);
     }
@@ -153,18 +159,20 @@ export default function PickListQueuePage() {
     return 'default';
   }
 
-  const columns = [
+  const { paginatedItems, ...pagination } = usePagination(tasks, 20);
+
+  const tableColumns: { key: string; header: React.ReactNode; render?: (item: WarehouseTaskWithRelations) => React.ReactNode; hideOnMobile?: boolean; mobilePriority?: number; align?: "left" | "center" | "right" }[] = [
     {
-      key: 'task_number',
-      label: 'Task #',
-      render: (task: WarehouseTaskWithRelations) => (
-        <div className="font-medium text-slate-900">{task.task_number}</div>
-      )
+      key: "task_number",
+      header: "Task #",
+      mobilePriority: 1,
+      render: (task) => <div className="font-medium text-slate-900">{task.task_number}</div>,
     },
     {
-      key: 'order_number',
-      label: 'Order #',
-      render: (task: WarehouseTaskWithRelations) => (
+      key: "order_number",
+      header: "Order #",
+      mobilePriority: 2,
+      render: (task) => (
         <div className="flex items-center gap-2">
           <span className="text-slate-700">{getOrderNumber(task)}</span>
           {isRushOrder(task) && (
@@ -174,26 +182,25 @@ export default function PickListQueuePage() {
             </Badge>
           )}
         </div>
-      )
+      ),
     },
     {
-      key: 'client',
-      label: 'Client',
-      render: (task: WarehouseTaskWithRelations) => (
-        <div className="text-slate-700">{getClientName(task)}</div>
-      )
+      key: "client",
+      header: "Client",
+      hideOnMobile: true,
+      render: (task) => <div className="text-slate-700">{getClientName(task)}</div>,
     },
     {
-      key: 'item_count',
-      label: 'Item Count',
-      render: (task: WarehouseTaskWithRelations) => (
-        <div className="text-slate-700">{getItemCount(task)} items</div>
-      )
+      key: "item_count",
+      header: "Item Count",
+      hideOnMobile: true,
+      render: (task) => <div className="text-slate-700">{getItemCount(task)} items</div>,
     },
     {
-      key: 'total_units',
-      label: 'Total Units',
-      render: (task: WarehouseTaskWithRelations) => (
+      key: "total_units",
+      header: "Total Units",
+      mobilePriority: 3,
+      render: (task) => (
         <div>
           <div className="text-slate-900 font-medium">
             {task.qty_completed} / {task.qty_requested}
@@ -205,60 +212,53 @@ export default function PickListQueuePage() {
             />
           </div>
         </div>
-      )
+      ),
     },
     {
-      key: 'priority',
-      label: 'Priority',
-      render: (task: WarehouseTaskWithRelations) => (
+      key: "priority",
+      header: "Priority",
+      mobilePriority: 3,
+      render: (task) => (
         <Badge variant={getPriorityBadgeVariant(task.priority || 0)}>
           {task.priority || 0}
         </Badge>
-      )
+      ),
     },
     {
-      key: 'assigned_to',
-      label: 'Assigned To',
-      render: (task: WarehouseTaskWithRelations) => (
+      key: "assigned_to",
+      header: "Assigned To",
+      hideOnMobile: true,
+      render: (task) => (
         <div className="text-slate-700">
-          {task.assigned_to ? (
-            'Assigned'
-          ) : (
-            <span className="text-slate-400">Unassigned</span>
-          )}
+          {task.assigned_to ? 'Assigned' : <span className="text-slate-400">Unassigned</span>}
         </div>
-      )
+      ),
     },
     {
-      key: 'status',
-      label: 'Status',
-      render: (task: WarehouseTaskWithRelations) => (
+      key: "status",
+      header: "Status",
+      mobilePriority: 2,
+      render: (task) => (
         <Badge variant={getStatusBadgeVariant(task.status)}>
           {task.status.replace(/_/g, ' ')}
         </Badge>
-      )
+      ),
     },
     {
-      key: 'actions',
-      label: 'Actions',
-      render: (task: WarehouseTaskWithRelations) => (
+      key: "actions",
+      header: "Actions",
+      render: (task) => (
         <Button
           size="sm"
           onClick={() => handleClaimAndStart(task)}
-          disabled={actionLoading === task.id}
+          loading={actionLoading === task.id}
           className="whitespace-nowrap"
         >
-          {actionLoading === task.id ? (
-            <div className="mr-2">
-              <Spinner size="sm" />
-            </div>
-          ) : (
-            <Play className="w-4 h-4 mr-2" />
-          )}
+          <Play className="w-4 h-4 mr-2" />
           {task.status === 'pending' ? 'Claim & Start' : 'Resume'}
         </Button>
-      )
-    }
+      ),
+    },
   ];
 
   return (
@@ -270,6 +270,14 @@ export default function PickListQueuePage() {
         ]}
       />
       <div className="space-y-6">
+        {alert && (
+          <Alert
+            type={alert.type}
+            message={alert.message}
+            onClose={() => setAlert(null)}
+          />
+        )}
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
@@ -309,68 +317,37 @@ export default function PickListQueuePage() {
           </Card>
         </div>
 
-        {/* Error Display */}
-        {error && (
-          <Card className="border-red-200 bg-red-50">
-            <div className="flex items-center gap-3 text-red-800">
-              <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-              <p>{error}</p>
+        {/* Pick Tasks Table */}
+        {error ? (
+          <FetchError message={error} onRetry={loadTasks} />
+        ) : (
+          <Card>
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <ListChecks className="w-6 h-6 text-indigo-600" />
+                <h2 className="text-xl font-semibold text-slate-900">Active Pick Lists</h2>
+              </div>
+              <Button variant="secondary" onClick={loadTasks} disabled={loading}>
+                <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
             </div>
+
+            <Table
+              columns={tableColumns}
+              data={paginatedItems}
+              loading={loading}
+              emptyMessage="All orders have been picked or there are no pending orders."
+              emptyIcon={<ListChecks className="w-10 h-10 text-slate-300 mx-auto mb-3" />}
+            />
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalItems={pagination.totalItems}
+              itemsPerPage={pagination.itemsPerPage}
+              onPageChange={pagination.setCurrentPage}
+            />
           </Card>
         )}
-
-        {/* Pick Tasks Table */}
-        <Card>
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <ListChecks className="w-6 h-6 text-indigo-600" />
-              <h2 className="text-xl font-semibold text-slate-900">Active Pick Lists</h2>
-            </div>
-            <Button variant="secondary" onClick={loadTasks} disabled={loading}>
-              Refresh
-            </Button>
-          </div>
-
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Spinner size="lg" />
-            </div>
-          ) : tasks.length === 0 ? (
-            <EmptyState
-              icon={<ListChecks className="w-12 h-12" />}
-              title="No active pick lists"
-              description="All orders have been picked or there are no pending orders."
-            />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    {columns.map((column) => (
-                      <th
-                        key={column.key}
-                        className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"
-                      >
-                        {column.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-200">
-                  {tasks.map((task) => (
-                    <tr key={task.id} className="hover:bg-slate-50">
-                      {columns.map((column) => (
-                        <td key={column.key} className="px-6 py-4 whitespace-nowrap">
-                          {column.render(task)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
       </div>
 
       {/* Pick Scanner Modal */}

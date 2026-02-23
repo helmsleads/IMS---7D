@@ -21,6 +21,9 @@ import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
 import Spinner from "@/components/ui/Spinner";
+import Table from "@/components/ui/Table";
+import FetchError from "@/components/ui/FetchError";
+import Alert from "@/components/ui/Alert";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import InspectionScanner from "@/components/internal/InspectionScanner";
 import PutawayScanner from "@/components/internal/PutawayScanner";
@@ -36,6 +39,7 @@ import {
 } from "@/lib/api/warehouse-tasks";
 import { WarehouseTaskStatus } from "@/types/database";
 import { useAuth } from "@/lib/auth-context";
+import { handleApiError } from "@/lib/utils/error-handler";
 
 function getStatusBadge(status: WarehouseTaskStatus) {
   const map: Record<WarehouseTaskStatus, { label: string; variant: "warning" | "info" | "success" | "error" | "default" }> = {
@@ -60,6 +64,72 @@ function formatDate(dateStr: string | null): string {
   return new Date(dateStr).toLocaleString();
 }
 
+const pickItemColumns: { key: string; header: React.ReactNode; render?: (item: PickListItemWithRelations) => React.ReactNode; hideOnMobile?: boolean; mobilePriority?: number; align?: "left" | "center" | "right" }[] = [
+  {
+    key: "seq",
+    header: "#",
+    hideOnMobile: true,
+    render: (item) => <span className="text-sm text-slate-500">{item.sequence_number}</span>,
+  },
+  {
+    key: "product",
+    header: "Product",
+    mobilePriority: 1,
+    render: (item) => (
+      <div>
+        <p className="text-sm font-medium text-slate-900">{item.product?.sku}</p>
+        <p className="text-xs text-slate-500">{item.product?.name}</p>
+      </div>
+    ),
+  },
+  {
+    key: "lot",
+    header: "Lot",
+    hideOnMobile: true,
+    render: (item) => <span className="text-sm text-slate-600">{item.lot?.lot_number || "-"}</span>,
+  },
+  {
+    key: "location",
+    header: "Location",
+    mobilePriority: 3,
+    render: (item) => (
+      <span className="text-sm text-slate-600">
+        {item.sublocation?.code || item.location?.name || "-"}
+      </span>
+    ),
+  },
+  {
+    key: "qty_allocated",
+    header: "Allocated",
+    align: "right",
+    mobilePriority: 2,
+    render: (item) => <span className="text-sm font-medium text-slate-700">{item.qty_allocated}</span>,
+  },
+  {
+    key: "qty_picked",
+    header: "Picked",
+    align: "right",
+    mobilePriority: 2,
+    render: (item) => <span className="text-sm font-medium text-slate-700">{item.qty_picked}</span>,
+  },
+  {
+    key: "status",
+    header: "Status",
+    mobilePriority: 2,
+    render: (item) => (
+      <Badge
+        variant={
+          item.status === "picked" ? "success" :
+          item.status === "short" ? "error" :
+          item.status === "in_progress" ? "info" : "warning"
+        }
+      >
+        {item.status}
+      </Badge>
+    ),
+  },
+];
+
 export default function TaskDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -69,6 +139,8 @@ export default function TaskDetailPage() {
   const [task, setTask] = useState<WarehouseTaskWithRelations | null>(null);
   const [pickItems, setPickItems] = useState<PickListItemWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [alert, setAlert] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -76,8 +148,16 @@ export default function TaskDetailPage() {
     loadTask();
   }, [taskId]);
 
+  useEffect(() => {
+    if (alert?.type === "success") {
+      const timer = setTimeout(() => setAlert(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [alert]);
+
   async function loadTask() {
     setLoading(true);
+    setError(null);
     try {
       const data = await getWarehouseTask(taskId);
       setTask(data);
@@ -87,7 +167,7 @@ export default function TaskDetailPage() {
         setPickItems(items);
       }
     } catch (err) {
-      console.error("Failed to load task:", err);
+      setError(handleApiError(err));
     } finally {
       setLoading(false);
     }
@@ -101,8 +181,9 @@ export default function TaskDetailPage() {
       await startTask(taskId);
       await loadTask();
       setScannerOpen(true);
+      setAlert({ type: "success", message: "Task claimed and started" });
     } catch (err) {
-      console.error("Failed to claim task:", err);
+      setAlert({ type: "error", message: handleApiError(err) });
     } finally {
       setActionLoading(false);
     }
@@ -114,8 +195,9 @@ export default function TaskDetailPage() {
     try {
       await cancelTask(taskId);
       await loadTask();
+      setAlert({ type: "success", message: "Task cancelled" });
     } catch (err) {
-      console.error("Failed to cancel task:", err);
+      setAlert({ type: "error", message: handleApiError(err) });
     } finally {
       setActionLoading(false);
     }
@@ -132,6 +214,14 @@ export default function TaskDetailPage() {
         <div className="flex justify-center py-20">
           <Spinner />
         </div>
+      </AppShell>
+    );
+  }
+
+  if (error && !task) {
+    return (
+      <AppShell title="Task Error">
+        <FetchError message={error} onRetry={loadTask} />
       </AppShell>
     );
   }
@@ -169,6 +259,14 @@ export default function TaskDetailPage() {
           ]}
         />
 
+        {alert && (
+          <Alert
+            type={alert.type}
+            message={alert.message}
+            onClose={() => setAlert(null)}
+          />
+        )}
+
         {/* Header */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
@@ -204,14 +302,14 @@ export default function TaskDetailPage() {
                     setScannerOpen(true);
                   }
                 }}
-                disabled={actionLoading}
+                loading={actionLoading}
               >
                 <Play className="w-4 h-4 mr-1.5" />
                 {task.status === "pending" ? "Claim & Start" : "Continue"}
               </Button>
             )}
             {isActive && (
-              <Button variant="secondary" onClick={handleCancel} disabled={actionLoading}>
+              <Button variant="secondary" onClick={handleCancel} loading={actionLoading}>
                 Cancel
               </Button>
             )}
@@ -279,47 +377,11 @@ export default function TaskDetailPage() {
                 <div className="p-5 border-b border-slate-100">
                   <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Pick List Items</h3>
                 </div>
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-slate-50">
-                      <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">#</th>
-                      <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Product</th>
-                      <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Lot</th>
-                      <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Location</th>
-                      <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">Allocated</th>
-                      <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">Picked</th>
-                      <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {pickItems.map((item) => (
-                      <tr key={item.id} className="hover:bg-slate-50/50">
-                        <td className="px-4 py-2 text-sm text-slate-500">{item.sequence_number}</td>
-                        <td className="px-4 py-2">
-                          <p className="text-sm font-medium text-slate-900">{item.product?.sku}</p>
-                          <p className="text-xs text-slate-500">{item.product?.name}</p>
-                        </td>
-                        <td className="px-4 py-2 text-sm text-slate-600">{item.lot?.lot_number || "-"}</td>
-                        <td className="px-4 py-2 text-sm text-slate-600">
-                          {item.sublocation?.code || item.location?.name || "-"}
-                        </td>
-                        <td className="px-4 py-2 text-sm text-right font-medium text-slate-700">{item.qty_allocated}</td>
-                        <td className="px-4 py-2 text-sm text-right font-medium text-slate-700">{item.qty_picked}</td>
-                        <td className="px-4 py-2">
-                          <Badge
-                            variant={
-                              item.status === "picked" ? "success" :
-                              item.status === "short" ? "error" :
-                              item.status === "in_progress" ? "info" : "warning"
-                            }
-                          >
-                            {item.status}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <Table
+                  columns={pickItemColumns}
+                  data={pickItems}
+                  emptyMessage="No pick items"
+                />
               </Card>
             )}
 
