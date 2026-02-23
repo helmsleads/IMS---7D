@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { createShopifyClient } from './client'
 import { decryptToken } from '@/lib/encryption'
+import { logSyncResult } from './sync-logger'
 
 /**
  * Sync a completed return to Shopify as a refund
@@ -165,6 +166,17 @@ export async function syncReturnToShopify(returnId: string): Promise<void> {
     })
 
     console.log(`Synced return ${returnId} as refund to Shopify order ${outboundOrder.external_order_id}`)
+
+    // Log success
+    logSyncResult({
+      integrationId: integration.id,
+      syncType: 'return',
+      direction: 'outbound',
+      triggeredBy: 'event',
+      itemsProcessed: refundLineItems.length,
+      itemsFailed: 0,
+      metadata: { returnId, shopifyOrderId: outboundOrder.external_order_id },
+    })
   } catch (error) {
     console.error('Failed to sync return to Shopify:', error)
 
@@ -176,6 +188,18 @@ export async function syncReturnToShopify(returnId: string): Promise<void> {
         last_error_message: error instanceof Error ? error.message : 'Return sync failed',
       })
       .eq('id', integration.id)
+
+    // Log failure
+    logSyncResult({
+      integrationId: integration.id,
+      syncType: 'return',
+      direction: 'outbound',
+      triggeredBy: 'event',
+      itemsProcessed: 0,
+      itemsFailed: 1,
+      errorDetails: [{ error: error instanceof Error ? error.message : 'Return sync failed' }],
+      metadata: { returnId },
+    })
 
     throw error
   }

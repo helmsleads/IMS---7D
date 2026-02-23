@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
 import { syncInventoryToShopify } from '@/lib/api/shopify/inventory-sync'
 import { calculateIncomingInventory, syncIncomingToShopify } from '@/lib/api/shopify/incoming-sync'
+import { cleanupOldSyncLogs } from '@/lib/api/shopify/sync-logger'
 
 /**
  * Scheduled Inventory Sync to Shopify
@@ -34,6 +35,16 @@ export async function POST(request: NextRequest) {
 
   const startTime = Date.now()
   const supabase = createServiceClient()
+
+  // Clean up old sync logs (>30 days)
+  try {
+    const cleaned = await cleanupOldSyncLogs()
+    if (cleaned > 0) {
+      console.log(`Cleaned up ${cleaned} old sync log entries`)
+    }
+  } catch (cleanupError) {
+    console.error('Sync log cleanup failed:', cleanupError)
+  }
 
   try {
     // Get all active Shopify integrations with auto_sync_inventory enabled
@@ -95,7 +106,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Sync inventory
-        const syncResult = await syncInventoryToShopify(integration.id)
+        const syncResult = await syncInventoryToShopify(integration.id, undefined, 'cron')
 
         // Also calculate and sync incoming inventory
         try {

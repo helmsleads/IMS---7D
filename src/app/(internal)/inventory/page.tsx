@@ -18,6 +18,7 @@ import { getClients, Client } from "@/lib/api/clients";
 import { getSublocations, SublocationWithLocation } from "@/lib/api/sublocations";
 import { getDamageReportsByProduct, DamageReportWithProduct } from "@/lib/api/damage-reports";
 import { handleApiError } from "@/lib/utils/error-handler";
+import { formatCurrency, formatNumber } from "@/lib/utils/formatting";
 import StockAdjustmentModal from "@/components/internal/StockAdjustmentModal";
 import ScannerModal from "@/components/internal/ScannerModal";
 import Pagination from "@/components/ui/Pagination";
@@ -524,19 +525,6 @@ export default function InventoryPage() {
     { key: "byLocation", label: "By Location", icon: <MapPin className="w-4 h-4" /> },
   ];
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
-
-  const formatNumber = (value: number) => {
-    return new Intl.NumberFormat("en-US").format(value);
-  };
-
   const actionButtons = (
     <div className="flex gap-2">
       <Button variant="secondary" onClick={() => router.push("/inventory/import")}>
@@ -905,7 +893,7 @@ export default function InventoryPage() {
             <div>
               <p className="text-sm text-gray-500">Inventory Value</p>
               <p className="text-xl font-semibold text-gray-900">
-                {formatCurrency(summaryStats.inventoryValue)}
+                {formatCurrency(summaryStats.inventoryValue, 0)}
               </p>
             </div>
           </div>
@@ -1023,7 +1011,7 @@ export default function InventoryPage() {
                       </div>
                       <div className="text-right">
                         <p className="text-gray-500">Value</p>
-                        <p className="font-semibold text-gray-900">{formatCurrency(totalValue)}</p>
+                        <p className="font-semibold text-gray-900">{formatCurrency(totalValue, 0)}</p>
                       </div>
                       <ChevronRight className="w-5 h-5 text-gray-400" />
                     </div>

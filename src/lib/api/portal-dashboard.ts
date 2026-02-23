@@ -339,3 +339,519 @@ export async function getPortalMonthlyProfit(
     unitsSold,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Inventory Value Over Time
+// ---------------------------------------------------------------------------
+
+export interface InventoryValuePoint {
+  month: string;
+  value: number;
+}
+
+/**
+ * Gets inventory value over the last 12 months for a client.
+ * Calculates a running cumulative value from inventory transactions.
+ * Falls back to current inventory value distributed evenly when no
+ * transaction data is available.
+ * @param clientId - The client's UUID
+ * @returns Array of monthly inventory value data points
+ */
+export async function getClientInventoryValueOverTime(
+  clientId: string
+): Promise<InventoryValuePoint[]> {
+  if (!clientId || clientId === "staff-preview") return [];
+
+  const supabase = createClient();
+
+  const monthNames = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
+
+  // Build the last 12 months list (oldest first)
+  const now = new Date();
+  const months: { year: number; month: number; label: string }[] = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({
+      year: d.getFullYear(),
+      month: d.getMonth(),
+      label: monthNames[d.getMonth()],
+    });
+  }
+
+  const twelveMonthsAgo = new Date(
+    now.getFullYear(),
+    now.getMonth() - 11,
+    1
+  );
+
+  try {
+    // Fetch inventory transactions for this client's products over last 12 months
+    const { data: transactions, error } = await supabase
+      .from("inventory_transactions")
+      .select(`
+        qty_change,
+        unit_cost,
+        created_at,
+        product:products!inner (
+          id,
+          client_id
+        )
+      `)
+      .eq("product.client_id", clientId)
+      .gte("created_at", twelveMonthsAgo.toISOString());
+
+    if (error) {
+      console.error("Error fetching inventory transactions:", error);
+      return [];
+    }
+
+    // If we have transactions, bucket them by month
+    if (transactions && transactions.length > 0) {
+      // Accumulate value change per month
+      const monthlyValue = new Map<string, number>();
+      months.forEach((m) => monthlyValue.set(`${m.year}-${m.month}`, 0));
+
+      transactions.forEach((t) => {
+        const date = new Date(t.created_at);
+        const key = `${date.getFullYear()}-${date.getMonth()}`;
+        const change = (t.qty_change || 0) * (t.unit_cost || 0);
+        monthlyValue.set(key, (monthlyValue.get(key) || 0) + change);
+      });
+
+      // Build running cumulative value
+      let running = 0;
+      return months.map((m) => {
+        const key = `${m.year}-${m.month}`;
+        running += monthlyValue.get(key) || 0;
+        return { month: m.label, value: Math.max(0, Math.round(running)) };
+      });
+    }
+
+    // Fallback: use current inventory value distributed evenly
+    const { data: inventoryData } = await supabase
+      .from("inventory")
+      .select(`
+        qty_on_hand,
+        product:products!inner (
+          id,
+          client_id
+        )
+      `)
+      .eq("product.client_id", clientId);
+
+    // Get product values for cost reference
+    const { data: productValues } = await supabase
+      .from("client_product_values")
+      .select("product_id, cost")
+      .eq("client_id", clientId);
+
+    const costMap = new Map(
+      (productValues || []).map((pv) => [pv.product_id, pv.cost || 0])
+    );
+
+    let totalValue = 0;
+    (inventoryData || []).forEach((item) => {
+      const product = item.product as unknown as { id: string; client_id: string };
+      const cost = costMap.get(product.id) || 0;
+      totalValue += (item.qty_on_hand || 0) * cost;
+    });
+
+    // Distribute evenly across months
+    return months.map((m) => ({
+      month: m.label,
+      value: Math.round(totalValue),
+    }));
+  } catch (err) {
+    console.error("Error in getClientInventoryValueOverTime:", err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Order Fulfillment Speed
+// ---------------------------------------------------------------------------
+
+export interface FulfillmentSpeedPoint {
+  month: string;
+  avgDays: number;
+}
+
+/**
+ * Gets average order fulfillment speed (days from creation to shipment)
+ * over the last 6 months for a client.
+ * @param clientId - The client's UUID
+ * @returns Array of monthly average fulfillment day data points
+ */
+export async function getClientOrderFulfillmentSpeed(
+  clientId: string
+): Promise<FulfillmentSpeedPoint[]> {
+  if (!clientId || clientId === "staff-preview") return [];
+
+  const supabase = createClient();
+
+  const monthNames = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
+
+  const now = new Date();
+  const months: { year: number; month: number; label: string }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({
+      year: d.getFullYear(),
+      month: d.getMonth(),
+      label: monthNames[d.getMonth()],
+    });
+  }
+
+  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+
+  try {
+    const { data: orders, error } = await supabase
+      .from("outbound_orders")
+      .select("id, created_at, shipped_date, status")
+      .eq("client_id", clientId)
+      .in("status", ["shipped", "delivered"])
+      .not("shipped_date", "is", null)
+      .gte("shipped_date", sixMonthsAgo.toISOString());
+
+    if (error) {
+      console.error("Error fetching fulfillment speed data:", error);
+      return [];
+    }
+
+    // Bucket orders by shipped month
+    const buckets = new Map<string, number[]>();
+    months.forEach((m) => buckets.set(`${m.year}-${m.month}`, []));
+
+    (orders || []).forEach((order) => {
+      const shippedDate = new Date(order.shipped_date);
+      const createdDate = new Date(order.created_at);
+      const key = `${shippedDate.getFullYear()}-${shippedDate.getMonth()}`;
+      const diffMs = shippedDate.getTime() - createdDate.getTime();
+      const diffDays = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
+      const bucket = buckets.get(key);
+      if (bucket) {
+        bucket.push(diffDays);
+      }
+    });
+
+    return months.map((m) => {
+      const key = `${m.year}-${m.month}`;
+      const days = buckets.get(key) || [];
+      const avg =
+        days.length > 0
+          ? days.reduce((sum, d) => sum + d, 0) / days.length
+          : 0;
+      return { month: m.label, avgDays: Math.round(avg * 10) / 10 };
+    });
+  } catch (err) {
+    console.error("Error in getClientOrderFulfillmentSpeed:", err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Spending Breakdown
+// ---------------------------------------------------------------------------
+
+export interface SpendingCategory {
+  category: string;
+  amount: number;
+  color: string;
+}
+
+/**
+ * Gets an estimated spending breakdown for a client based on invoices.
+ * Splits total spend into Storage, Pick & Pack, Shipping, and Other
+ * using industry-standard warehouse cost ratios.
+ * @param clientId - The client's UUID
+ * @returns Array of spending category breakdowns with assigned colors
+ */
+export async function getClientSpendingBreakdown(
+  clientId: string
+): Promise<SpendingCategory[]> {
+  if (!clientId || clientId === "staff-preview") return [];
+
+  const supabase = createClient();
+
+  const colors = ["#4F46E5", "#06B6D4", "#10B981", "#F59E0B"];
+
+  try {
+    const { data: invoices, error } = await supabase
+      .from("invoices")
+      .select("id, total")
+      .eq("client_id", clientId)
+      .in("status", ["sent", "paid"]);
+
+    if (error) {
+      console.error("Error fetching invoices for spending breakdown:", error);
+      return [];
+    }
+
+    const total = (invoices || []).reduce(
+      (sum, inv) => sum + (inv.total || 0),
+      0
+    );
+
+    if (total <= 0) return [];
+
+    return [
+      { category: "Storage", amount: Math.round(total * 0.4), color: colors[0] },
+      { category: "Pick & Pack", amount: Math.round(total * 0.3), color: colors[1] },
+      { category: "Shipping", amount: Math.round(total * 0.2), color: colors[2] },
+      { category: "Other", amount: Math.round(total * 0.1), color: colors[3] },
+    ];
+  } catch (err) {
+    console.error("Error in getClientSpendingBreakdown:", err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Product Performance (Bubble Chart Data)
+// ---------------------------------------------------------------------------
+
+export interface ProductPerformancePoint {
+  x: number; // units sold
+  y: number; // margin percentage
+  name: string;
+  z?: number; // optional bubble size (revenue)
+}
+
+/**
+ * Gets product performance data for a client — units sold vs. margin —
+ * suitable for a scatter / bubble chart.
+ * @param clientId - The client's UUID
+ * @returns Array of product performance data points
+ */
+export async function getClientProductPerformance(
+  clientId: string
+): Promise<ProductPerformancePoint[]> {
+  if (!clientId || clientId === "staff-preview") return [];
+
+  const supabase = createClient();
+
+  try {
+    // Fetch shipped / delivered outbound items for this client
+    const { data: orderItems, error: itemsError } = await supabase
+      .from("outbound_items")
+      .select(`
+        qty_shipped,
+        product_id,
+        product:products!inner (
+          id,
+          name
+        ),
+        order:outbound_orders!inner (
+          id,
+          client_id,
+          status
+        )
+      `)
+      .eq("order.client_id", clientId)
+      .in("order.status", ["shipped", "delivered"]);
+
+    if (itemsError) {
+      console.error("Error fetching outbound items for performance:", itemsError);
+      return [];
+    }
+
+    // Fetch product values for margin calculation
+    const { data: productValues, error: valuesError } = await supabase
+      .from("client_product_values")
+      .select("product_id, sale_price, cost")
+      .eq("client_id", clientId);
+
+    if (valuesError) {
+      console.error("Error fetching product values for performance:", valuesError);
+      return [];
+    }
+
+    const valueMap = new Map(
+      (productValues || []).map((pv) => [
+        pv.product_id,
+        { sale_price: pv.sale_price || 0, cost: pv.cost || 0 },
+      ])
+    );
+
+    // Aggregate units shipped per product
+    const productMap = new Map<
+      string,
+      { name: string; totalUnits: number }
+    >();
+
+    (orderItems || []).forEach((item) => {
+      const product = Array.isArray(item.product)
+        ? item.product[0]
+        : (item.product as unknown as { id: string; name: string });
+      if (!product) return;
+
+      const existing = productMap.get(product.id);
+      const qty = item.qty_shipped || 0;
+      if (existing) {
+        existing.totalUnits += qty;
+      } else {
+        productMap.set(product.id, {
+          name: product.name,
+          totalUnits: qty,
+        });
+      }
+    });
+
+    // Build result
+    const results: ProductPerformancePoint[] = [];
+    productMap.forEach((data, productId) => {
+      const values = valueMap.get(productId) || { sale_price: 0, cost: 0 };
+      const margin =
+        values.sale_price > 0
+          ? ((values.sale_price - values.cost) / values.sale_price) * 100
+          : 0;
+      const revenue = data.totalUnits * values.sale_price;
+
+      results.push({
+        x: data.totalUnits,
+        y: Math.round(margin * 10) / 10,
+        name: data.name,
+        z: Math.round(revenue),
+      });
+    });
+
+    return results;
+  } catch (err) {
+    console.error("Error in getClientProductPerformance:", err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Stock Projection
+// ---------------------------------------------------------------------------
+
+export interface StockProjectionPoint {
+  date: string;
+  actual: number | null;
+  projected: number | null;
+}
+
+/**
+ * Projects stock levels for a client over the next 30 days based on
+ * the average daily outbound rate from the last 30 days. Also includes
+ * the past 7 days of actual stock level as context.
+ * @param clientId - The client's UUID
+ * @returns Array of daily stock projection data points
+ */
+export async function getClientStockProjection(
+  clientId: string
+): Promise<StockProjectionPoint[]> {
+  if (!clientId || clientId === "staff-preview") return [];
+
+  const supabase = createClient();
+
+  const monthNames = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
+
+  const formatDate = (d: Date): string =>
+    `${monthNames[d.getMonth()]} ${d.getDate()}`;
+
+  try {
+    // Get current total inventory for this client
+    const { data: inventoryData, error: invError } = await supabase
+      .from("inventory")
+      .select(`
+        qty_on_hand,
+        product:products!inner (
+          id,
+          client_id
+        )
+      `)
+      .eq("product.client_id", clientId);
+
+    if (invError) {
+      console.error("Error fetching inventory for projection:", invError);
+      return [];
+    }
+
+    const currentStock = (inventoryData || []).reduce(
+      (sum, item) => sum + (item.qty_on_hand || 0),
+      0
+    );
+
+    // Get daily outbound rate from shipped orders in last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const { data: recentShipped, error: shippedError } = await supabase
+      .from("outbound_items")
+      .select(`
+        qty_shipped,
+        order:outbound_orders!inner (
+          id,
+          client_id,
+          status,
+          shipped_date
+        )
+      `)
+      .eq("order.client_id", clientId)
+      .eq("order.status", "shipped")
+      .gte("order.shipped_date", thirtyDaysAgo.toISOString());
+
+    if (shippedError) {
+      console.error("Error fetching recent shipments for projection:", shippedError);
+      return [];
+    }
+
+    const totalShipped = (recentShipped || []).reduce(
+      (sum, item) => sum + (item.qty_shipped || 0),
+      0
+    );
+
+    const dailyRate = totalShipped / 30;
+
+    const now = new Date();
+    const results: StockProjectionPoint[] = [];
+
+    // Past 7 days — "actual" values (approximate: current stock adjusted)
+    for (let i = 7; i >= 1; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      // Estimate past stock by adding back the daily rate * days ago
+      const estimatedPast = Math.round(currentStock + dailyRate * i);
+      results.push({
+        date: formatDate(d),
+        actual: estimatedPast,
+        projected: null,
+      });
+    }
+
+    // Today — both actual and projected
+    results.push({
+      date: formatDate(now),
+      actual: currentStock,
+      projected: currentStock,
+    });
+
+    // Next 30 days — projected only
+    for (let i = 1; i <= 30; i++) {
+      const d = new Date(now);
+      d.setDate(d.getDate() + i);
+      const projected = Math.max(0, Math.round(currentStock - dailyRate * i));
+      results.push({
+        date: formatDate(d),
+        actual: null,
+        projected,
+      });
+    }
+
+    return results;
+  } catch (err) {
+    console.error("Error in getClientStockProjection:", err);
+    return [];
+  }
+}

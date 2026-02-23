@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import AppShell from "@/components/internal/AppShell";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
@@ -429,6 +430,10 @@ export default function InvoiceDetailPage() {
       title={`Invoice ${invoice.invoice_number}`}
       actions={renderActions()}
     >
+      <Breadcrumbs items={[
+        { label: "Billing", href: "/billing" },
+        { label: invoice.invoice_number || "Invoice Details" }
+      ]} />
       {backLink}
 
       {successMessage && (

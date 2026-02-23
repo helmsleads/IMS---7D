@@ -99,7 +99,7 @@ export default function RequestShipmentPage() {
   // Fetch inventory items for this client
   useEffect(() => {
     const fetchInventory = async () => {
-      if (!client) return;
+      if (!client || client.id === "staff-preview") return;
 
       const supabase = createClient();
 
@@ -172,7 +172,7 @@ export default function RequestShipmentPage() {
   // Check if client has rush processing add-on
   useEffect(() => {
     const checkRushAddon = async () => {
-      if (!client) return;
+      if (!client || client.id === "staff-preview") return;
 
       try {
         const services = await getMyServices(client.id);
@@ -199,7 +199,7 @@ export default function RequestShipmentPage() {
   // Fetch saved addresses from client profile
   useEffect(() => {
     const fetchAddresses = async () => {
-      if (!client) return;
+      if (!client || client.id === "staff-preview") return;
 
       const supabase = createClient();
 

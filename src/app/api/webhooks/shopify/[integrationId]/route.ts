@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase-service'
 import { processShopifyOrder } from '@/lib/api/shopify/order-sync'
 import { checkWebhookRateLimit } from '@/lib/rate-limit'
+import { logSyncResult } from '@/lib/api/shopify/sync-logger'
 
 // Shopify signs webhooks with the OAuth Client Secret
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET!
@@ -120,12 +121,25 @@ export async function POST(
     switch (topic) {
       case 'orders/create':
         await handleOrderCreate(payload, integration)
+        // Log successful order import
+        logSyncResult({
+          integrationId,
+          syncType: 'orders',
+          direction: 'inbound',
+          triggeredBy: 'webhook',
+          itemsProcessed: 1,
+          itemsFailed: 0,
+          metadata: { orderName: payload.name, topic },
+        })
         break
       case 'orders/updated':
         await handleOrderUpdated(payload, integration)
         break
       case 'orders/cancelled':
         await handleOrderCancelled(payload, integration)
+        break
+      case 'inventory_levels/update':
+        await handleInventoryLevelUpdate(payload, integration, integrationId)
         break
       default:
         console.log(`Unhandled webhook topic: ${topic}`)
@@ -143,6 +157,20 @@ export async function POST(
     }
   } catch (error) {
     console.error('Webhook processing failed:', error)
+
+    // Log webhook processing failure for order topics
+    if (topic === 'orders/create') {
+      logSyncResult({
+        integrationId,
+        syncType: 'orders',
+        direction: 'inbound',
+        triggeredBy: 'webhook',
+        itemsProcessed: 0,
+        itemsFailed: 1,
+        errorDetails: [{ error: error instanceof Error ? error.message : 'Webhook processing failed' }],
+        metadata: { orderName: payload.name, topic },
+      })
+    }
 
     // Mark as failed
     if (event) {
@@ -224,6 +252,65 @@ async function handleOrderUpdated(
 
     console.log(`Updated shipping address for order ${order.id}`)
   }
+}
+
+async function handleInventoryLevelUpdate(
+  payload: Record<string, unknown>,
+  integration: Record<string, unknown>,
+  integrationId: string
+): Promise<void> {
+  const supabase = createServiceClient()
+  const integrationData = integration as { id: string; shopify_location_id: string | null; settings: Record<string, unknown> }
+
+  // Ignore if change is at a different location than our shopify_location_id
+  const locationId = String(payload.location_id || '')
+  if (integrationData.shopify_location_id && locationId !== integrationData.shopify_location_id) {
+    console.log(`Inventory update at location ${locationId} ignored (our location: ${integrationData.shopify_location_id})`)
+    return
+  }
+
+  const inventoryItemId = String(payload.inventory_item_id || '')
+  if (!inventoryItemId) return
+
+  // Look up product_mappings by external_inventory_item_id
+  const { data: mapping } = await supabase
+    .from('product_mappings')
+    .select('id, product_id, last_synced_at')
+    .eq('integration_id', integrationId)
+    .eq('external_inventory_item_id', inventoryItemId)
+    .single()
+
+  if (!mapping) {
+    console.log(`No mapping found for inventory_item_id ${inventoryItemId}`)
+    return
+  }
+
+  // If last_synced_at is within 60 seconds, assume it's our own sync → ignore
+  if (mapping.last_synced_at) {
+    const syncAge = Date.now() - new Date(mapping.last_synced_at).getTime()
+    if (syncAge < 60000) {
+      console.log(`Inventory update for ${inventoryItemId} is likely our own sync (${Math.round(syncAge / 1000)}s ago), ignoring`)
+      return
+    }
+  }
+
+  // External change detected — log as inbound sync event with warning
+  console.warn(`External inventory change detected in Shopify for product ${mapping.product_id}`)
+
+  logSyncResult({
+    integrationId,
+    syncType: 'inventory',
+    direction: 'inbound',
+    triggeredBy: 'webhook',
+    itemsProcessed: 1,
+    itemsFailed: 0,
+    metadata: {
+      warning: 'Inventory changed externally in Shopify',
+      inventoryItemId,
+      productId: mapping.product_id,
+      available: payload.available,
+    },
+  })
 }
 
 async function handleOrderCancelled(

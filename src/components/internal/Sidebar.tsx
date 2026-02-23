@@ -47,58 +47,91 @@ interface NavLink {
   children?: { label: string; path: string; icon?: React.ComponentType<{ className?: string }> }[];
 }
 
-const navLinks: NavLink[] = [
-  { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
+interface NavGroup {
+  label: string;
+  links: NavLink[];
+}
+
+const navGroups: NavGroup[] = [
   {
-    label: "Products",
-    icon: Package,
-    path: "/products",
-    children: [
-      { label: "All Products", path: "/products", icon: Package },
-      { label: "Categories", path: "/products/categories", icon: FolderTree },
+    label: "",
+    links: [
+      { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
     ],
   },
   {
-    label: "Inventory",
-    icon: Warehouse,
-    path: "/inventory",
-    children: [
-      { label: "All Inventory", path: "/inventory", icon: Warehouse },
-      { label: "Pallet Breakdown", path: "/inventory/pallet-breakdown", icon: Package },
+    label: "Operations",
+    links: [
+      { label: "Inbound", icon: ArrowDownToLine, path: "/inbound" },
+      { label: "Outbound", icon: ArrowUpFromLine, path: "/outbound" },
+      { label: "Returns", icon: RotateCcw, path: "/returns" },
+      { label: "Damage Reports", icon: AlertTriangle, path: "/damage-reports" },
     ],
   },
-  { label: "Lots", icon: Layers, path: "/lots" },
-  { label: "Locations", icon: MapPin, path: "/locations" },
-  { label: "Inbound", icon: ArrowDownToLine, path: "/inbound" },
-  { label: "Outbound", icon: ArrowUpFromLine, path: "/outbound" },
-  { label: "Returns", icon: RotateCcw, path: "/returns" },
-  { label: "Damage Reports", icon: AlertTriangle, path: "/damage-reports" },
-  { label: "Cycle Counts", icon: ClipboardList, path: "/cycle-counts" },
-  { label: "Checklists", icon: CheckSquare, path: "/checklists", badgeKey: "checklists" },
   {
-    label: "Clients",
-    icon: Building2,
-    path: "/clients",
-    children: [
-      { label: "All Clients", path: "/clients", icon: Building2 },
-      { label: "Portal Users", path: "/clients/users", icon: UserCog },
+    label: "Warehouse",
+    links: [
+      {
+        label: "Products",
+        icon: Package,
+        path: "/products",
+        children: [
+          { label: "All Products", path: "/products", icon: Package },
+          { label: "Categories", path: "/products/categories", icon: FolderTree },
+        ],
+      },
+      {
+        label: "Inventory",
+        icon: Warehouse,
+        path: "/inventory",
+        children: [
+          { label: "All Inventory", path: "/inventory", icon: Warehouse },
+          { label: "Pallet Breakdown", path: "/inventory/pallet-breakdown", icon: Package },
+        ],
+      },
+      { label: "Lots", icon: Layers, path: "/lots" },
+      { label: "Locations", icon: MapPin, path: "/locations" },
+      { label: "Cycle Counts", icon: ClipboardList, path: "/cycle-counts" },
     ],
   },
-  { label: "Messages", icon: MessageSquare, path: "/messages", badgeKey: "messages" },
   {
-    label: "Services",
-    icon: Briefcase,
-    path: "/services",
-    children: [
-      { label: "All Services", path: "/services", icon: Briefcase },
-      { label: "Service Tiers", path: "/services/tiers", icon: Layers },
+    label: "Management",
+    links: [
+      {
+        label: "Clients",
+        icon: Building2,
+        path: "/clients",
+        children: [
+          { label: "All Clients", path: "/clients", icon: Building2 },
+          { label: "Portal Users", path: "/clients/users", icon: UserCog },
+        ],
+      },
+      {
+        label: "Services",
+        icon: Briefcase,
+        path: "/services",
+        children: [
+          { label: "All Services", path: "/services", icon: Briefcase },
+          { label: "Service Tiers", path: "/services/tiers", icon: Layers },
+        ],
+      },
+      { label: "Billing", icon: CreditCard, path: "/billing" },
+      { label: "Supplies", icon: Box, path: "/supplies" },
     ],
   },
-  { label: "Billing", icon: CreditCard, path: "/billing" },
-  { label: "Supplies", icon: Box, path: "/supplies" },
-  { label: "Reports", icon: BarChart3, path: "/reports" },
-  { label: "Settings", icon: Settings, path: "/settings" },
+  {
+    label: "Other",
+    links: [
+      { label: "Messages", icon: MessageSquare, path: "/messages", badgeKey: "messages" },
+      { label: "Checklists", icon: CheckSquare, path: "/checklists", badgeKey: "checklists" },
+      { label: "Reports", icon: BarChart3, path: "/reports" },
+      { label: "Settings", icon: Settings, path: "/settings" },
+    ],
+  },
 ];
+
+// Flatten for auto-expand logic
+const navLinks: NavLink[] = navGroups.flatMap((g) => g.links);
 
 const SIDEBAR_COLLAPSED_KEY = "sidebar-collapsed";
 
@@ -239,7 +272,7 @@ export default function Sidebar() {
       {/* Sidebar */}
       <aside
         className={`
-          fixed left-0 top-0 h-full bg-slate-900 flex flex-col z-50
+          fixed left-0 top-0 h-full bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 flex flex-col z-50
           transform transition-all duration-300 ease-in-out
           ${isOpen ? "translate-x-0" : "-translate-x-full"}
           md:translate-x-0
@@ -247,7 +280,7 @@ export default function Sidebar() {
         `}
       >
         {/* Header */}
-        <div className={`p-4 flex items-center ${isCollapsed ? "justify-center" : "justify-between"}`}>
+        <div className={`p-4 flex items-center border-b border-slate-700/50 ${isCollapsed ? "justify-center" : "justify-between"}`}>
           {!isCollapsed && (
             <h1 className="text-xl font-bold text-white">7 Degrees Co</h1>
           )}
@@ -261,7 +294,7 @@ export default function Sidebar() {
           {/* Collapse toggle - desktop only */}
           <button
             onClick={toggleCollapsed}
-            className="hidden md:flex p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-md transition-colors"
+            className="hidden md:flex p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-md transition-colors"
             aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
@@ -274,148 +307,153 @@ export default function Sidebar() {
         </div>
 
         <nav className="flex-1 px-2 overflow-y-auto">
-          <ul className="space-y-1">
-            {navLinks.map((link) => {
-              const isActive = isLinkActive(link);
-              const isExpanded = expandedItems.includes(link.path) && !isCollapsed;
-              const hasChildren = link.children && link.children.length > 0;
+          {navGroups.map((group, groupIndex) => (
+            <div key={group.label || "top"} className={groupIndex > 0 ? "mt-4 pt-4 border-t border-slate-700/50" : ""}>
+              {group.label && !isCollapsed && (
+                <p className="px-3 mb-1 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  {group.label}
+                </p>
+              )}
+              {isCollapsed && group.label && (
+                <div className="mx-auto w-6 border-t border-slate-700 mb-2" />
+              )}
+              <ul className="space-y-0.5">
+                {group.links.map((link) => {
+                  const isActive = isLinkActive(link);
+                  const isExpanded = expandedItems.includes(link.path) && !isCollapsed;
+                  const hasChildren = link.children && link.children.length > 0;
 
-              return (
-                <li key={link.path}>
-                  {hasChildren ? (
-                    <>
-                      {isCollapsed ? (
-                        // Collapsed: just show icon linking to main path
+                  return (
+                    <li key={link.path}>
+                      {hasChildren ? (
+                        <>
+                          {isCollapsed ? (
+                            <Link
+                              href={link.path}
+                              className={`
+                                flex items-center justify-center p-3 rounded-md transition-colors group relative
+                                ${
+                                  isActive
+                                    ? "bg-indigo-500/15 text-white border-l-[3px] border-indigo-400"
+                                    : "text-slate-300 hover:bg-white/5 hover:text-white"
+                                }
+                              `}
+                              title={link.label}
+                            >
+                              <link.icon className="w-5 h-5" />
+                              <span className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
+                                {link.label}
+                              </span>
+                            </Link>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => toggleExpanded(link.path)}
+                                className={`
+                                  w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md transition-colors
+                                  ${
+                                    isActive
+                                      ? "bg-indigo-500/15 text-white border-l-[3px] border-indigo-400"
+                                      : "text-slate-300 hover:bg-white/5 hover:text-white"
+                                  }
+                                `}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <link.icon className="w-5 h-5" />
+                                  <span>{link.label}</span>
+                                </div>
+                                {isExpanded ? (
+                                  <ChevronDown className="w-4 h-4" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4" />
+                                )}
+                              </button>
+                              {isExpanded && (
+                                <ul className="mt-1 ml-4 space-y-0.5">
+                                  {link.children!.map((child) => {
+                                    const isChildActive =
+                                      pathname === child.path ||
+                                      (child.path !== "/services" && child.path !== "/products" && child.path !== "/inventory" && pathname.startsWith(child.path + "/"));
+                                    const ChildIcon = child.icon;
+                                    return (
+                                      <li key={child.path}>
+                                        <Link
+                                          href={child.path}
+                                          className={`
+                                            flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-sm
+                                            ${
+                                              isChildActive
+                                                ? "bg-indigo-500/10 text-indigo-300 border-l-2 border-indigo-400"
+                                                : "text-slate-400 hover:bg-white/5 hover:text-white"
+                                            }
+                                          `}
+                                        >
+                                          {ChildIcon && <ChildIcon className="w-4 h-4" />}
+                                          <span>{child.label}</span>
+                                        </Link>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              )}
+                            </>
+                          )}
+                        </>
+                      ) : (
                         <Link
                           href={link.path}
                           className={`
-                            flex items-center justify-center p-3 rounded-md transition-colors group relative
+                            flex items-center gap-3 rounded-md transition-colors group relative
+                            ${isCollapsed ? "justify-center p-3" : "justify-between px-3 py-2"}
                             ${
                               isActive
-                                ? "bg-slate-800 text-white"
-                                : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                                ? "bg-indigo-500/15 text-white border-l-[3px] border-indigo-400"
+                                : "text-slate-300 hover:bg-white/5 hover:text-white"
                             }
                           `}
-                          title={link.label}
+                          title={isCollapsed ? link.label : undefined}
                         >
-                          <link.icon className="w-5 h-5" />
-                          {/* Tooltip */}
-                          <span className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
-                            {link.label}
-                          </span>
-                        </Link>
-                      ) : (
-                        // Expanded: show full menu with children
-                        <>
-                          <button
-                            onClick={() => toggleExpanded(link.path)}
-                            className={`
-                              w-full flex items-center justify-between gap-3 px-3 py-2 rounded-md transition-colors
-                              ${
-                                isActive
-                                  ? "bg-slate-800 text-white"
-                                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                              }
-                            `}
-                          >
-                            <div className="flex items-center gap-3">
-                              <link.icon className="w-5 h-5" />
-                              <span>{link.label}</span>
-                            </div>
-                            {isExpanded ? (
-                              <ChevronDown className="w-4 h-4" />
-                            ) : (
-                              <ChevronRight className="w-4 h-4" />
-                            )}
-                          </button>
-                          {isExpanded && (
-                            <ul className="mt-1 ml-4 space-y-1">
-                              {link.children!.map((child) => {
-                                const isChildActive =
-                                  pathname === child.path ||
-                                  (child.path !== "/services" && child.path !== "/products" && child.path !== "/inventory" && pathname.startsWith(child.path + "/"));
-                                const ChildIcon = child.icon;
-                                return (
-                                  <li key={child.path}>
-                                    <Link
-                                      href={child.path}
-                                      className={`
-                                        flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-sm
-                                        ${
-                                          isChildActive
-                                            ? "bg-white text-slate-900"
-                                            : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                                        }
-                                      `}
-                                    >
-                                      {ChildIcon && <ChildIcon className="w-4 h-4" />}
-                                      <span>{child.label}</span>
-                                    </Link>
-                                  </li>
-                                );
-                              })}
-                            </ul>
+                          <div className={`flex items-center ${isCollapsed ? "" : "gap-3"}`}>
+                            <link.icon className="w-5 h-5" />
+                            {!isCollapsed && <span>{link.label}</span>}
+                          </div>
+                          {!isCollapsed && link.badgeKey === "messages" && unreadMessages > 0 && (
+                            <span className="px-2 py-0.5 text-xs font-medium bg-indigo-500 text-white rounded-full min-w-[20px] text-center">
+                              {unreadMessages > 99 ? "99+" : unreadMessages}
+                            </span>
                           )}
-                        </>
+                          {!isCollapsed && link.badgeKey === "checklists" && pendingChecklists > 0 && (
+                            <span className="px-2 py-0.5 text-xs font-medium bg-amber-500 text-white rounded-full min-w-[20px] text-center">
+                              {pendingChecklists > 99 ? "99+" : pendingChecklists}
+                            </span>
+                          )}
+                          {isCollapsed && link.badgeKey === "messages" && unreadMessages > 0 && (
+                            <span className="absolute top-1 right-1 w-2 h-2 bg-indigo-500 rounded-full" />
+                          )}
+                          {isCollapsed && link.badgeKey === "checklists" && pendingChecklists > 0 && (
+                            <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full" />
+                          )}
+                          {isCollapsed && (
+                            <span className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
+                              {link.label}
+                            </span>
+                          )}
+                        </Link>
                       )}
-                    </>
-                  ) : (
-                    // Regular link (no children)
-                    <Link
-                      href={link.path}
-                      className={`
-                        flex items-center gap-3 rounded-md transition-colors group relative
-                        ${isCollapsed ? "justify-center p-3" : "justify-between px-3 py-2"}
-                        ${
-                          isActive
-                            ? "bg-white text-slate-900"
-                            : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                        }
-                      `}
-                      title={isCollapsed ? link.label : undefined}
-                    >
-                      <div className={`flex items-center ${isCollapsed ? "" : "gap-3"}`}>
-                        <link.icon className="w-5 h-5" />
-                        {!isCollapsed && <span>{link.label}</span>}
-                      </div>
-                      {/* Badges - only show when expanded */}
-                      {!isCollapsed && link.badgeKey === "messages" && unreadMessages > 0 && (
-                        <span className="px-2 py-0.5 text-xs font-medium bg-blue-500 text-white rounded-full min-w-[20px] text-center">
-                          {unreadMessages > 99 ? "99+" : unreadMessages}
-                        </span>
-                      )}
-                      {!isCollapsed && link.badgeKey === "checklists" && pendingChecklists > 0 && (
-                        <span className="px-2 py-0.5 text-xs font-medium bg-amber-500 text-white rounded-full min-w-[20px] text-center">
-                          {pendingChecklists > 99 ? "99+" : pendingChecklists}
-                        </span>
-                      )}
-                      {/* Badge dots when collapsed */}
-                      {isCollapsed && link.badgeKey === "messages" && unreadMessages > 0 && (
-                        <span className="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full" />
-                      )}
-                      {isCollapsed && link.badgeKey === "checklists" && pendingChecklists > 0 && (
-                        <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full" />
-                      )}
-                      {/* Tooltip when collapsed */}
-                      {isCollapsed && (
-                        <span className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
-                          {link.label}
-                        </span>
-                      )}
-                    </Link>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
 
           {/* View Client Portal */}
-          <div className="mt-6 pt-6 border-t border-slate-800">
+          <div className="mt-6 pt-6 border-t border-slate-700/50">
             <Link
               href="/portal"
               target="_blank"
               className={`
-                flex items-center rounded-md text-blue-400 hover:bg-slate-800 hover:text-blue-300 transition-colors group relative
+                flex items-center rounded-md text-indigo-400 hover:bg-white/5 hover:text-indigo-300 transition-colors group relative
                 ${isCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2"}
               `}
               title={isCollapsed ? "View Client Portal" : undefined}
@@ -433,9 +471,9 @@ export default function Sidebar() {
         </nav>
 
         {/* User section */}
-        <div className="p-4 border-t border-slate-800">
+        <div className="p-4 border-t border-slate-700/50">
           <div className={`flex items-center ${isCollapsed ? "justify-center" : "gap-3"}`}>
-            <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-white font-medium flex-shrink-0">
+            <div className="w-10 h-10 rounded-full bg-slate-700 ring-2 ring-indigo-500/30 flex items-center justify-center text-white font-medium flex-shrink-0">
               {userInitials}
             </div>
             {!isCollapsed && (
@@ -460,7 +498,7 @@ export default function Sidebar() {
           {isCollapsed && (
             <button
               onClick={handleLogout}
-              className="w-full mt-2 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-md transition-colors group relative"
+              className="w-full mt-2 p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-md transition-colors group relative"
               title="Logout"
             >
               <LogOut className="w-5 h-5 mx-auto" />

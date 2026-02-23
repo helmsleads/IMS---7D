@@ -68,7 +68,7 @@ export default function PortalTemplatesPage() {
 
   useEffect(() => {
     const fetchTemplates = async () => {
-      if (!client) return;
+      if (!client || client.id === "staff-preview") return;
 
       try {
         const data = await getMyTemplates(client.id);
@@ -132,7 +132,7 @@ export default function PortalTemplatesPage() {
 
   // Open modal for editing template
   const handleOpenEdit = async (templateId: string) => {
-    if (!client) return;
+    if (!client || client.id === "staff-preview") return;
 
     try {
       const template = await getMyTemplate(client.id, templateId);
@@ -219,7 +219,7 @@ export default function PortalTemplatesPage() {
 
   // Save template
   const handleSave = async () => {
-    if (!client) return;
+    if (!client || client.id === "staff-preview") return;
     if (!formName.trim()) {
       alert("Please enter a template name");
       return;
@@ -284,7 +284,7 @@ export default function PortalTemplatesPage() {
   );
 
   const handleDelete = async (templateId: string) => {
-    if (!client) return;
+    if (!client || client.id === "staff-preview") return;
     if (!confirm("Are you sure you want to delete this template?")) return;
 
     setDeleting(templateId);

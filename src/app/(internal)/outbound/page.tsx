@@ -12,6 +12,8 @@ import FetchError from "@/components/ui/FetchError";
 import Pagination from "@/components/ui/Pagination";
 import { getOutboundOrders, OutboundOrderWithClient } from "@/lib/api/outbound";
 import { handleApiError } from "@/lib/utils/error-handler";
+import { formatDate, formatStatus } from "@/lib/utils/formatting";
+import StatusBadge from "@/components/ui/StatusBadge";
 
 const ITEMS_PER_PAGE = 25;
 
@@ -34,40 +36,6 @@ const STATUS_TABS: { key: StatusFilter; label: string; color: string }[] = [
   { key: "shipped", label: "Shipped", color: "bg-green-100 text-green-700" },
   { key: "delivered", label: "Delivered", color: "bg-gray-100 text-gray-700" },
 ];
-
-function getStatusColor(status: string): string {
-  switch (status) {
-    case "pending":
-      return "bg-yellow-100 text-yellow-800";
-    case "confirmed":
-      return "bg-blue-100 text-blue-800";
-    case "processing":
-      return "bg-purple-100 text-purple-800";
-    case "packed":
-      return "bg-indigo-100 text-indigo-800";
-    case "shipped":
-      return "bg-green-100 text-green-800";
-    case "delivered":
-      return "bg-gray-100 text-gray-800";
-    case "cancelled":
-      return "bg-red-100 text-red-800";
-    default:
-      return "bg-gray-100 text-gray-800";
-  }
-}
-
-function formatStatus(status: string): string {
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-function formatDate(dateString: string | null): string {
-  if (!dateString) return "—";
-  return new Date(dateString).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 function isUrgent(order: OutboundOrderWithCount): boolean {
   if (!order.notes) return false;
@@ -238,9 +206,7 @@ export default function OutboundPage() {
       key: "status",
       header: "Status",
       render: (order: OutboundOrderWithCount) => (
-        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(order.status)}`}>
-          {formatStatus(order.status)}
-        </span>
+        <StatusBadge status={order.status} entityType="outbound" />
       ),
     },
     {

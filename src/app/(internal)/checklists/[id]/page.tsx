@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
@@ -312,6 +313,10 @@ export default function ChecklistDetailPage() {
 
   return (
     <AppShell title={checklist.template.name}>
+      <Breadcrumbs items={[
+        { label: "Checklists", href: "/checklists" },
+        { label: checklist.template.name || "Checklist Details" }
+      ]} />
       {/* Back Link */}
       <div className="mb-4 -mt-2">{backButton}</div>
 

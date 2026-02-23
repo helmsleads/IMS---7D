@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import AppShell from "@/components/internal/AppShell";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
@@ -735,6 +736,10 @@ export default function InboundOrderDetailPage() {
       subtitle={`Inbound shipment from ${order.supplier || "Unknown"}`}
       actions={backLink}
     >
+      <Breadcrumbs items={[
+        { label: "Inbound", href: "/inbound" },
+        { label: order.po_number || "Order Details" }
+      ]} />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">

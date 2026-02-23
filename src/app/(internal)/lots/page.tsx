@@ -9,21 +9,18 @@ import {
   Eye,
   Pencil,
   AlertTriangle,
-  CheckCircle,
-  XCircle,
-  Package,
   X,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
-import Badge from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import FetchError from "@/components/ui/FetchError";
+import StatusBadge from "@/components/ui/StatusBadge";
 import { getLots, getExpiringLots, createLot, LotWithInventory } from "@/lib/api/lots";
 import { createClient } from "@/lib/supabase";
-import { LotStatus } from "@/types/database";
 import { handleApiError } from "@/lib/utils/error-handler";
+import { formatDate } from "@/lib/utils/formatting";
 
 interface LotTrackingProduct {
   id: string;
@@ -32,50 +29,6 @@ interface LotTrackingProduct {
 }
 
 type TabType = "active" | "expiring" | "all";
-
-const getStatusBadge = (status: LotStatus) => {
-  switch (status) {
-    case "active":
-      return (
-        <Badge variant="success">
-          <CheckCircle className="w-3 h-3 mr-1" />
-          Active
-        </Badge>
-      );
-    case "expired":
-      return (
-        <Badge variant="error">
-          <XCircle className="w-3 h-3 mr-1" />
-          Expired
-        </Badge>
-      );
-    case "recalled":
-      return (
-        <Badge variant="error">
-          <AlertTriangle className="w-3 h-3 mr-1" />
-          Recalled
-        </Badge>
-      );
-    case "depleted":
-      return (
-        <Badge variant="default">
-          <Package className="w-3 h-3 mr-1" />
-          Depleted
-        </Badge>
-      );
-    default:
-      return <Badge>{status}</Badge>;
-  }
-};
-
-const formatDate = (dateString: string | null) => {
-  if (!dateString) return "-";
-  return new Date(dateString).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-};
 
 const getDaysUntilExpiration = (expirationDate: string | null) => {
   if (!expirationDate) return null;
@@ -482,7 +435,7 @@ export default function LotsPage() {
                       <td className="py-3 px-4 text-gray-900 font-medium">
                         {getTotalQty(lot).toLocaleString()}
                       </td>
-                      <td className="py-3 px-4">{getStatusBadge(lot.status)}</td>
+                      <td className="py-3 px-4"><StatusBadge status={lot.status} entityType="lot" /></td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           <Link

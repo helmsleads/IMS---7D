@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { createShopifyClient } from './client'
 import { decryptToken } from '@/lib/encryption'
+import { logSyncResult } from './sync-logger'
 
 /**
  * Sync fulfillment/tracking info from IMS to Shopify
@@ -121,6 +122,17 @@ export async function syncFulfillmentToShopify(
       .from('client_integrations')
       .update({ last_order_sync_at: new Date().toISOString() })
       .eq('id', integration.id)
+
+    // Log success
+    logSyncResult({
+      integrationId: integration.id,
+      syncType: 'fulfillment',
+      direction: 'outbound',
+      triggeredBy: 'event',
+      itemsProcessed: 1,
+      itemsFailed: 0,
+      metadata: { orderId, orderNumber: order.order_number },
+    })
   } catch (error) {
     console.error('Failed to sync fulfillment to Shopify:', error)
 
@@ -132,6 +144,18 @@ export async function syncFulfillmentToShopify(
         last_error_message: error instanceof Error ? error.message : 'Fulfillment sync failed',
       })
       .eq('id', integration.id)
+
+    // Log failure
+    logSyncResult({
+      integrationId: integration.id,
+      syncType: 'fulfillment',
+      direction: 'outbound',
+      triggeredBy: 'event',
+      itemsProcessed: 0,
+      itemsFailed: 1,
+      errorDetails: [{ error: error instanceof Error ? error.message : 'Fulfillment sync failed' }],
+      metadata: { orderId },
+    })
 
     throw error
   }

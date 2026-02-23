@@ -1230,6 +1230,7 @@ export type WebhookStatus = 'received' | 'processing' | 'processed' | 'failed' |
 export interface IntegrationSettings {
   auto_import_orders: boolean
   auto_sync_inventory: boolean
+  auto_sync_prices?: boolean
   sync_inventory_interval_minutes: number
   inventory_buffer: number
   default_location_id: string | null
@@ -1372,6 +1373,28 @@ export interface ShopifyVariant {
   price: string
   inventory_item_id: number
   inventory_quantity: number
+}
+
+// ===== INTEGRATION SYNC LOG TYPES =====
+
+export type SyncType = 'inventory' | 'orders' | 'fulfillment' | 'return' | 'incoming' | 'price'
+export type SyncDirection = 'outbound' | 'inbound'
+export type SyncStatus = 'success' | 'partial' | 'failed'
+export type SyncTrigger = 'cron' | 'event' | 'manual' | 'webhook'
+
+export interface IntegrationSyncLog {
+  id: string
+  integration_id: string
+  sync_type: SyncType
+  direction: SyncDirection
+  status: SyncStatus
+  items_processed: number
+  items_failed: number
+  error_details: Array<{ productId?: string; error: string }>
+  duration_ms: number | null
+  triggered_by: SyncTrigger
+  metadata: Record<string, unknown>
+  created_at: string
 }
 
 // ===== SPREADSHEET IMPORT TYPES =====

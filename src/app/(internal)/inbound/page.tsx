@@ -12,6 +12,9 @@ import FetchError from "@/components/ui/FetchError";
 import Pagination from "@/components/ui/Pagination";
 import { getInboundOrders, InboundOrder } from "@/lib/api/inbound";
 import { handleApiError } from "@/lib/utils/error-handler";
+import { formatDate, formatStatus } from "@/lib/utils/formatting";
+import { getStartOfDay, getEndOfDay, getStartOfWeek, getEndOfWeek, isToday as isDateToday, isThisWeek as isDateThisWeek } from "@/lib/utils/date-utils";
+import StatusBadge from "@/components/ui/StatusBadge";
 
 const ITEMS_PER_PAGE = 25;
 
@@ -36,87 +39,6 @@ const DATE_FILTERS: { key: DateFilter; label: string; icon?: typeof Calendar }[]
   { key: "this_week", label: "This Week", icon: Calendar },
   { key: "overdue", label: "Overdue", icon: AlertCircle },
 ];
-
-function getStatusColor(status: string): string {
-  switch (status) {
-    case "ordered":
-      return "bg-yellow-100 text-yellow-800";
-    case "in_transit":
-      return "bg-blue-100 text-blue-800";
-    case "arrived":
-      return "bg-purple-100 text-purple-800";
-    case "received":
-      return "bg-green-100 text-green-800";
-    case "cancelled":
-      return "bg-red-100 text-red-800";
-    default:
-      return "bg-gray-100 text-gray-800";
-  }
-}
-
-function formatStatus(status: string): string {
-  switch (status) {
-    case "in_transit":
-      return "In Transit";
-    default:
-      return status.charAt(0).toUpperCase() + status.slice(1);
-  }
-}
-
-function formatDate(dateString: string | null): string {
-  if (!dateString) return "—";
-  return new Date(dateString).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function getStartOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function getEndOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
-
-function getStartOfWeek(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day;
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function getEndOfWeek(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() + (6 - day);
-  d.setDate(diff);
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
-
-function isToday(dateString: string | null): boolean {
-  if (!dateString) return false;
-  const date = new Date(dateString);
-  const today = new Date();
-  return getStartOfDay(date).getTime() === getStartOfDay(today).getTime();
-}
-
-function isThisWeek(dateString: string | null): boolean {
-  if (!dateString) return false;
-  const date = new Date(dateString);
-  const now = new Date();
-  const weekStart = getStartOfWeek(now);
-  const weekEnd = getEndOfWeek(now);
-  return date >= weekStart && date <= weekEnd;
-}
 
 function isOverdue(order: InboundOrderWithCount): boolean {
   if (!order.expected_date || order.status === "received") return false;
@@ -178,8 +100,8 @@ export default function InboundPage() {
     };
 
     orders.forEach((order) => {
-      if (isToday(order.expected_date)) counts.today++;
-      if (isThisWeek(order.expected_date)) counts.this_week++;
+      if (order.expected_date && isDateToday(order.expected_date)) counts.today++;
+      if (order.expected_date && isDateThisWeek(order.expected_date)) counts.this_week++;
       if (isOverdue(order)) counts.overdue++;
     });
 
@@ -199,9 +121,9 @@ export default function InboundPage() {
       filtered = filtered.filter((order) => {
         switch (selectedDateFilter) {
           case "today":
-            return isToday(order.expected_date);
+            return order.expected_date ? isDateToday(order.expected_date) : false;
           case "this_week":
-            return isThisWeek(order.expected_date);
+            return order.expected_date ? isDateThisWeek(order.expected_date) : false;
           case "overdue":
             return isOverdue(order);
           default:
@@ -265,9 +187,7 @@ export default function InboundPage() {
       key: "status",
       header: "Status",
       render: (order: InboundOrderWithCount) => (
-        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(order.status)}`}>
-          {formatStatus(order.status)}
-        </span>
+        <StatusBadge status={order.status} entityType="inbound" />
       ),
     },
     {

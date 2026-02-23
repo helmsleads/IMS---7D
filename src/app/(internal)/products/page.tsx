@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Package } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
+import Input from "@/components/ui/Input";
 import Table from "@/components/ui/Table";
 import Badge from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
@@ -18,16 +19,10 @@ import { getCategories } from "@/lib/api/product-categories";
 import { getClients, Client } from "@/lib/api/clients";
 import { ProductCategory } from "@/types/database";
 import { handleApiError } from "@/lib/utils/error-handler";
+import { formatCurrency } from "@/lib/utils/formatting";
 import Pagination from "@/components/ui/Pagination";
 
 const ITEMS_PER_PAGE = 25;
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(value);
-};
 
 const columns = [
   { key: "sku", header: "SKU" },
@@ -261,13 +256,14 @@ export default function ProductsPage() {
         </div>
       )}
       <div className="mb-4 flex flex-wrap gap-4">
-        <input
-          type="text"
-          placeholder="Search by SKU or name..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full max-w-md px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
+        <div className="w-full max-w-md">
+          <Input
+            type="text"
+            placeholder="Search by SKU or name..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
         <div className="w-48">
           <Select
             name="client"

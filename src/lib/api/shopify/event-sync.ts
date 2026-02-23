@@ -23,7 +23,7 @@ export async function triggerInventorySync(productIds: string[]): Promise<void> 
     const timer = setTimeout(async () => {
       debounceTimers.delete(integrationId)
       try {
-        await syncInventoryToShopify(integrationId, prodIds)
+        await syncInventoryToShopify(integrationId, prodIds, 'event')
         console.log(`Event sync completed for integration ${integrationId}: ${prodIds.length} products`)
       } catch (error) {
         console.error(`Event sync failed for integration ${integrationId}:`, error)
@@ -50,7 +50,7 @@ export async function triggerImmediateInventorySync(productIds: string[]): Promi
     }
 
     try {
-      await syncInventoryToShopify(integrationId, prodIds)
+      await syncInventoryToShopify(integrationId, prodIds, 'event')
       console.log(`Immediate sync completed for integration ${integrationId}: ${prodIds.length} products`)
     } catch (error) {
       console.error(`Immediate sync failed for integration ${integrationId}:`, error)

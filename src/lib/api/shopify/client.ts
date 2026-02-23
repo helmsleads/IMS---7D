@@ -87,6 +87,33 @@ export class ShopifyClient {
     return response.json()
   }
 
+  async graphql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+    await this.checkRateLimit()
+
+    const response = await fetch(`${this.baseUrl}/graphql.json`, {
+      method: 'POST',
+      headers: this.headers,
+      body: JSON.stringify({ query, variables }),
+    })
+
+    await this.handleResponseRateLimit(response)
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new ShopifyApiError(response.status, errorText)
+    }
+
+    const result = await response.json()
+
+    // Check for GraphQL-level errors
+    if (result.errors?.length) {
+      const messages = result.errors.map((e: { message: string }) => e.message).join('; ')
+      throw new ShopifyApiError(200, `GraphQL errors: ${messages}`)
+    }
+
+    return result.data as T
+  }
+
   async delete(endpoint: string): Promise<void> {
     await this.checkRateLimit()
 

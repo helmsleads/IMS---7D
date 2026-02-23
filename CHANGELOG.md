@@ -1,5 +1,168 @@
 # Changelog
 
+## [2.3.0] - 2026-02-13
+
+### Overview
+
+Shopify integration enhancements adding sync activity logging, manual inventory sync, health metrics, price sync, GraphQL bulk operations, and reverse sync detection. All sync operations now log to a centralized activity feed visible to clients, replacing server-console-only error visibility.
+
+---
+
+### New Features
+
+#### Sync Activity Log (Foundation)
+Centralized logging for all Shopify sync operations. Every sync (inventory, orders, fulfillment, returns, incoming, price) now records its result to `integration_sync_logs` with status, item counts, duration, error details, and trigger source.
+
+- **Database table:** `integration_sync_logs` with indexes on `(integration_id, created_at)` and RLS policies for client access via `client_users` join
+- **Non-blocking logger:** `logSyncResult()` fires and forgets so sync performance is unaffected
+- **Auto-cleanup:** `cleanupOldSyncLogs()` deletes entries older than 30 days, runs during cron
+- **API endpoint:** `GET /api/integrations/shopify/[id]/sync-logs` with `limit`, `offset`, `type` params
+- **UI:** Collapsible "Recent Sync Activity" section in integration hub with sync type icons, status badges (green/amber/red), relative timestamps, trigger labels, and "Show more" pagination
+
+**Files:** `src/lib/api/shopify/sync-logger.ts` (new), `src/app/api/integrations/shopify/[integrationId]/sync-logs/route.ts` (new)
+
+#### Sync Inventory Now
+Manual inventory sync button alongside the existing "Sync Orders" button. Uses the same auth pattern and rate limiting.
+
+- **API endpoint:** `POST /api/integrations/shopify/[id]/sync-inventory` — calls `syncInventoryToShopify()` with `triggeredBy: 'manual'`
+- **UI:** Cyan/teal gradient button matching portal brand; shows sync results in alert
+
+**Files:** `src/app/api/integrations/shopify/[integrationId]/sync-inventory/route.ts` (new)
+
+#### Sync Health Metrics
+Replaced the static 2-column "Last Order/Inventory Sync" grid with a 4-column health overview computed client-side from sync logs:
+
+| Metric | Description |
+|--------|-------------|
+| Last Order Sync | Most recent successful order sync timestamp with health dot |
+| Last Inventory Sync | Most recent successful inventory sync timestamp with health dot |
+| 24h Success Rate | Percentage of successful syncs in the last 24 hours |
+| 24h Syncs | Count of successful/total syncs in the last 24 hours |
+
+Health dot colors: green (<2h since last success), amber (2-6h), red (>6h or no data).
+
+#### Price Sync
+Optionally syncs IMS product `base_price` to Shopify variant prices during inventory sync.
+
+- **Setting:** `auto_sync_prices` on `IntegrationSettings` — global toggle
+- **Per-mapping:** Only syncs price when `mapping.sync_price` is also true
+- **Logic:** After inventory update, calls `PUT /variants/{id}.json` with `price: String(base_price)`
+- **Logging:** Price syncs logged separately as `sync_type: 'price'`
+- **UI:** Third toggle "Auto-sync prices to Shopify" in Sync Settings
+
+**Files:** `src/types/database.ts` (modified), `src/lib/api/shopify/inventory-sync.ts` (modified)
+
+#### GraphQL Bulk Operations
+Replaces per-product REST API calls with Shopify's `inventorySetQuantities` GraphQL mutation for up to 100x fewer API calls on large catalogs.
+
+- **GraphQL client:** New `graphql<T>(query, variables?)` method on `ShopifyClient` — posts to `/admin/api/2024-01/graphql.json`, validates GraphQL-level errors
+- **Batch updater:** `batchUpdateInventory()` batches up to 100 items per GraphQL call with automatic REST fallback if GraphQL fails
+- **Refactored sync:** Inventory sync now collects all updates first, batch-sends via GraphQL, then does individual price syncs (no GraphQL API for prices)
+
+**Files:** `src/lib/api/shopify/client.ts` (modified), `src/lib/api/shopify/bulk-inventory.ts` (new), `src/lib/api/shopify/inventory-sync.ts` (modified)
+
+#### Reverse Sync Detection
+Detects when inventory is changed directly in Shopify (outside IMS) and surfaces it as an amber warning in the activity log. Does NOT auto-adjust IMS inventory — the warehouse is the source of truth for physical goods.
+
+- **Webhook:** Registers `inventory_levels/update` topic during OAuth callback
+- **Handler logic:**
+  1. Ignores changes at locations other than our `shopify_location_id`
+  2. Looks up `product_mappings` by `external_inventory_item_id`
+  3. If `last_synced_at` is within 60 seconds, assumes it's our own sync and ignores
+  4. Otherwise logs as `direction: 'inbound'`, `triggered_by: 'webhook'` with warning metadata
+- **UI:** Entries with inbound inventory direction render with amber background and "Inventory changed externally in Shopify" label
+
+**Files:** `src/app/api/integrations/shopify/callback/route.ts` (modified), `src/app/api/webhooks/shopify/[integrationId]/route.ts` (modified)
+
+---
+
+### Logging Added to Existing Sync Functions
+
+All existing sync functions now log their results via `logSyncResult()`:
+
+| File | Function | Sync Type | Direction | Trigger |
+|------|----------|-----------|-----------|---------|
+| `inventory-sync.ts` | `syncInventoryToShopify` | inventory | outbound | event/cron/manual |
+| `order-sync.ts` | `syncShopifyOrders` | orders | inbound | manual/webhook |
+| `fulfillment-sync.ts` | `syncFulfillmentToShopify` | fulfillment | outbound | event |
+| `returns-sync.ts` | `syncReturnToShopify` | return | outbound | event |
+| `incoming-sync.ts` | `syncIncomingToShopify` | incoming | outbound | cron |
+| `event-sync.ts` | Both trigger functions | (via inventory-sync) | outbound | event |
+| Cron route | POST handler | (via inventory-sync) | outbound | cron |
+| Webhook route | Order create handler | orders | inbound | webhook |
+
+---
+
+### Files Changed
+
+**Created (4):**
+1. `src/lib/api/shopify/sync-logger.ts` — Non-blocking sync logging utility + 30-day cleanup
+2. `src/lib/api/shopify/bulk-inventory.ts` — GraphQL `inventorySetQuantities` batcher with REST fallback
+3. `src/app/api/integrations/shopify/[integrationId]/sync-inventory/route.ts` — Manual inventory sync endpoint
+4. `src/app/api/integrations/shopify/[integrationId]/sync-logs/route.ts` — Sync logs query endpoint
+
+**Modified (11):**
+1. `src/types/database.ts` — Added `IntegrationSyncLog`, `SyncType`, `SyncDirection`, `SyncStatus`, `SyncTrigger` types; added `auto_sync_prices` to `IntegrationSettings`
+2. `src/lib/api/shopify/inventory-sync.ts` — `triggeredBy` param, logging, price sync, GraphQL batching refactor
+3. `src/lib/api/shopify/order-sync.ts` — `triggeredBy` param + logging
+4. `src/lib/api/shopify/fulfillment-sync.ts` — Success/failure logging
+5. `src/lib/api/shopify/returns-sync.ts` — Success/failure logging
+6. `src/lib/api/shopify/incoming-sync.ts` — Logging with error tracking
+7. `src/lib/api/shopify/event-sync.ts` — Passes `triggeredBy: 'event'` to inventory sync
+8. `src/lib/api/shopify/client.ts` — Added `graphql()` method for GraphQL API
+9. `src/app/api/cron/sync-shopify-inventory/route.ts` — Passes `triggeredBy: 'cron'`, runs log cleanup
+10. `src/app/api/webhooks/shopify/[integrationId]/route.ts` — `inventory_levels/update` handler, order webhook logging
+11. `src/app/api/integrations/shopify/callback/route.ts` — Registers `inventory_levels/update` webhook
+12. `src/app/(portal)/portal/integrations/page.tsx` — Sync inventory button, health metrics, activity log, price toggle
+
+**Database Migration:**
+- `integration_sync_logs` — Sync activity log table with indexes and RLS policies
+
+---
+
+## [2.2.0] - 2026-02-12
+
+### Overview
+
+Per-user dashboard layout persistence. Dashboard layouts are now stored per-user in Supabase instead of shared browser localStorage. New users see a curated recommended preset instead of every widget enabled.
+
+---
+
+### New Features
+
+#### Per-User Dashboard Layouts
+Dashboard customizations (enabled widgets, order, sizes) now persist to Supabase per user/client. Each admin staff member and portal client gets their own independent layout that follows them across devices.
+
+- **Supabase table:** `dashboard_layouts` with RLS policies scoping access to own rows
+- **Three-tier persistence:** Supabase (source of truth) > localStorage (fast cache) > recommended preset (fallback)
+- **Debounced saves:** Mutations write to localStorage immediately, then debounce Supabase writes (1s)
+- **Reset:** "Reset to Defaults" deletes the Supabase row and reverts to recommended preset
+
+#### Recommended Default Presets
+New users see a curated starting dashboard instead of all widgets enabled:
+- **Admin preset:** 15 widgets (attention-required, orders-summary, inventory-overview, fulfillment-funnel, on-time-shipment, inbound-outbound-flow, etc.)
+- **Portal preset:** 9 widgets (profitability, unread-messages, active-orders, inventory-value-over-time, order-fulfillment-speed, spending-breakdown, etc.)
+
+Remaining registry widgets are appended as disabled and available in the customizer.
+
+---
+
+### Files Changed
+
+**Created (2):**
+1. `src/lib/dashboard/recommended-presets.ts` — Curated starter layouts and `generateRecommendedLayout()` function
+2. `src/lib/api/dashboard-layouts.ts` — Supabase CRUD: `loadDashboardLayout`, `saveDashboardLayout`, `deleteDashboardLayout`
+
+**Modified (3):**
+1. `src/lib/hooks/useDashboardLayout.ts` — Added Supabase sync, per-user localStorage keys, debounced saves, recommended preset fallback
+2. `src/app/(internal)/dashboard/page.tsx` — Pass `userId` and `"user"` to `useDashboardLayout`
+3. `src/app/(portal)/portal/dashboard/page.tsx` — Pass `client.id` and `"client"` to `useDashboardLayout`
+
+**Database Migration:**
+- `create_dashboard_layouts_table` — Creates `dashboard_layouts` table with RLS policies
+
+---
+
 ## [2.1.0] - 2026-02-12
 
 ### Overview

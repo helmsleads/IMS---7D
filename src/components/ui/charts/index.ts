@@ -1,4 +1,13 @@
 export { default as MiniSparkline } from "./MiniSparkline";
 export { default as DonutChart } from "./DonutChart";
 export { default as MiniBarChart } from "./MiniBarChart";
+export { default as MiniLineChart } from "./MiniLineChart";
+export { default as HorizontalBarChart } from "./HorizontalBarChart";
+export { default as TreemapChart } from "./TreemapChart";
+export { default as StackedBarChart } from "./StackedBarChart";
 export { default as ChartLegend } from "./ChartLegend";
+export { default as WaterfallChart } from "./WaterfallChart";
+export { default as CalendarHeatmap } from "./CalendarHeatmap";
+export { default as GaugeChart } from "./GaugeChart";
+export { default as ScatterChart } from "./ScatterChart";
+export { default as BulletChart } from "./BulletChart";

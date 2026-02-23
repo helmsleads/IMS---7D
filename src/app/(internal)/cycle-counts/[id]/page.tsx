@@ -36,6 +36,7 @@ import {
   CircleAlert,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
@@ -649,6 +650,10 @@ export default function CycleCountDetailPage() {
 
   return (
     <AppShell title={`Count ${cycleCount.count_number}`}>
+      <Breadcrumbs items={[
+        { label: "Cycle Counts", href: "/cycle-counts" },
+        { label: cycleCount.count_number || "Count Details" }
+      ]} />
       {/* Back Link */}
       <div className="mb-4">
         <Link

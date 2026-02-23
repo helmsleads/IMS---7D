@@ -22,6 +22,7 @@ import {
   Trash2,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
@@ -309,6 +310,10 @@ export default function DamageReportDetailPage() {
       title={`Damage Report`}
       actions={backButton}
     >
+      <Breadcrumbs items={[
+        { label: "Damage Reports", href: "/damage-reports" },
+        { label: `#${report.id.slice(0, 8)}` || "Report Details" }
+      ]} />
       {/* Report ID subtitle */}
       <p className="text-gray-500 font-mono text-sm -mt-4 mb-6">
         #{report.id.slice(0, 8)}

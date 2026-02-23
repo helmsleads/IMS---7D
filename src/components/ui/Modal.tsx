@@ -1,12 +1,13 @@
 "use client";
 
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useState, useCallback } from "react";
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title?: string;
   children: ReactNode;
+  footer?: ReactNode;
   size?: "sm" | "md" | "lg" | "xl";
 }
 
@@ -22,16 +23,36 @@ export default function Modal({
   onClose,
   title,
   children,
+  footer,
   size = "md",
 }: ModalProps) {
+  const [visible, setVisible] = useState(false);
+  const [animating, setAnimating] = useState(false);
+
+  const handleClose = useCallback(() => {
+    setAnimating(true);
+    setTimeout(() => {
+      setAnimating(false);
+      setVisible(false);
+      onClose();
+    }, 150);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setVisible(true);
+      setAnimating(false);
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onClose();
+        handleClose();
       }
     };
 
-    if (isOpen) {
+    if (visible) {
       document.addEventListener("keydown", handleEscape);
       document.body.style.overflow = "hidden";
     }
@@ -40,31 +61,32 @@ export default function Modal({
       document.removeEventListener("keydown", handleEscape);
       document.body.style.overflow = "unset";
     };
-  }, [isOpen, onClose]);
+  }, [visible, handleClose]);
 
-  if (!isOpen) {
+  if (!visible && !isOpen) {
     return null;
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-4 sm:py-8">
       <div
-        className="fixed inset-0 bg-black bg-opacity-50"
-        onClick={onClose}
+        className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm ${animating ? "animate-modal-fade-out" : "animate-modal-fade-in"}`}
+        onClick={handleClose}
       />
       <div
         className={`
-          relative bg-white rounded-lg shadow-xl w-full mx-4 my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-4rem)] flex flex-col
+          relative bg-white rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.15),0_4px_16px_rgba(0,0,0,0.05)] w-full mx-4 my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-4rem)] flex flex-col
           ${sizeStyles[size]}
+          ${animating ? "animate-modal-scale-down" : "animate-modal-scale-up"}
         `}
       >
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
-          <h2 className="text-lg font-semibold text-gray-900">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100 flex-shrink-0">
+          <h2 className="text-lg font-semibold text-slate-900">
             {title || "\u00A0"}
           </h2>
           <button
-            onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+            onClick={handleClose}
+            className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
           >
             <svg
               className="w-5 h-5"
@@ -82,6 +104,11 @@ export default function Modal({
           </button>
         </div>
         <div className="p-4 overflow-y-auto flex-1">{children}</div>
+        {footer && (
+          <div className="border-t border-slate-100 px-4 py-3 flex justify-end gap-3 flex-shrink-0">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );

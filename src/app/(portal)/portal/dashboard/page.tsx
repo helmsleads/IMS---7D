@@ -16,7 +16,17 @@ import {
   getPortalUnreadCount,
   getPortalOpenReturnsCount,
   getPortalMonthlyProfit,
+  getClientInventoryValueOverTime,
+  getClientOrderFulfillmentSpeed,
+  getClientSpendingBreakdown,
+  getClientProductPerformance,
+  getClientStockProjection,
   MonthlyProfitability,
+  InventoryValuePoint,
+  FulfillmentSpeedPoint,
+  SpendingCategory,
+  ProductPerformancePoint,
+  StockProjectionPoint,
 } from "@/lib/api/portal-dashboard";
 import { formatDate, formatCurrency, getGreeting } from "@/lib/utils/formatting";
 
@@ -63,6 +73,11 @@ export default function PortalDashboardPage() {
     orderCount: 0,
     unitsSold: 0,
   });
+  const [inventoryValueOverTime, setInventoryValueOverTime] = useState<InventoryValuePoint[]>([]);
+  const [fulfillmentSpeed, setFulfillmentSpeed] = useState<FulfillmentSpeedPoint[]>([]);
+  const [spendingBreakdown, setSpendingBreakdown] = useState<SpendingCategory[]>([]);
+  const [productPerformance, setProductPerformance] = useState<ProductPerformancePoint[]>([]);
+  const [stockProjection, setStockProjection] = useState<StockProjectionPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCustomizer, setShowCustomizer] = useState(false);
 
@@ -75,7 +90,7 @@ export default function PortalDashboardPage() {
     reorderByIds,
     resizeWidget,
     resetToDefaults,
-  } = useDashboardLayout("portal", PORTAL_WIDGETS);
+  } = useDashboardLayout("portal", PORTAL_WIDGETS, client?.id, "client");
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -230,6 +245,20 @@ export default function PortalDashboardPage() {
       const profitData = await getPortalMonthlyProfit(client.id);
       setProfitability(profitData);
 
+      // Fetch new widget data in parallel
+      const [valueOverTime, speed, spending, performance, projection] = await Promise.all([
+        getClientInventoryValueOverTime(client.id),
+        getClientOrderFulfillmentSpeed(client.id),
+        getClientSpendingBreakdown(client.id),
+        getClientProductPerformance(client.id),
+        getClientStockProjection(client.id),
+      ]);
+      setInventoryValueOverTime(valueOverTime);
+      setFulfillmentSpeed(speed);
+      setSpendingBreakdown(spending);
+      setProductPerformance(performance);
+      setStockProjection(projection);
+
       setLoading(false);
     };
 
@@ -253,6 +282,11 @@ export default function PortalDashboardPage() {
     "recent-arrivals": { recentArrivalsList },
     "active-orders": { activeOrdersList },
     "quick-actions": {},
+    "inventory-value-over-time": { valueData: inventoryValueOverTime },
+    "order-fulfillment-speed": { speedData: fulfillmentSpeed },
+    "spending-breakdown": { spendingData: spendingBreakdown },
+    "product-performance": { performanceData: productPerformance },
+    "stock-projection": { projectionData: stockProjection },
   };
 
   const handleQuickAdd = (id: string) => {

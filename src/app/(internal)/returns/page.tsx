@@ -9,20 +9,18 @@ import {
   Eye,
   CheckCircle,
   XCircle,
-  Clock,
-  Package,
-  Truck,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
-import Badge from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import FetchError from "@/components/ui/FetchError";
+import StatusBadge from "@/components/ui/StatusBadge";
 import { getReturns, updateReturnStatus, ReturnWithItems } from "@/lib/api/returns";
 import { getClients, Client } from "@/lib/api/clients";
 import { ReturnStatus } from "@/types/database";
 import { handleApiError } from "@/lib/utils/error-handler";
+import { formatDate } from "@/lib/utils/formatting";
 
 const statusOptions: { value: ReturnStatus | ""; label: string }[] = [
   { value: "", label: "All Statuses" },
@@ -35,78 +33,6 @@ const statusOptions: { value: ReturnStatus | ""; label: string }[] = [
   { value: "completed", label: "Completed" },
   { value: "cancelled", label: "Cancelled" },
 ];
-
-const getStatusBadge = (status: ReturnStatus) => {
-  switch (status) {
-    case "requested":
-      return (
-        <Badge variant="warning">
-          <Clock className="w-3 h-3 mr-1" />
-          Requested
-        </Badge>
-      );
-    case "approved":
-      return (
-        <Badge variant="info">
-          <CheckCircle className="w-3 h-3 mr-1" />
-          Approved
-        </Badge>
-      );
-    case "denied":
-      return (
-        <Badge variant="error">
-          <XCircle className="w-3 h-3 mr-1" />
-          Denied
-        </Badge>
-      );
-    case "shipped":
-      return (
-        <Badge variant="info">
-          <Truck className="w-3 h-3 mr-1" />
-          Shipped
-        </Badge>
-      );
-    case "received":
-      return (
-        <Badge variant="info">
-          <Package className="w-3 h-3 mr-1" />
-          Received
-        </Badge>
-      );
-    case "processing":
-      return (
-        <Badge variant="warning">
-          <Clock className="w-3 h-3 mr-1" />
-          Processing
-        </Badge>
-      );
-    case "completed":
-      return (
-        <Badge variant="success">
-          <CheckCircle className="w-3 h-3 mr-1" />
-          Completed
-        </Badge>
-      );
-    case "cancelled":
-      return (
-        <Badge variant="default">
-          <XCircle className="w-3 h-3 mr-1" />
-          Cancelled
-        </Badge>
-      );
-    default:
-      return <Badge>{status}</Badge>;
-  }
-};
-
-const formatDate = (dateString: string | null) => {
-  if (!dateString) return "-";
-  return new Date(dateString).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-};
 
 export default function ReturnsPage() {
   const [returns, setReturns] = useState<ReturnWithItems[]>([]);
@@ -390,7 +316,7 @@ export default function ReturnsPage() {
                       )}
                     </td>
                     <td className="py-3 px-4">
-                      {getStatusBadge(returnItem.status)}
+                      <StatusBadge status={returnItem.status} entityType="return" />
                     </td>
                     <td className="py-3 px-4 text-gray-600">
                       {getTotalItems(returnItem.items)}

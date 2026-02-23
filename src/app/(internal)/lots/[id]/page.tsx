@@ -18,6 +18,7 @@ import {
   Pencil,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
@@ -159,6 +160,10 @@ export default function LotDetailPage() {
         </Link>
       }
     >
+      <Breadcrumbs items={[
+        { label: "Lots", href: "/lots" },
+        { label: lot.lot_number || "Lot Details" }
+      ]} />
       {/* Back Link */}
       <div className="mb-6">
         <Link

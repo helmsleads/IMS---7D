@@ -4,6 +4,7 @@ interface BadgeProps {
   children: ReactNode;
   variant?: "default" | "success" | "warning" | "error" | "info";
   size?: "sm" | "md";
+  className?: string;
 }
 
 const variantStyles = {
@@ -23,6 +24,7 @@ export default function Badge({
   children,
   variant = "default",
   size = "sm",
+  className = "",
 }: BadgeProps) {
   return (
     <span
@@ -30,6 +32,7 @@ export default function Badge({
         inline-flex items-center font-medium rounded-full
         ${variantStyles[variant]}
         ${sizeStyles[size]}
+        ${className}
       `}
     >
       {children}

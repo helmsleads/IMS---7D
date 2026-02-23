@@ -1,6 +1,9 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { createShopifyClient } from './client'
 import { decryptToken } from '@/lib/encryption'
+import { logSyncResult } from './sync-logger'
+import { batchUpdateInventory } from './bulk-inventory'
+import type { SyncTrigger } from '@/types/database'
 
 interface SyncResult {
   updated: number
@@ -13,8 +16,10 @@ interface SyncResult {
  */
 export async function syncInventoryToShopify(
   integrationId: string,
-  productIds?: string[]
+  productIds?: string[],
+  triggeredBy: SyncTrigger = 'event'
 ): Promise<SyncResult> {
+  const startTime = Date.now()
   const supabase = createServiceClient()
 
   // Get integration
@@ -76,7 +81,8 @@ export async function syncInventoryToShopify(
       product:products(
         id,
         sku,
-        name
+        name,
+        base_price
       )
     `)
     .eq('integration_id', integrationId)
@@ -103,6 +109,17 @@ export async function syncInventoryToShopify(
 
   const results: SyncResult = { updated: 0, failed: 0, errors: [] }
   const inventoryBuffer = integration.settings?.inventory_buffer || 0
+  const shouldSyncPrices = integration.settings?.auto_sync_prices === true
+  let pricesSynced = 0
+  const shopifyLocationId = integration.settings.shopify_location_id
+
+  // Phase 1: Collect all inventory updates + compute quantities
+  const inventoryUpdates: Array<{
+    mappingId: string
+    productId: string
+    inventoryItemId: string
+    available: number
+  }> = []
 
   for (const mapping of mappings) {
     if (!mapping.external_inventory_item_id) {
@@ -116,7 +133,6 @@ export async function syncInventoryToShopify(
 
     try {
       // Get current IMS inventory for this product
-      // If default_location_id is set, only count inventory at that location
       let inventoryQuery = supabase
         .from('inventory')
         .select('qty_on_hand, qty_reserved')
@@ -129,7 +145,6 @@ export async function syncInventoryToShopify(
 
       const { data: inventoryData } = await inventoryQuery
 
-      // Calculate total available (filtered by location if configured)
       const totalOnHand = (inventoryData || []).reduce(
         (sum, inv) => sum + (inv.qty_on_hand || 0),
         0
@@ -139,32 +154,78 @@ export async function syncInventoryToShopify(
         0
       )
 
-      // Apply buffer
       const available = Math.max(0, totalOnHand - totalReserved - inventoryBuffer)
 
-      // Update Shopify inventory
-      await client.post('/inventory_levels/set.json', {
-        location_id: parseInt(integration.settings.shopify_location_id),
-        inventory_item_id: parseInt(mapping.external_inventory_item_id),
+      inventoryUpdates.push({
+        mappingId: mapping.id,
+        productId: mapping.product_id,
+        inventoryItemId: mapping.external_inventory_item_id,
         available,
       })
-
-      // Update last synced timestamp
-      await supabase
-        .from('product_mappings')
-        .update({ last_synced_at: new Date().toISOString() })
-        .eq('id', mapping.id)
-
-      results.updated++
-
-      // Rate limit protection - Shopify allows 2 requests/second for inventory
-      await sleep(500)
     } catch (error) {
       results.failed++
       results.errors.push({
         productId: mapping.product_id,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : 'Failed to compute inventory',
       })
+    }
+  }
+
+  // Phase 2: Batch update inventory via GraphQL (falls back to REST automatically)
+  if (inventoryUpdates.length > 0) {
+    const batchResult = await batchUpdateInventory(
+      client,
+      inventoryUpdates.map((u) => ({
+        inventoryItemId: u.inventoryItemId,
+        locationId: shopifyLocationId,
+        quantity: u.available,
+      })),
+      'correction'
+    )
+
+    results.updated += batchResult.updated
+    results.failed += batchResult.failed
+
+    for (const err of batchResult.errors) {
+      const update = inventoryUpdates.find((u) => u.inventoryItemId === err.inventoryItemId)
+      results.errors.push({
+        productId: update?.productId || err.inventoryItemId,
+        error: err.error,
+      })
+    }
+
+    // Update last_synced_at for successfully synced mappings
+    const failedItemIds = new Set(batchResult.errors.map((e) => e.inventoryItemId))
+    const successfulMappingIds = inventoryUpdates
+      .filter((u) => !failedItemIds.has(u.inventoryItemId))
+      .map((u) => u.mappingId)
+
+    if (successfulMappingIds.length > 0) {
+      await supabase
+        .from('product_mappings')
+        .update({ last_synced_at: new Date().toISOString() })
+        .in('id', successfulMappingIds)
+    }
+  }
+
+  // Phase 3: Price sync (individual REST calls — no GraphQL batch API for prices)
+  if (shouldSyncPrices) {
+    for (const mapping of mappings) {
+      if (!mapping.sync_price || !mapping.external_variant_id) continue
+
+      const product = mapping.product as { id: string; sku: string; name: string; base_price: number } | null
+      if (product?.base_price == null) continue
+
+      try {
+        await client.put(
+          `/variants/${mapping.external_variant_id}.json`,
+          { variant: { id: parseInt(mapping.external_variant_id), price: String(product.base_price) } }
+        )
+        pricesSynced++
+        await sleep(500)
+      } catch (priceError) {
+        console.error(`Price sync failed for variant ${mapping.external_variant_id}:`, priceError)
+      }
     }
   }
 
@@ -173,6 +234,32 @@ export async function syncInventoryToShopify(
     .from('client_integrations')
     .update({ last_inventory_sync_at: new Date().toISOString() })
     .eq('id', integrationId)
+
+  // Log sync result
+  logSyncResult({
+    integrationId,
+    syncType: 'inventory',
+    direction: 'outbound',
+    triggeredBy,
+    itemsProcessed: results.updated,
+    itemsFailed: results.failed,
+    errorDetails: results.errors.map((e) => ({ productId: e.productId, error: e.error })),
+    durationMs: Date.now() - startTime,
+    metadata: pricesSynced > 0 ? { pricesSynced } : undefined,
+  })
+
+  // Log price sync separately if any were synced
+  if (pricesSynced > 0) {
+    logSyncResult({
+      integrationId,
+      syncType: 'price',
+      direction: 'outbound',
+      triggeredBy,
+      itemsProcessed: pricesSynced,
+      itemsFailed: 0,
+      durationMs: Date.now() - startTime,
+    })
+  }
 
   return results
 }

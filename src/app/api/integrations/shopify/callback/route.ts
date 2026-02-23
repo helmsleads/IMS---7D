@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   // Validate required params
   if (!code || !shop || !state || !hmac) {
     console.error('Missing OAuth params:', { code: !!code, shop: !!shop, state: !!state, hmac: !!hmac })
-    return NextResponse.redirect(`${APP_URL}/portal/settings/integrations?error=missing_params`)
+    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=missing_params`)
   }
 
   // Verify HMAC signature
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
 
   if (hmac !== expectedHmac) {
     console.error('Invalid HMAC signature')
-    return NextResponse.redirect(`${APP_URL}/portal/settings/integrations?error=invalid_hmac`)
+    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=invalid_hmac`)
   }
 
   // Verify nonce from state
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
 
   if (!nonceCookie || nonceCookie !== stateNonce) {
     console.error('Invalid state/nonce')
-    return NextResponse.redirect(`${APP_URL}/portal/settings/integrations?error=invalid_state`)
+    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=invalid_state`)
   }
 
   // Parse client ID from state
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
     if (!clientId) throw new Error('No clientId in state')
   } catch (e) {
     console.error('Failed to parse state:', e)
-    return NextResponse.redirect(`${APP_URL}/portal/settings/integrations?error=invalid_state`)
+    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=invalid_state`)
   }
 
   // Exchange code for access token
@@ -81,13 +81,13 @@ export async function GET(request: NextRequest) {
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text()
       console.error('Token exchange failed:', errorText)
-      return NextResponse.redirect(`${APP_URL}/portal/settings/integrations?error=token_exchange_failed`)
+      return NextResponse.redirect(`${APP_URL}/portal/integrations?error=token_exchange_failed`)
     }
 
     tokenData = await tokenResponse.json()
   } catch (e) {
     console.error('Token exchange error:', e)
-    return NextResponse.redirect(`${APP_URL}/portal/settings/integrations?error=token_exchange_failed`)
+    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=token_exchange_failed`)
   }
 
   // Get shop info
@@ -172,7 +172,7 @@ export async function GET(request: NextRequest) {
 
   if (dbError) {
     console.error('Failed to save integration:', dbError)
-    return NextResponse.redirect(`${APP_URL}/portal/settings/integrations?error=save_failed`)
+    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=save_failed`)
   }
 
   // Register webhooks with Shopify
@@ -186,7 +186,7 @@ export async function GET(request: NextRequest) {
 
   // Clear nonce cookie and redirect to success
   const response = NextResponse.redirect(
-    `${APP_URL}/portal/settings/integrations?success=shopify_connected`
+    `${APP_URL}/portal/integrations?success=shopify_connected`
   )
   response.cookies.delete('shopify_oauth_nonce')
 
@@ -205,6 +205,7 @@ async function registerShopifyWebhooks(
     'orders/create',
     'orders/updated',
     'orders/cancelled',
+    'inventory_levels/update',
   ]
 
   for (const topic of webhookTopics) {

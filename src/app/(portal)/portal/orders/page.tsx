@@ -5,15 +5,17 @@ import Link from "next/link";
 import {
   Package,
   Search,
-  Clock,
-  CheckCircle2,
   Truck,
-  XCircle,
   ChevronRight,
   RefreshCw,
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
+import { formatDate } from "@/lib/utils/formatting";
+import Input from "@/components/ui/Input";
+import Button from "@/components/ui/Button";
+import Spinner from "@/components/ui/Spinner";
+import StatusBadge from "@/components/ui/StatusBadge";
 
 interface Order {
   id: string;
@@ -31,51 +33,6 @@ interface Order {
 }
 
 type StatusFilter = "all" | "active" | "completed";
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: string; icon: typeof Clock }> = {
-  pending: {
-    label: "Pending",
-    color: "text-yellow-700",
-    bgColor: "bg-yellow-100",
-    icon: Clock,
-  },
-  confirmed: {
-    label: "Confirmed",
-    color: "text-blue-700",
-    bgColor: "bg-blue-100",
-    icon: CheckCircle2,
-  },
-  processing: {
-    label: "Processing",
-    color: "text-purple-700",
-    bgColor: "bg-purple-100",
-    icon: Package,
-  },
-  packed: {
-    label: "Packed",
-    color: "text-indigo-700",
-    bgColor: "bg-indigo-100",
-    icon: Package,
-  },
-  shipped: {
-    label: "Shipped",
-    color: "text-cyan-700",
-    bgColor: "bg-cyan-100",
-    icon: Truck,
-  },
-  delivered: {
-    label: "Delivered",
-    color: "text-green-700",
-    bgColor: "bg-green-100",
-    icon: CheckCircle2,
-  },
-  cancelled: {
-    label: "Cancelled",
-    color: "text-red-700",
-    bgColor: "bg-red-100",
-    icon: XCircle,
-  },
-};
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All Orders" },
@@ -182,26 +139,10 @@ export default function PortalOrdersPage() {
 
   const statusCounts = getStatusCounts();
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
-
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+        <Spinner size="md" />
       </div>
     );
   }
@@ -214,12 +155,11 @@ export default function PortalOrdersPage() {
           <h1 className="text-2xl font-bold text-gray-900">My Orders</h1>
           <p className="text-gray-500 mt-1">Track and manage your shipment requests</p>
         </div>
-        <Link
-          href="/portal/request-shipment"
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors"
-        >
-          <Package className="w-4 h-4" />
-          New Shipment
+        <Link href="/portal/request-shipment">
+          <Button variant="primary" className="gap-2 rounded-xl">
+            <Package className="w-4 h-4" />
+            New Shipment
+          </Button>
         </Link>
       </div>
 
@@ -257,24 +197,20 @@ export default function PortalOrdersPage() {
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-        <input
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 z-10" />
+        <Input
           type="text"
           placeholder="Search by order number or city..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="pl-10 py-3 rounded-xl border-gray-200"
         />
       </div>
 
       {/* Orders List */}
       {filteredOrders.length > 0 ? (
         <div className="space-y-3">
-          {filteredOrders.map((order) => {
-            const statusConfig = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
-            const StatusIcon = statusConfig.icon;
-
-            return (
+          {filteredOrders.map((order) => (
               <div
                 key={order.id}
                 className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:border-gray-300 transition-all"
@@ -294,15 +230,10 @@ export default function PortalOrdersPage() {
                         )}
                       </div>
                       <p className="text-sm text-gray-500">
-                        Requested {formatDate(order.created_at)}
+                        Requested {formatDate(order.created_at, "short")}
                       </p>
                     </div>
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${statusConfig.bgColor} ${statusConfig.color}`}
-                    >
-                      <StatusIcon className="w-3.5 h-3.5" />
-                      {statusConfig.label}
-                    </span>
+                    <StatusBadge status={order.status} entityType="outbound" />
                   </div>
 
                   {/* Order Info Grid */}
@@ -338,19 +269,17 @@ export default function PortalOrdersPage() {
                 {/* Card Footer */}
                 <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
                   <span className="text-xs text-gray-500">
-                    Last updated {formatDate(order.updated_at)}
+                    Last updated {formatDate(order.updated_at, "short")}
                   </span>
-                  <Link
-                    href={`/portal/orders/${order.id}`}
-                    className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
-                  >
-                    View Details
-                    <ChevronRight className="w-4 h-4" />
+                  <Link href={`/portal/orders/${order.id}`}>
+                    <Button variant="ghost" size="sm" className="gap-1 text-blue-600 hover:text-blue-700 hover:bg-transparent">
+                      View Details
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
                   </Link>
                 </div>
               </div>
-            );
-          })}
+          ))}
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
@@ -358,25 +287,26 @@ export default function PortalOrdersPage() {
           {searchQuery || statusFilter !== "all" ? (
             <>
               <p className="text-lg text-gray-600">No orders match your filters</p>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   setSearchQuery("");
                   setStatusFilter("all");
                 }}
-                className="text-blue-600 hover:underline mt-2"
+                className="text-blue-600 hover:text-blue-700 mt-2"
               >
                 Clear all filters
-              </button>
+              </Button>
             </>
           ) : (
             <>
               <p className="text-lg text-gray-600 mb-4">No orders yet</p>
-              <Link
-                href="/portal/request-shipment"
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors"
-              >
-                <Package className="w-4 h-4" />
-                Request Your First Shipment
+              <Link href="/portal/request-shipment">
+                <Button variant="primary" className="gap-2 rounded-xl">
+                  <Package className="w-4 h-4" />
+                  Request Your First Shipment
+                </Button>
               </Link>
             </>
           )}
@@ -390,14 +320,16 @@ export default function PortalOrdersPage() {
             <>Showing {filteredOrders.length} of {orders.length} orders</>
           )}
         </span>
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => fetchOrders(true)}
           disabled={refreshing}
-          className="flex items-center gap-2 px-3 py-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+          className="gap-2 text-blue-600 hover:bg-blue-50"
         >
           <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
           {refreshing ? "Refreshing..." : "Refresh"}
-        </button>
+        </Button>
       </div>
     </div>
   );

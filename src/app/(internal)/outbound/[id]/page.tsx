@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import AppShell from "@/components/internal/AppShell";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
@@ -751,6 +752,10 @@ export default function OutboundOrderDetailPage() {
       subtitle={`Outbound order for ${order.client?.company_name || "Unknown Client"}`}
       actions={backLink}
     >
+      <Breadcrumbs items={[
+        { label: "Outbound", href: "/outbound" },
+        { label: order.order_number || "Order Details" }
+      ]} />
       {/* Urgent/Rush Banner */}
       {isRushRequested && (
         <div className="mb-6 bg-red-50 border-2 border-red-300 rounded-lg px-4 py-3 flex items-center justify-between">

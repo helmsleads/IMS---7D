@@ -32,6 +32,7 @@ import {
   Eye,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Table from "@/components/ui/Table";
@@ -708,6 +709,10 @@ export default function ClientDetailPage() {
       subtitle={client.industries?.map(i => getIndustryDisplayName(i)).join(", ") || "No industries"}
       actions={headerActions}
     >
+      <Breadcrumbs items={[
+        { label: "Clients", href: "/clients" },
+        { label: client.company_name || "Client Details" }
+      ]} />
       {/* Client Info Header */}
       <div className="mb-6">
         <Card>

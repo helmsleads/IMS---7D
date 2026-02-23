@@ -22,6 +22,7 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
@@ -405,6 +406,10 @@ export default function InventoryDetailPage({
       title={inventory.product?.name || "Inventory Details"}
       actions={actionButtons}
     >
+      <Breadcrumbs items={[
+        { label: "Inventory", href: "/inventory" },
+        { label: inventory.product?.name || inventory.product?.sku || "Details" }
+      ]} />
       {statusSuccess && (
         <div className="mb-4">
           <Alert type="success" message={statusSuccess} onClose={() => setStatusSuccess("")} />

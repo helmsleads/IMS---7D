@@ -25,7 +25,7 @@ export default function PortalShell({
   const { isStaffPreview } = useClient();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50">
       {/* Staff Preview Banner */}
       {isStaffPreview && (
         <div className="bg-amber-500 text-amber-950">
@@ -53,17 +53,17 @@ export default function PortalShell({
       <PortalNav companyName={companyName} />
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in-up">
         {/* Page Header */}
         {(title || actions) && (
           <div className="mb-8">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
                 {title && (
-                  <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+                  <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
                 )}
                 {subtitle && (
-                  <p className="mt-1 text-sm text-gray-500">{subtitle}</p>
+                  <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
                 )}
               </div>
               {actions && (
@@ -78,22 +78,22 @@ export default function PortalShell({
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-gray-200 bg-white mt-auto">
+      <footer className="border-t border-slate-200 bg-slate-50 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 bg-gradient-to-br from-blue-600 to-blue-700 rounded flex items-center justify-center">
+              <div className="w-6 h-6 bg-gradient-to-br from-cyan-500 to-teal-600 rounded flex items-center justify-center">
                 <span className="text-white font-bold text-xs">7D</span>
               </div>
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-slate-500">
                 7 Degrees Co. Client Portal
               </span>
             </div>
-            <div className="flex items-center gap-6 text-sm text-gray-500">
-              <a href="#" className="hover:text-gray-700 transition-colors">
+            <div className="flex items-center gap-6 text-sm text-slate-500">
+              <a href="#" className="hover:text-slate-700 transition-colors">
                 Help & Support
               </a>
-              <a href="#" className="hover:text-gray-700 transition-colors">
+              <a href="#" className="hover:text-slate-700 transition-colors">
                 Contact Us
               </a>
               <span>© {new Date().getFullYear()} 7 Degrees Co.</span>

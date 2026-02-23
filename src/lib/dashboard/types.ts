@@ -1,3 +1,26 @@
+export type PreviewType =
+  | "bar-chart"
+  | "line-chart"
+  | "area-chart"
+  | "horizontal-bar"
+  | "stacked-bar"
+  | "donut"
+  | "treemap"
+  | "funnel"
+  | "heatmap"
+  | "gauge"
+  | "scatter"
+  | "waterfall"
+  | "gantt"
+  | "calendar"
+  | "bullet"
+  | "pareto"
+  | "list"
+  | "timeline"
+  | "action-grid"
+  | "progress-bars"
+  | "count-badge";
+
 export interface WidgetConfig {
   id: string;
   title: string;
@@ -6,6 +29,8 @@ export interface WidgetConfig {
   defaultEnabled: boolean;
   defaultOrder: number;
   defaultSize: "half" | "full";
+  previewType?: PreviewType;
+  comingSoon?: boolean;
 }
 
 export interface WidgetLayoutItem {

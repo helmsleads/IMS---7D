@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { createShopifyClient } from './client'
 import { decryptToken } from '@/lib/encryption'
+import { logSyncResult } from './sync-logger'
 
 /**
  * Calculate incoming inventory from open inbound orders
@@ -114,6 +115,9 @@ export async function syncIncomingToShopify(
   let updated = 0
   let failed = 0
 
+  const startTime = Date.now()
+  const errors: Array<{ productId?: string; error: string }> = []
+
   for (const mapping of mappings) {
     try {
       // Set product metafield for incoming quantity
@@ -139,8 +143,24 @@ export async function syncIncomingToShopify(
         error
       )
       failed++
+      errors.push({
+        productId: mapping.product_id,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      })
     }
   }
+
+  // Log sync result
+  logSyncResult({
+    integrationId,
+    syncType: 'incoming',
+    direction: 'outbound',
+    triggeredBy: 'cron',
+    itemsProcessed: updated,
+    itemsFailed: failed,
+    errorDetails: errors,
+    durationMs: Date.now() - startTime,
+  })
 
   return { updated, failed }
 }

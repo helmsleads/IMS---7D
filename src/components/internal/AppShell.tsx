@@ -45,7 +45,7 @@ export default function AppShell({
 
   return (
     <MobileMenuProvider>
-      <div className="min-h-screen bg-gray-100">
+      <div className="min-h-screen bg-slate-50">
         <Sidebar />
         <div
           className={`
@@ -54,7 +54,7 @@ export default function AppShell({
           `}
         >
           <Header title={title} subtitle={subtitle} actions={actions} />
-          <main className="p-6">
+          <main className="p-6 animate-fade-in-up">
             <ErrorBoundary>{children}</ErrorBoundary>
           </main>
         </div>

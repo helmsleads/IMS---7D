@@ -9,8 +9,6 @@ import {
   Trash2,
   Star,
   CreditCard,
-  Check,
-  X,
   Users,
   Mail,
   Phone,
@@ -19,6 +17,12 @@ import {
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import Card from "@/components/ui/Card";
+import Modal from "@/components/ui/Modal";
+import Input from "@/components/ui/Input";
+import Select from "@/components/ui/Select";
+import Toggle from "@/components/ui/Toggle";
+import Button from "@/components/ui/Button";
+import Spinner from "@/components/ui/Spinner";
 import {
   getMyAddresses,
   createMyAddress,
@@ -146,6 +150,17 @@ const COUNTRIES = [
   { value: "OTHER", label: "Other" },
 ];
 
+const BASE_ROLE_OPTIONS = [
+  { value: "viewer", label: "Viewer" },
+  { value: "member", label: "Member" },
+  { value: "admin", label: "Admin" },
+];
+
+const ROLE_OPTIONS_WITH_OWNER = [
+  ...BASE_ROLE_OPTIONS,
+  { value: "owner", label: "Owner" },
+];
+
 export default function PortalSettingsPage() {
   const { client, currentRole, user } = useClient();
   const [activeTab, setActiveTab] = useState<TabType>("addresses");
@@ -198,6 +213,9 @@ export default function PortalSettingsPage() {
 
   // Check if current user can manage team
   const canManageTeam = currentRole === "owner" || currentRole === "admin";
+
+  // Compute role options based on current user's role
+  const roleOptions = currentRole === "owner" ? ROLE_OPTIONS_WITH_OWNER : BASE_ROLE_OPTIONS;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -515,7 +533,7 @@ export default function PortalSettingsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+        <Spinner size="lg" />
       </div>
     );
   }
@@ -573,13 +591,10 @@ export default function PortalSettingsPage() {
       {activeTab === "addresses" && (
         <div className="space-y-6">
           {/* Add Address Button */}
-          <button
-            onClick={openAddModal}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
+          <Button onClick={openAddModal}>
+            <Plus className="w-4 h-4 mr-2" />
             Add Address
-          </button>
+          </Button>
 
           {/* Address List */}
           {addresses.length > 0 ? (
@@ -614,33 +629,33 @@ export default function PortalSettingsPage() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-3 pt-3 border-t border-gray-100">
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => handleEditAddress(address)}
-                      className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
                     >
-                      <Pencil className="w-3.5 h-3.5" />
+                      <Pencil className="w-3.5 h-3.5 mr-1.5" />
                       Edit
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => handleDeleteAddress(address.id)}
-                      disabled={deleting === address.id}
-                      className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700 transition-colors disabled:opacity-50"
+                      loading={deleting === address.id}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
-                      {deleting === address.id ? (
-                        <div className="w-3.5 h-3.5 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <Trash2 className="w-3.5 h-3.5" />
-                      )}
+                      <Trash2 className="w-3.5 h-3.5 mr-1.5" />
                       Delete
-                    </button>
+                    </Button>
                     {!address.is_default && (
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => handleSetDefault(address.id)}
-                        className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors"
                       >
-                        <Star className="w-3.5 h-3.5" />
+                        <Star className="w-3.5 h-3.5 mr-1.5" />
                         Set as Default
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </Card>
@@ -655,13 +670,10 @@ export default function PortalSettingsPage() {
                 <p className="text-sm mt-1 mb-4">
                   Add your shipping and billing addresses
                 </p>
-                <button
-                  onClick={openAddModal}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
+                <Button onClick={openAddModal}>
+                  <Plus className="w-4 h-4 mr-2" />
                   Add Address
-                </button>
+                </Button>
               </div>
             </Card>
           )}
@@ -669,206 +681,124 @@ export default function PortalSettingsPage() {
       )}
 
       {/* Address Modal */}
-      {showAddressModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div
-            className="fixed inset-0 bg-black/50 transition-opacity"
-            onClick={resetAddressForm}
-          />
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative w-full max-w-lg bg-white rounded-xl shadow-xl">
-              {/* Modal Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  {editingAddress ? "Edit Address" : "Add New Address"}
-                </h2>
-                <button
-                  onClick={resetAddressForm}
-                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Modal Body */}
-              <form onSubmit={handleSaveAddress}>
-                <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Label (optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={addressForm.label || ""}
-                      onChange={(e) =>
-                        setAddressForm({ ...addressForm, label: e.target.value })
-                      }
-                      placeholder="e.g., Home, Office, Warehouse"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Address Line 1 *
-                    </label>
-                    <input
-                      type="text"
-                      value={addressForm.address_line1}
-                      onChange={(e) =>
-                        setAddressForm({ ...addressForm, address_line1: e.target.value })
-                      }
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Address Line 2
-                    </label>
-                    <input
-                      type="text"
-                      value={addressForm.address_line2 || ""}
-                      onChange={(e) =>
-                        setAddressForm({ ...addressForm, address_line2: e.target.value })
-                      }
-                      placeholder="Apt, Suite, Unit, etc."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        City *
-                      </label>
-                      <input
-                        type="text"
-                        value={addressForm.city}
-                        onChange={(e) =>
-                          setAddressForm({ ...addressForm, city: e.target.value })
-                        }
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        State *
-                      </label>
-                      <select
-                        value={addressForm.state}
-                        onChange={(e) =>
-                          setAddressForm({ ...addressForm, state: e.target.value })
-                        }
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                      >
-                        <option value="">Select state</option>
-                        {US_STATES.map((state) => (
-                          <option key={state.value} value={state.value}>
-                            {state.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        ZIP Code *
-                      </label>
-                      <input
-                        type="text"
-                        value={addressForm.zip}
-                        onChange={(e) =>
-                          setAddressForm({ ...addressForm, zip: e.target.value })
-                        }
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Country *
-                      </label>
-                      <select
-                        value={addressForm.country || "USA"}
-                        onChange={(e) =>
-                          setAddressForm({ ...addressForm, country: e.target.value })
-                        }
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                      >
-                        {COUNTRIES.map((country) => (
-                          <option key={country.value} value={country.value}>
-                            {country.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-3 pt-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={addressForm.is_default}
-                        onChange={(e) =>
-                          setAddressForm({ ...addressForm, is_default: e.target.checked })
-                        }
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">Set as default shipping address</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={addressForm.is_billing}
-                        onChange={(e) =>
-                          setAddressForm({ ...addressForm, is_billing: e.target.checked })
-                        }
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">Set as billing address</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Modal Footer */}
-                <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
-                  <button
-                    type="button"
-                    onClick={resetAddressForm}
-                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                  >
-                    {saving ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4" />
-                        {editingAddress ? "Update Address" : "Save Address"}
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
+      <Modal
+        isOpen={showAddressModal}
+        onClose={resetAddressForm}
+        title={editingAddress ? "Edit Address" : "Add New Address"}
+        size="lg"
+        footer={
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={resetAddressForm}>
+              Cancel
+            </Button>
+            <Button type="submit" form="address-form" loading={saving}>
+              {editingAddress ? "Update Address" : "Save Address"}
+            </Button>
           </div>
-        </div>
-      )}
+        }
+      >
+        <form id="address-form" onSubmit={handleSaveAddress} className="space-y-4">
+          <Input
+            label="Label"
+            name="address-label"
+            value={addressForm.label || ""}
+            onChange={(e) =>
+              setAddressForm({ ...addressForm, label: e.target.value })
+            }
+            placeholder="e.g., Home, Office, Warehouse"
+          />
+
+          <Input
+            label="Address Line 1"
+            name="address-line1"
+            value={addressForm.address_line1}
+            onChange={(e) =>
+              setAddressForm({ ...addressForm, address_line1: e.target.value })
+            }
+            required
+          />
+
+          <Input
+            label="Address Line 2"
+            name="address-line2"
+            value={addressForm.address_line2 || ""}
+            onChange={(e) =>
+              setAddressForm({ ...addressForm, address_line2: e.target.value })
+            }
+            placeholder="Apt, Suite, Unit, etc."
+          />
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="City"
+              name="address-city"
+              value={addressForm.city}
+              onChange={(e) =>
+                setAddressForm({ ...addressForm, city: e.target.value })
+              }
+              required
+            />
+            <Select
+              label="State"
+              name="address-state"
+              options={US_STATES}
+              value={addressForm.state}
+              onChange={(e) =>
+                setAddressForm({ ...addressForm, state: e.target.value })
+              }
+              placeholder="Select state"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="ZIP Code"
+              name="address-zip"
+              value={addressForm.zip}
+              onChange={(e) =>
+                setAddressForm({ ...addressForm, zip: e.target.value })
+              }
+              required
+            />
+            <Select
+              label="Country"
+              name="address-country"
+              options={COUNTRIES}
+              value={addressForm.country || "USA"}
+              onChange={(e) =>
+                setAddressForm({ ...addressForm, country: e.target.value })
+              }
+              required
+            />
+          </div>
+
+          <div className="flex flex-col gap-3 pt-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={addressForm.is_default}
+                onChange={(e) =>
+                  setAddressForm({ ...addressForm, is_default: e.target.checked })
+                }
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">Set as default shipping address</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={addressForm.is_billing}
+                onChange={(e) =>
+                  setAddressForm({ ...addressForm, is_billing: e.target.checked })
+                }
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">Set as billing address</span>
+            </label>
+          </div>
+        </form>
+      </Modal>
 
       {/* Notifications Tab */}
       {activeTab === "notifications" && (
@@ -891,25 +821,11 @@ export default function PortalSettingsPage() {
                     <p className="font-medium text-gray-900">{option.label}</p>
                     <p className="text-sm text-gray-500">{option.description}</p>
                   </div>
-                  <button
-                    onClick={() => toggleNotification(option.id)}
-                    disabled={savingNotification === option.id}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
-                      notificationSettings[option.id] ? "bg-blue-600" : "bg-gray-200"
-                    }`}
-                  >
-                    {savingNotification === option.id ? (
-                      <span className="absolute inset-0 flex items-center justify-center">
-                        <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      </span>
-                    ) : (
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          notificationSettings[option.id] ? "translate-x-6" : "translate-x-1"
-                        }`}
-                      />
-                    )}
-                  </button>
+                  <Toggle
+                    checked={notificationSettings[option.id]}
+                    onChange={() => toggleNotification(option.id)}
+                    loading={savingNotification === option.id}
+                  />
                 </div>
               ))}
             </div>
@@ -939,18 +855,15 @@ export default function PortalSettingsPage() {
       {activeTab === "team" && canManageTeam && (
         <div className="space-y-6">
           {/* Add User Button */}
-          <button
-            onClick={() => setShowAddUserModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <UserPlus className="w-4 h-4" />
+          <Button onClick={() => setShowAddUserModal(true)}>
+            <UserPlus className="w-4 h-4 mr-2" />
             Add Team Member
-          </button>
+          </Button>
 
           {/* Team Members List */}
           {loadingTeam ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+              <Spinner size="lg" />
             </div>
           ) : teamMembers.length > 0 ? (
             <Card>
@@ -1001,32 +914,26 @@ export default function PortalSettingsPage() {
                       {member.user_id !== user?.id && (
                         <div className="flex items-center gap-3">
                           {/* Role Selector */}
-                          <select
-                            value={member.role}
-                            onChange={(e) => handleUpdateRole(member.id, e.target.value as ClientUserRole)}
-                            className="text-sm border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          >
-                            <option value="viewer">Viewer</option>
-                            <option value="member">Member</option>
-                            <option value="admin">Admin</option>
-                            {currentRole === "owner" && (
-                              <option value="owner">Owner</option>
-                            )}
-                          </select>
+                          <div className="w-32">
+                            <Select
+                              name={`role-${member.id}`}
+                              options={roleOptions}
+                              value={member.role}
+                              onChange={(e) => handleUpdateRole(member.id, e.target.value as ClientUserRole)}
+                            />
+                          </div>
 
                           {/* Remove Button */}
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => handleRemoveUser(member.id)}
-                            disabled={removingUser === member.id}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                            loading={removingUser === member.id}
+                            className="text-red-600 hover:bg-red-50"
                             title="Remove access"
                           >
-                            {removingUser === member.id ? (
-                              <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
-                            ) : (
-                              <Trash2 className="w-4 h-4" />
-                            )}
-                          </button>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -1042,13 +949,10 @@ export default function PortalSettingsPage() {
                 <p className="text-sm mt-1 mb-4">
                   Add team members to give them access to your company portal
                 </p>
-                <button
-                  onClick={() => setShowAddUserModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <UserPlus className="w-4 h-4" />
+                <Button onClick={() => setShowAddUserModal(true)}>
+                  <UserPlus className="w-4 h-4 mr-2" />
                   Add Team Member
-                </button>
+                </Button>
               </div>
             </Card>
           )}
@@ -1074,273 +978,176 @@ export default function PortalSettingsPage() {
       )}
 
       {/* Add User Modal */}
-      {showAddUserModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div
-            className="fixed inset-0 bg-black/50 transition-opacity"
-            onClick={resetUserForm}
-          />
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative w-full max-w-lg bg-white rounded-xl shadow-xl">
-              {/* Modal Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Add Team Member
-                </h2>
-                <button
-                  onClick={resetUserForm}
-                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Mode Toggle */}
-              <div className="flex border-b border-gray-200">
-                <button
-                  onClick={() => { setAddUserMode("invite"); setUserError(""); setUserSuccess(""); }}
-                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                    addUserMode === "invite"
-                      ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  Send Invite
-                </button>
-                <button
-                  onClick={() => { setAddUserMode("existing"); setUserError(""); setUserSuccess(""); }}
-                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                    addUserMode === "existing"
-                      ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  Add Existing
-                </button>
-              </div>
-
-              {/* Success Message */}
-              {userSuccess && (
-                <div className="mx-6 mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
-                  {userSuccess}
-                </div>
-              )}
-
-              {/* Error Message */}
-              {userError && (
-                <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                  {userError}
-                </div>
-              )}
-
-              {/* Invite User Form */}
-              {addUserMode === "invite" && (
-                <form onSubmit={handleInviteUser}>
-                  <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
-                    <p className="text-sm text-gray-500">
-                      Send an email invitation. The user will set their own password when they accept.
-                    </p>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Email *
-                      </label>
-                      <input
-                        type="email"
-                        value={inviteForm.email}
-                        onChange={(e) =>
-                          setInviteForm({ ...inviteForm, email: e.target.value })
-                        }
-                        required
-                        placeholder="user@example.com"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Full Name
-                      </label>
-                      <input
-                        type="text"
-                        value={inviteForm.full_name}
-                        onChange={(e) =>
-                          setInviteForm({ ...inviteForm, full_name: e.target.value })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Phone
-                        </label>
-                        <input
-                          type="tel"
-                          value={inviteForm.phone}
-                          onChange={(e) =>
-                            setInviteForm({ ...inviteForm, phone: e.target.value })
-                          }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Title
-                        </label>
-                        <input
-                          type="text"
-                          value={inviteForm.title}
-                          onChange={(e) =>
-                            setInviteForm({ ...inviteForm, title: e.target.value })
-                          }
-                          placeholder="e.g., Manager"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Role *
-                      </label>
-                      <select
-                        value={inviteForm.role}
-                        onChange={(e) =>
-                          setInviteForm({ ...inviteForm, role: e.target.value as ClientUserRole })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                      >
-                        <option value="viewer">Viewer</option>
-                        <option value="member">Member</option>
-                        <option value="admin">Admin</option>
-                        {currentRole === "owner" && (
-                          <option value="owner">Owner</option>
-                        )}
-                      </select>
-                    </div>
-
-                  </div>
-
-                  <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
-                    <button
-                      type="button"
-                      onClick={resetUserForm}
-                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => handleInviteUser(e as any, false)}
-                      disabled={savingUser}
-                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
-                    >
-                      {savingUser && !sendInviteNow ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin inline-block mr-2" />
-                          Saving...
-                        </>
-                      ) : (
-                        "Save"
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => handleInviteUser(e as any, true)}
-                      disabled={savingUser}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                    >
-                      {savingUser && sendInviteNow ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Sending...
-                        </>
-                      ) : (
-                        <>
-                          <Mail className="w-4 h-4" />
-                          Save & Send Invitation
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* Add Existing User Form */}
-              {addUserMode === "existing" && (
-                <form onSubmit={handleAddExistingUser}>
-                  <div className="p-6 space-y-4">
-                    <p className="text-sm text-gray-500">
-                      Add someone who already has a portal account to your team.
-                    </p>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Email Address *
-                      </label>
-                      <input
-                        type="email"
-                        value={existingUserEmail}
-                        onChange={(e) => setExistingUserEmail(e.target.value)}
-                        required
-                        placeholder="user@example.com"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Role *
-                      </label>
-                      <select
-                        value={existingUserRole}
-                        onChange={(e) => setExistingUserRole(e.target.value as ClientUserRole)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                      >
-                        <option value="viewer">Viewer</option>
-                        <option value="member">Member</option>
-                        <option value="admin">Admin</option>
-                        {currentRole === "owner" && (
-                          <option value="owner">Owner</option>
-                        )}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
-                    <button
-                      type="button"
-                      onClick={resetUserForm}
-                      className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={savingUser}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                    >
-                      {savingUser ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Adding...
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="w-4 h-4" />
-                          Add User
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
-          </div>
+      <Modal
+        isOpen={showAddUserModal}
+        onClose={resetUserForm}
+        title="Add Team Member"
+        size="lg"
+      >
+        {/* Mode Toggle */}
+        <div className="flex border-b border-gray-200 -mx-4 -mt-4 mb-4">
+          <button
+            onClick={() => { setAddUserMode("invite"); setUserError(""); setUserSuccess(""); }}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              addUserMode === "invite"
+                ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Send Invite
+          </button>
+          <button
+            onClick={() => { setAddUserMode("existing"); setUserError(""); setUserSuccess(""); }}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              addUserMode === "existing"
+                ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Add Existing
+          </button>
         </div>
-      )}
+
+        {/* Success Message */}
+        {userSuccess && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+            {userSuccess}
+          </div>
+        )}
+
+        {/* Error Message */}
+        {userError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {userError}
+          </div>
+        )}
+
+        {/* Invite User Form */}
+        {addUserMode === "invite" && (
+          <form onSubmit={handleInviteUser}>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500">
+                Send an email invitation. The user will set their own password when they accept.
+              </p>
+
+              <Input
+                label="Email"
+                name="invite-email"
+                type="email"
+                value={inviteForm.email}
+                onChange={(e) =>
+                  setInviteForm({ ...inviteForm, email: e.target.value })
+                }
+                required
+                placeholder="user@example.com"
+              />
+
+              <Input
+                label="Full Name"
+                name="invite-name"
+                value={inviteForm.full_name}
+                onChange={(e) =>
+                  setInviteForm({ ...inviteForm, full_name: e.target.value })
+                }
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <Input
+                  label="Phone"
+                  name="invite-phone"
+                  type="tel"
+                  value={inviteForm.phone}
+                  onChange={(e) =>
+                    setInviteForm({ ...inviteForm, phone: e.target.value })
+                  }
+                />
+                <Input
+                  label="Title"
+                  name="invite-title"
+                  value={inviteForm.title}
+                  onChange={(e) =>
+                    setInviteForm({ ...inviteForm, title: e.target.value })
+                  }
+                  placeholder="e.g., Manager"
+                />
+              </div>
+
+              <Select
+                label="Role"
+                name="invite-role"
+                options={roleOptions}
+                value={inviteForm.role}
+                onChange={(e) =>
+                  setInviteForm({ ...inviteForm, role: e.target.value as ClientUserRole })
+                }
+                required
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-6 mt-6 border-t border-gray-200">
+              <Button variant="secondary" onClick={resetUserForm} type="button">
+                Cancel
+              </Button>
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={(e) => handleInviteUser(e as React.FormEvent, false)}
+                loading={savingUser && !sendInviteNow}
+              >
+                Save
+              </Button>
+              <Button
+                type="button"
+                onClick={(e) => handleInviteUser(e as React.FormEvent, true)}
+                loading={savingUser && sendInviteNow}
+              >
+                <Mail className="w-4 h-4 mr-2" />
+                Save & Send Invitation
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {/* Add Existing User Form */}
+        {addUserMode === "existing" && (
+          <form onSubmit={handleAddExistingUser}>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500">
+                Add someone who already has a portal account to your team.
+              </p>
+
+              <Input
+                label="Email Address"
+                name="existing-email"
+                type="email"
+                value={existingUserEmail}
+                onChange={(e) => setExistingUserEmail(e.target.value)}
+                required
+                placeholder="user@example.com"
+              />
+
+              <Select
+                label="Role"
+                name="existing-role"
+                options={roleOptions}
+                value={existingUserRole}
+                onChange={(e) => setExistingUserRole(e.target.value as ClientUserRole)}
+                required
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-6 mt-6 border-t border-gray-200">
+              <Button variant="secondary" onClick={resetUserForm} type="button">
+                Cancel
+              </Button>
+              <Button type="submit" loading={savingUser}>
+                <Plus className="w-4 h-4 mr-2" />
+                Add User
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 }

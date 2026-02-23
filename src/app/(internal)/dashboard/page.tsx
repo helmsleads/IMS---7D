@@ -27,12 +27,58 @@ import {
   getOrdersRequiringAttention,
   getAgedInventory,
   getOrderVelocity,
+  getOrderFulfillmentFunnel,
+  getInboundOutboundFlow,
+  getInventoryValueByCategory,
+  getOnTimeShipmentRate,
+  getInvoiceAgingBuckets,
+  getSupplierLeadTimes,
+  getReturnRateByProduct,
+  getDaysOfSupply,
+  getRevenueByClient,
+  getDailyThroughputTimeline,
+  getOrderCycleTime,
+  getABCAnalysis,
+  getInventoryTurnoverByCategory,
+  getStockLevelHeatmap,
+  getReorderProximity,
+  getInventoryAccuracyTrend,
+  getProfitMarginWaterfall,
+  getMonthlyRevenueTrend,
+  getReceivingAccuracyBySupplier,
+  getInboundForecastCalendar,
+  getReturnsByReason,
+  getDamageRateTrend,
+  getExpirationTimeline,
   DashboardStats,
   RecentActivity,
   ExpectedArrival,
   OrderToShip,
   AgedInventorySummary,
   OrderVelocity,
+  FulfillmentFunnelData,
+  DailyFlowPoint,
+  CategoryValue,
+  OnTimeDataPoint,
+  InvoiceAgingData,
+  SupplierLeadTime,
+  ProductReturnRate,
+  DaysOfSupplyItem,
+  ClientRevenue,
+  DailyThroughput,
+  CycleTimeBucket,
+  ABCItem,
+  CategoryTurnover,
+  StockHeatmapCell,
+  ReorderProximityItem,
+  AccuracyDataPoint,
+  WaterfallItem,
+  MonthlyRevenuePoint,
+  SupplierAccuracy,
+  CalendarDay,
+  ReturnReasonData,
+  DamageRatePoint,
+  ExpirationTimelineItem,
 } from "@/lib/api/dashboard";
 import { getReturns, ReturnWithItems } from "@/lib/api/returns";
 import { getExpiringLots, LotWithInventory } from "@/lib/api/lots";
@@ -57,6 +103,7 @@ interface LowStockItem {
 }
 
 export default function DashboardPage() {
+  const [userId, setUserId] = useState<string | undefined>(undefined);
   const [userName, setUserName] = useState<string>("");
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
@@ -75,6 +122,29 @@ export default function DashboardPage() {
     urgentOutbound: { id: string; order_number: string; status: string; requested_at: string | null; client: { company_name: string } | null }[];
     overdueInbound: { id: string; po_number: string; status: string; expected_date: string | null; supplier: string }[];
   } | null>(null);
+  const [fulfillmentFunnel, setFulfillmentFunnel] = useState<FulfillmentFunnelData[]>([]);
+  const [inboundOutboundFlow, setInboundOutboundFlow] = useState<DailyFlowPoint[]>([]);
+  const [inventoryValueByCategory, setInventoryValueByCategory] = useState<CategoryValue[]>([]);
+  const [onTimeShipment, setOnTimeShipment] = useState<OnTimeDataPoint[]>([]);
+  const [invoiceAging, setInvoiceAging] = useState<InvoiceAgingData | null>(null);
+  const [supplierLeadTimes, setSupplierLeadTimes] = useState<SupplierLeadTime[]>([]);
+  const [returnRates, setReturnRates] = useState<ProductReturnRate[]>([]);
+  const [daysOfSupply, setDaysOfSupply] = useState<DaysOfSupplyItem[]>([]);
+  const [clientRevenue, setClientRevenue] = useState<ClientRevenue[]>([]);
+  const [dailyThroughput, setDailyThroughput] = useState<DailyThroughput[]>([]);
+  const [cycleTimeData, setCycleTimeData] = useState<CycleTimeBucket[]>([]);
+  const [abcData, setAbcData] = useState<ABCItem[]>([]);
+  const [turnoverData, setTurnoverData] = useState<CategoryTurnover[]>([]);
+  const [heatmapData, setHeatmapData] = useState<StockHeatmapCell[]>([]);
+  const [proximityData, setProximityData] = useState<ReorderProximityItem[]>([]);
+  const [accuracyData, setAccuracyData] = useState<AccuracyDataPoint[]>([]);
+  const [waterfallData, setWaterfallData] = useState<WaterfallItem[]>([]);
+  const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyRevenuePoint[]>([]);
+  const [receivingAccuracy, setReceivingAccuracy] = useState<SupplierAccuracy[]>([]);
+  const [calendarData, setCalendarData] = useState<CalendarDay[]>([]);
+  const [returnReasons, setReturnReasons] = useState<ReturnReasonData[]>([]);
+  const [damageData, setDamageData] = useState<DamageRatePoint[]>([]);
+  const [expirationTimeline, setExpirationTimeline] = useState<ExpirationTimelineItem[]>([]);
   const [showStockAdjustment, setShowStockAdjustment] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
 
@@ -87,7 +157,7 @@ export default function DashboardPage() {
     reorderByIds,
     resizeWidget,
     resetToDefaults,
-  } = useDashboardLayout("admin", ADMIN_WIDGETS);
+  } = useDashboardLayout("admin", ADMIN_WIDGETS, userId, "user");
 
   const fetchData = async () => {
     setLoading(true);
@@ -95,12 +165,21 @@ export default function DashboardPage() {
     const supabase = createClient();
 
     const { data: { user } } = await supabase.auth.getUser();
-    if (user?.email) {
-      setUserName(user.email.split("@")[0]);
+    if (user) {
+      setUserId(user.id);
+      if (user.email) setUserName(user.email.split("@")[0]);
     }
 
     try {
-      const [dashboardData, lowStock, arrivals, toShip, returns, lots, invoices, aged, velocity, attention] = await Promise.all([
+      const [
+        dashboardData, lowStock, arrivals, toShip, returns, lots, invoices,
+        aged, velocity, attention,
+        funnel, flow, valueByCategory, onTime, agingBuckets,
+        leadTimes, returnRateData, supply, revenue,
+        throughput, cycleTime, abc, turnover, heatmap,
+        proximity, accuracy, waterfall, monthlyRev,
+        recvAccuracy, calendar, reasons, damage, expTimeline,
+      ] = await Promise.all([
         getDashboardStats(),
         getLowStockItems(),
         getExpectedArrivals(),
@@ -111,6 +190,29 @@ export default function DashboardPage() {
         getAgedInventory(),
         getOrderVelocity(),
         getOrdersRequiringAttention(),
+        getOrderFulfillmentFunnel(),
+        getInboundOutboundFlow(),
+        getInventoryValueByCategory(),
+        getOnTimeShipmentRate(),
+        getInvoiceAgingBuckets(),
+        getSupplierLeadTimes(),
+        getReturnRateByProduct(),
+        getDaysOfSupply(),
+        getRevenueByClient(),
+        getDailyThroughputTimeline(),
+        getOrderCycleTime(),
+        getABCAnalysis(),
+        getInventoryTurnoverByCategory(),
+        getStockLevelHeatmap(),
+        getReorderProximity(),
+        getInventoryAccuracyTrend(),
+        getProfitMarginWaterfall(),
+        getMonthlyRevenueTrend(),
+        getReceivingAccuracyBySupplier(),
+        getInboundForecastCalendar(),
+        getReturnsByReason(),
+        getDamageRateTrend(),
+        getExpirationTimeline(),
       ]);
       setStats(dashboardData.stats);
       setRecentActivity(dashboardData.recentActivity);
@@ -123,6 +225,29 @@ export default function DashboardPage() {
       setAgedInventory(aged);
       setOrderVelocity(velocity);
       setAttentionRequired(attention);
+      setFulfillmentFunnel(funnel);
+      setInboundOutboundFlow(flow);
+      setInventoryValueByCategory(valueByCategory);
+      setOnTimeShipment(onTime);
+      setInvoiceAging(agingBuckets);
+      setSupplierLeadTimes(leadTimes);
+      setReturnRates(returnRateData);
+      setDaysOfSupply(supply);
+      setClientRevenue(revenue);
+      setDailyThroughput(throughput);
+      setCycleTimeData(cycleTime);
+      setAbcData(abc);
+      setTurnoverData(turnover);
+      setHeatmapData(heatmap);
+      setProximityData(proximity);
+      setAccuracyData(accuracy);
+      setWaterfallData(waterfall);
+      setMonthlyRevenue(monthlyRev);
+      setReceivingAccuracy(recvAccuracy);
+      setCalendarData(calendar);
+      setReturnReasons(reasons);
+      setDamageData(damage);
+      setExpirationTimeline(expTimeline);
 
       const { count } = await supabase
         .from("messages")
@@ -171,6 +296,31 @@ export default function DashboardPage() {
     "inventory-aging": { agedInventory },
     "order-velocity": { orderVelocity },
     "outstanding-invoices": { outstandingInvoices, loading },
+    "fulfillment-funnel": { funnelData: fulfillmentFunnel },
+    "inbound-outbound-flow": { flowData: inboundOutboundFlow },
+    "inventory-value-treemap": { categoryValues: inventoryValueByCategory },
+    "on-time-shipment": { onTimeData: onTimeShipment },
+    "invoice-aging": { agingData: invoiceAging },
+    "supplier-lead-times": { leadTimes: supplierLeadTimes },
+    "return-rates": { returnRates },
+    "days-of-supply": { supplyData: daysOfSupply },
+    "revenue-by-client": { clientRevenue },
+    "daily-throughput": { throughputData: dailyThroughput },
+    "order-cycle-time": { cycleTimeData },
+    "abc-analysis": { abcData },
+    "inventory-turnover": { turnoverData },
+    "stock-level-heatmap": { heatmapData },
+    "reorder-proximity": { proximityData },
+    "inventory-accuracy": { accuracyData },
+    "profit-margin-waterfall": { waterfallData },
+    "monthly-revenue-trend": { revenueData: monthlyRevenue },
+    "storage-revenue-sqft": {},
+    "receiving-accuracy": { accuracyData: receivingAccuracy },
+    "inbound-forecast": { calendarData },
+    "returns-by-reason": { reasonData: returnReasons },
+    "damage-rate-trend": { damageData },
+    "expiration-timeline": { timelineData: expirationTimeline },
+    "fefo-compliance": {},
   };
 
   const handleQuickAdd = (id: string) => {

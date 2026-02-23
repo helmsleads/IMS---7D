@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { LocationType } from "@/types/database";
 import AppShell from "@/components/internal/AppShell";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Table from "@/components/ui/Table";
@@ -304,6 +305,10 @@ export default function LocationDetailPage() {
         </Button>
       }
     >
+      <Breadcrumbs items={[
+        { label: "Locations", href: "/locations" },
+        { label: location.name || "Location Details" }
+      ]} />
       <div className="space-y-6">
         {/* Back Link */}
         <button

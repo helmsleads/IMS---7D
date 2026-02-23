@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { decryptToken } from '@/lib/encryption'
-import type { ClientIntegration, ShopifyOrder, ShopifyLineItem, ShopifyAddress } from '@/types/database'
+import { logSyncResult } from './sync-logger'
+import type { ClientIntegration, ShopifyOrder, ShopifyLineItem, ShopifyAddress, SyncTrigger } from '@/types/database'
 
 /**
  * Process and import a Shopify order into IMS
@@ -178,8 +179,10 @@ export async function processShopifyOrder(
  */
 export async function syncShopifyOrders(
   integrationId: string,
-  since?: Date
+  since?: Date,
+  triggeredBy: SyncTrigger = 'manual'
 ): Promise<{ imported: number; skipped: number; failed: number }> {
+  const startTime = Date.now()
   const supabase = createServiceClient()
 
   // Get integration
@@ -250,6 +253,18 @@ export async function syncShopifyOrders(
       results.failed++
     }
   }
+
+  // Log sync result
+  logSyncResult({
+    integrationId,
+    syncType: 'orders',
+    direction: 'inbound',
+    triggeredBy,
+    itemsProcessed: results.imported,
+    itemsFailed: results.failed,
+    durationMs: Date.now() - startTime,
+    metadata: { skipped: results.skipped },
+  })
 
   return results
 }

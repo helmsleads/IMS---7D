@@ -14,6 +14,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
@@ -397,6 +398,10 @@ export default function ReturnDetailPage() {
       title={`Return ${returnData.return_number}`}
       subtitle={returnData.client?.company_name}
     >
+      <Breadcrumbs items={[
+        { label: "Returns", href: "/returns" },
+        { label: returnData.return_number || "Return Details" }
+      ]} />
       {backLink}
 
       {successMessage && (

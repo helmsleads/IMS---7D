@@ -8,12 +8,15 @@ import {
   Clock,
   CheckCircle,
   Check,
-  X,
   AlertCircle,
   ChevronLeft,
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
-import Card from "@/components/ui/Card";
+import Modal from "@/components/ui/Modal";
+import Input from "@/components/ui/Input";
+import Textarea from "@/components/ui/Textarea";
+import Button from "@/components/ui/Button";
+import Spinner from "@/components/ui/Spinner";
 import {
   getMyConversations,
   getMyConversation,
@@ -249,7 +252,7 @@ export default function PortalMessagesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+        <Spinner size="md" />
       </div>
     );
   }
@@ -264,13 +267,10 @@ export default function PortalMessagesPage() {
             Contact the 7 Degrees team
           </p>
         </div>
-        <button
-          onClick={() => setShowNewModal(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-        >
-          <Plus className="w-4 h-4" />
+        <Button onClick={() => setShowNewModal(true)}>
+          <Plus className="w-4 h-4 mr-2" />
           New Conversation
-        </button>
+        </Button>
       </div>
 
       {/* Split View Container */}
@@ -346,12 +346,14 @@ export default function PortalMessagesPage() {
                 <p className="text-sm text-gray-400 mt-1">
                   Start a new conversation to contact support
                 </p>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setShowNewModal(true)}
-                  className="mt-4 text-blue-600 hover:text-blue-700 font-medium text-sm"
+                  className="mt-4 text-blue-600 hover:text-blue-700"
                 >
                   Start a conversation
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -397,7 +399,7 @@ export default function PortalMessagesPage() {
               <div className="flex-1 overflow-y-auto p-4 space-y-6">
                 {loadingMessages ? (
                   <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                    <Spinner size="sm" />
                   </div>
                 ) : (
                   groupMessagesByDate(selectedConversation.messages).map(
@@ -524,80 +526,52 @@ export default function PortalMessagesPage() {
               <p className="text-sm text-gray-400 mt-1">
                 Or start a new conversation with the team
               </p>
-              <button
-                onClick={() => setShowNewModal(true)}
-                className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-              >
-                <Plus className="w-4 h-4" />
+              <Button size="sm" onClick={() => setShowNewModal(true)} className="mt-4">
+                <Plus className="w-4 h-4 mr-2" />
                 New Conversation
-              </button>
+              </Button>
             </div>
           )}
         </div>
       </div>
 
       {/* New Conversation Modal */}
-      {showNewModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-lg">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">
-                New Conversation
-              </h2>
-              <button
-                onClick={() => setShowNewModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-
-            <div className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Subject
-                </label>
-                <input
-                  type="text"
-                  value={newSubject}
-                  onChange={(e) => setNewSubject(e.target.value)}
-                  placeholder="What can we help you with?"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Message
-                </label>
-                <textarea
-                  value={newContent}
-                  onChange={(e) => setNewContent(e.target.value)}
-                  placeholder="Describe your question or issue..."
-                  rows={5}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 p-4 border-t border-gray-200 bg-gray-50 rounded-b-xl">
-              <button
-                onClick={() => setShowNewModal(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleStartConversation}
-                disabled={!newSubject.trim() || !newContent.trim() || creating}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
-              >
-                {creating ? "Starting..." : "Start Conversation"}
-              </button>
-            </div>
-          </div>
+      <Modal
+        isOpen={showNewModal}
+        onClose={() => setShowNewModal(false)}
+        title="New Conversation"
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowNewModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleStartConversation}
+              disabled={!newSubject.trim() || !newContent.trim()}
+              loading={creating}
+            >
+              Start Conversation
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Input
+            label="Subject"
+            value={newSubject}
+            onChange={(e) => setNewSubject(e.target.value)}
+            placeholder="What can we help you with?"
+          />
+          <Textarea
+            label="Message"
+            value={newContent}
+            onChange={(e) => setNewContent(e.target.value)}
+            placeholder="Describe your question or issue..."
+            rows={5}
+          />
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

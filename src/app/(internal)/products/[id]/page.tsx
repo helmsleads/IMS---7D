@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, Pencil, PackagePlus, History } from "lucide-react";
 import { ProductImageCard } from "@/components/ui/ProductImage";
 import AppShell from "@/components/internal/AppShell";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
@@ -17,13 +18,7 @@ import StockAdjustmentModal from "@/components/internal/StockAdjustmentModal";
 import { getProduct, updateProduct, deleteProduct, Product, ProductWithCategory } from "@/lib/api/products";
 import { getProductInventory, InventoryWithLocation } from "@/lib/api/inventory";
 import Table from "@/components/ui/Table";
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(value);
-};
+import { formatCurrency } from "@/lib/utils/formatting";
 
 export default function ProductDetailPage() {
   const params = useParams();
@@ -120,6 +115,10 @@ export default function ProductDetailPage() {
 
   return (
     <AppShell title="Product Details" actions={actionButtons}>
+      <Breadcrumbs items={[
+        { label: "Products", href: "/products" },
+        { label: product.name || "Product Details" }
+      ]} />
       <div className="mb-4">
         <Link
           href="/products"

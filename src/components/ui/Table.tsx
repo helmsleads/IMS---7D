@@ -11,6 +11,8 @@ interface Column<T> {
   hideOnMobile?: boolean;
   /** Priority for mobile card view (1 = primary/title, 2 = secondary, 3+ = details) */
   mobilePriority?: number;
+  /** Text alignment for this column */
+  align?: "left" | "center" | "right";
 }
 
 interface TableProps<T> {
@@ -241,7 +243,9 @@ export default function Table<T extends object>({
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className="px-4 py-3 text-left text-sm font-semibold text-gray-900"
+                  className={`px-4 py-3 text-sm font-semibold text-gray-900 ${
+                    column.align === "right" ? "text-right" : column.align === "center" ? "text-center" : "text-left"
+                  }`}
                 >
                   {column.header}
                 </th>
@@ -262,7 +266,9 @@ export default function Table<T extends object>({
                 {columns.map((column) => (
                   <td
                     key={column.key}
-                    className="px-4 py-3 text-sm text-gray-700"
+                    className={`px-4 py-3 text-sm text-gray-700 ${
+                      column.align === "right" ? "text-right" : column.align === "center" ? "text-center" : "text-left"
+                    }`}
                   >
                     {renderCellValue(item, column)}
                   </td>

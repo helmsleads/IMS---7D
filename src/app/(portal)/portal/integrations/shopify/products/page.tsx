@@ -130,10 +130,10 @@ export default function ProductMappingPage() {
       <div className="max-w-6xl mx-auto p-6">
         <div className="bg-red-50 text-red-800 p-4 rounded-lg">{error}</div>
         <button
-          onClick={() => router.push('/portal/settings/integrations')}
+          onClick={() => router.push('/portal/integrations')}
           className="mt-4 text-blue-600 hover:underline"
         >
-          ← Back to Integrations
+          &larr; Back to Integrations
         </button>
       </div>
     )
@@ -144,10 +144,10 @@ export default function ProductMappingPage() {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <button
-            onClick={() => router.push('/portal/settings/integrations')}
+            onClick={() => router.push('/portal/integrations')}
             className="text-sm text-gray-500 hover:text-gray-700 mb-2"
           >
-            ← Back to Integrations
+            &larr; Back to Integrations
           </button>
           <h1 className="text-2xl font-bold text-gray-900">Product Mapping</h1>
           <p className="text-gray-600 mt-1">
@@ -183,7 +183,7 @@ export default function ProductMappingPage() {
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate">{mapping.external_title}</div>
                   <div className="text-sm text-gray-500">
-                    SKU: {mapping.external_sku || 'N/A'} → IMS: {mapping.product?.sku || 'Unknown'}
+                    SKU: {mapping.external_sku || 'N/A'} &rarr; IMS: {mapping.product?.sku || 'Unknown'}
                   </div>
                 </div>
                 <div className="text-sm text-gray-600">{mapping.product?.name}</div>

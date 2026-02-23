@@ -99,7 +99,7 @@ export default function ShopifyLocationSettingsPage() {
     <div className="max-w-2xl mx-auto p-6">
       <div className="mb-6">
         <button
-          onClick={() => router.push('/portal/settings/integrations')}
+          onClick={() => router.push('/portal/integrations')}
           className="text-sm text-gray-500 hover:text-gray-700 mb-2 inline-flex items-center gap-1"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -143,9 +143,9 @@ export default function ShopifyLocationSettingsPage() {
               <div className="p-4 bg-blue-50 rounded-lg">
                 <h3 className="font-medium text-blue-900 mb-2">How it works</h3>
                 <ul className="text-sm text-blue-800 space-y-1">
-                  <li>• Inventory sync only updates the selected location</li>
-                  <li>• Other locations in Shopify remain unchanged</li>
-                  <li>• Orders assigned to this location are imported to our system</li>
+                  <li>&#8226; Inventory sync only updates the selected location</li>
+                  <li>&#8226; Other locations in Shopify remain unchanged</li>
+                  <li>&#8226; Orders assigned to this location are imported to our system</li>
                 </ul>
               </div>
 
@@ -229,7 +229,7 @@ export default function ShopifyLocationSettingsPage() {
               {/* Save Button */}
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <button
-                  onClick={() => router.push('/portal/settings/integrations')}
+                  onClick={() => router.push('/portal/integrations')}
                   className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
                 >
                   Cancel
