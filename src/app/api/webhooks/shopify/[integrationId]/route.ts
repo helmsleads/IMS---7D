@@ -244,7 +244,7 @@ async function handleOrderUpdated(
         ship_to_address2: addr.address2 || null,
         ship_to_city: addr.city,
         ship_to_state: addr.province_code,
-        ship_to_postal_code: addr.zip,
+        ship_to_zip: addr.zip,
         ship_to_country: addr.country_code,
         ship_to_phone: addr.phone || null,
       })

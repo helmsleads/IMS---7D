@@ -128,7 +128,7 @@ describe('Shipping Address Transformation', () => {
       ship_to_address2: addr.address2 || null,
       ship_to_city: addr.city,
       ship_to_state: addr.province_code,
-      ship_to_postal_code: addr.zip,
+      ship_to_zip: addr.zip,
       ship_to_country: addr.country_code,
       ship_to_phone: addr.phone || null,
     }
@@ -144,7 +144,7 @@ describe('Shipping Address Transformation', () => {
     expect(result.ship_to_address2).toBe('Suite 100')
     expect(result.ship_to_city).toBe('New York')
     expect(result.ship_to_state).toBe('NY')
-    expect(result.ship_to_postal_code).toBe('10001')
+    expect(result.ship_to_zip).toBe('10001')
     expect(result.ship_to_country).toBe('US')
     expect(result.ship_to_phone).toBe('+1-555-123-4567')
   })

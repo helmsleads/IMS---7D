@@ -130,7 +130,7 @@ export async function processShopifyOrder(
       ship_to_address2: addr?.address2 || null,
       ship_to_city: addr?.city || null,
       ship_to_state: addr?.province_code || null,
-      ship_to_postal_code: addr?.zip || null,
+      ship_to_zip: addr?.zip || null,
       ship_to_country: addr?.country_code || null,
       ship_to_phone: addr?.phone || null,
       ship_to_email: order.email || null,
