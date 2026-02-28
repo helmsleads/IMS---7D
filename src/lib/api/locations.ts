@@ -15,6 +15,7 @@ export interface Location {
   is_pickable: boolean;
   capacity: number | null;
   current_occupancy: number;
+  timezone: string;
 }
 
 export async function getLocations(): Promise<Location[]> {
