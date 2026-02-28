@@ -92,6 +92,7 @@ export default function SuppliesPage() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [activeFilter, setActiveFilter] = useState("");
   const [industryFilter, setIndustryFilter] = useState("");
+  const [containerTypeFilter, setContainerTypeFilter] = useState("");
 
   // Usage Filters
   const [usageClientFilter, setUsageClientFilter] = useState("");
@@ -161,8 +162,17 @@ export default function SuppliesPage() {
       );
     }
 
+    if (containerTypeFilter) {
+      filtered = filtered.filter(
+        (supply) => {
+          const types = supply.container_types || [];
+          return types.length === 0 || types.includes(containerTypeFilter);
+        }
+      );
+    }
+
     return filtered;
-  }, [supplies, searchTerm, industryFilter]);
+  }, [supplies, searchTerm, industryFilter, containerTypeFilter]);
 
   // Paginated data
   const paginatedSupplies = useMemo(() => {
@@ -284,6 +294,30 @@ export default function SuppliesPage() {
             ))}
             {industries.length > 2 && (
               <span className="text-xs text-gray-500">+{industries.length - 2}</span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: "container_types",
+      header: "Container Types",
+      render: (supply: SupplyWithInventory) => {
+        const types = supply.container_types || [];
+        if (types.length === 0) return <span className="text-xs text-gray-400 italic">Universal</span>;
+        const labelMap: Record<string, string> = { bottle: "Bottle", can: "Can", keg: "Keg", bag_in_box: "BIB", other: "Other" };
+        return (
+          <div className="flex flex-wrap gap-1">
+            {types.slice(0, 3).map((t) => (
+              <span
+                key={t}
+                className="inline-flex px-1.5 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 rounded"
+              >
+                {labelMap[t] || t}
+              </span>
+            ))}
+            {types.length > 3 && (
+              <span className="text-xs text-gray-500">+{types.length - 3}</span>
             )}
           </div>
         );
@@ -630,7 +664,7 @@ export default function SuppliesPage() {
       {/* Catalog Tab */}
       {activeTab === "catalog" && (
         <>
-          <div className="mb-6 grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
@@ -655,6 +689,19 @@ export default function SuppliesPage() {
               ]}
               value={industryFilter}
               onChange={(e) => setIndustryFilter(e.target.value)}
+            />
+            <Select
+              name="containerType"
+              options={[
+                { value: "", label: "All Container Types" },
+                { value: "bottle", label: "Bottle" },
+                { value: "can", label: "Can" },
+                { value: "keg", label: "Keg" },
+                { value: "bag_in_box", label: "Bag-in-Box" },
+                { value: "other", label: "Other" },
+              ]}
+              value={containerTypeFilter}
+              onChange={(e) => setContainerTypeFilter(e.target.value)}
             />
             <Select
               name="status"
@@ -867,6 +914,9 @@ function SupplyForm({ supply, onSave, onCancel }: SupplyFormProps) {
   const [industries, setIndustries] = useState<ClientIndustry[]>(
     supply?.industries || ["general_merchandise"]
   );
+  const [containerTypes, setContainerTypes] = useState<string[]>(
+    supply?.container_types || []
+  );
   const [saving, setSaving] = useState(false);
 
   const handleIndustryToggle = (industry: ClientIndustry) => {
@@ -885,6 +935,22 @@ function SupplyForm({ supply, onSave, onCancel }: SupplyFormProps) {
     }
   };
 
+  const containerTypeOptions = [
+    { value: "bottle", label: "Bottle" },
+    { value: "can", label: "Can" },
+    { value: "keg", label: "Keg" },
+    { value: "bag_in_box", label: "Bag-in-Box" },
+    { value: "other", label: "Other" },
+  ];
+
+  const handleContainerTypeToggle = (type: string) => {
+    setContainerTypes((prev) =>
+      prev.includes(type)
+        ? prev.filter((t) => t !== type)
+        : [...prev, type]
+    );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -900,6 +966,7 @@ function SupplyForm({ supply, onSave, onCancel }: SupplyFormProps) {
       is_active: supply?.is_active ?? true,
       sort_order: parseInt(sortOrder) || 0,
       industries,
+      container_types: containerTypes,
     });
     setSaving(false);
   };
@@ -993,6 +1060,28 @@ function SupplyForm({ supply, onSave, onCancel }: SupplyFormProps) {
         </div>
         <p className="mt-1 text-xs text-gray-500">
           Select which industries can use this supply
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Applicable Container Types
+        </label>
+        <div className="border border-gray-300 rounded-md p-3 space-y-2">
+          {containerTypeOptions.map((ct) => (
+            <label key={ct.value} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={containerTypes.includes(ct.value)}
+                onChange={() => handleContainerTypeToggle(ct.value)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">{ct.label}</span>
+            </label>
+          ))}
+        </div>
+        <p className="mt-1 text-xs text-gray-500">
+          Leave empty for universal supplies (applies to all container types)
         </p>
       </div>
 

@@ -374,6 +374,40 @@ export async function getUninvoicedSupplyUsage(clientId: string): Promise<Supply
 }
 
 /**
+ * Get supplies matching any of the given container types, plus universal supplies (empty container_types).
+ * Used on the outbound order detail page to show relevant packing supplies.
+ */
+export async function getSuppliesForContainerTypes(
+  containerTypes: string[]
+): Promise<SupplyWithInventory[]> {
+  const supabase = createClient();
+
+  // Fetch all active supplies — we filter client-side because Supabase
+  // doesn't have a native "overlaps OR empty-array" filter in one call.
+  const { data, error } = await supabase
+    .from("supplies")
+    .select(`
+      *,
+      supply_inventory (*)
+    `)
+    .eq("is_active", true)
+    .order("sort_order")
+    .order("name");
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  // Include supplies whose container_types overlaps with the requested types,
+  // OR whose container_types is empty (universal supplies like tape/labels).
+  return (data || []).filter((supply) => {
+    const types: string[] = supply.container_types || [];
+    if (types.length === 0) return true; // universal
+    return types.some((t) => containerTypes.includes(t));
+  });
+}
+
+/**
  * Get supplies available for a specific industry
  * Use this when selecting supplies for order packing based on client's industry
  */

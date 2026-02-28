@@ -25,6 +25,8 @@ import {
   Calendar,
   Globe,
   Building2,
+  Save,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import AppShell from "@/components/internal/AppShell";
@@ -36,39 +38,31 @@ import Spinner from "@/components/ui/Spinner";
 import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
+import Textarea from "@/components/ui/Textarea";
 import ShippingModal, { ShippingData } from "@/components/internal/ShippingModal";
 import Alert from "@/components/ui/Alert";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import {
   getOutboundOrder,
+  updateOutboundOrder,
   updateOutboundOrderStatus,
   shipOutboundItem,
   deleteOutboundOrder,
   OutboundOrderWithItems,
   OutboundItemWithProduct,
+  UpdateOutboundOrderData,
 } from "@/lib/api/outbound";
 import { createClient } from "@/lib/supabase";
 import { getLocations, Location } from "@/lib/api/locations";
 import { getInventory, InventoryWithDetails } from "@/lib/api/inventory";
 import {
   getSupplies,
+  getSuppliesForContainerTypes,
   getOrderSupplies,
   recordSupplyUsage,
   SupplyWithInventory,
   SupplyUsageWithDetails,
 } from "@/lib/api/supplies";
-import {
-  recordBoxUsage,
-  getOrderBoxUsage,
-  BoxUsageRecord,
-  PACKING_MATERIALS,
-  BOX_TYPES,
-  recordPackingMaterialUsage,
-  getOrderPackingMaterialUsage,
-  PackingMaterialRecord,
-  suggestBoxesForOrder,
-  BoxSuggestionResult,
-} from "@/lib/api/box-usage";
 import { getClientSettings, ClientSetting } from "@/lib/api/settings";
 import PickingScanner from "@/components/internal/PickingScanner";
 import PickScanner from "@/components/internal/PickScanner";
@@ -110,17 +104,18 @@ function formatStatus(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-function formatDate(dateString: string | null): string {
+function formatDate(dateString: string | null, tz = "America/New_York"): string {
   if (!dateString) return "—";
   return new Date(dateString).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: tz,
   });
 }
 
-function formatDateTime(dateString: string | null): string {
+function formatDateTime(dateString: string | null, tz = "America/New_York"): string {
   if (!dateString) return "—";
   return new Date(dateString).toLocaleString("en-US", {
     month: "short",
@@ -128,7 +123,23 @@ function formatDateTime(dateString: string | null): string {
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: tz,
+    timeZoneName: "short",
   });
+}
+
+// Convert IANA timezone to UTC offset string (e.g. "-05:00")
+function getTimezoneOffset(tz: string): string {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    timeZoneName: "longOffset",
+  });
+  const parts = formatter.formatToParts(now);
+  const offsetPart = parts.find((p) => p.type === "timeZoneName");
+  // "GMT-05:00" → "-05:00"
+  const match = offsetPart?.value?.match(/GMT([+-]\d{2}:\d{2})/);
+  return match ? match[1] : "-05:00";
 }
 
 function isUrgent(notes: string | null): boolean {
@@ -277,20 +288,29 @@ export default function OutboundOrderDetailPage() {
   // Client settings state
   const [clientSettings, setClientSettings] = useState<ClientSetting[]>([]);
 
-  // Box usage state
-  const [boxUsage, setBoxUsage] = useState<BoxUsageRecord[]>([]);
-  const [selectedBoxCode, setSelectedBoxCode] = useState("");
-  const [boxQty, setBoxQty] = useState(1);
-  const [addingBox, setAddingBox] = useState(false);
+  // Order container types (derived from products)
+  const [orderContainerTypes, setOrderContainerTypes] = useState<string[]>([]);
 
-  // Packing materials state
-  const [packingMaterialUsage, setPackingMaterialUsage] = useState<PackingMaterialRecord[]>([]);
-  const [selectedMaterialCode, setSelectedMaterialCode] = useState("");
-  const [materialQty, setMaterialQty] = useState(1);
-  const [addingMaterial, setAddingMaterial] = useState(false);
-
-  // Box suggestions state
-  const [boxSuggestions, setBoxSuggestions] = useState<BoxSuggestionResult | null>(null);
+  // Inline edit mode state
+  const [isEditingOrder, setIsEditingOrder] = useState(false);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [editForm, setEditForm] = useState({
+    recipient_name: "",
+    requestor: "",
+    ship_to_address: "",
+    ship_to_address2: "",
+    ship_to_city: "",
+    ship_to_state: "",
+    ship_to_zip: "",
+    ship_to_country: "",
+    preferred_carrier: "",
+    notes: "",
+    requires_repack: true,
+    requested_at: "",
+    confirmed_at: "",
+    shipped_date: "",
+    delivered_date: "",
+  });
 
   // Helper to get client setting value
   const getClientSettingValue = (category: string, key: string): unknown => {
@@ -302,14 +322,11 @@ export default function OutboundOrderDetailPage() {
 
   const fetchOrder = async () => {
     try {
-      const [orderData, locationsData, inventoryData, suppliesData, orderSuppliesData, boxUsageData, packingMaterialData] = await Promise.all([
+      const [orderData, locationsData, inventoryData, orderSuppliesData] = await Promise.all([
         getOutboundOrder(orderId),
         getLocations(),
         getInventory(),
-        getSupplies({ active: true }),
         getOrderSupplies(orderId),
-        getOrderBoxUsage(orderId),
-        getOrderPackingMaterialUsage(orderId),
       ]);
       if (!orderData) {
         setError("Order not found");
@@ -317,10 +334,7 @@ export default function OutboundOrderDetailPage() {
         setOrder(orderData);
         setLocations(locationsData.filter((l) => l.active));
         setInventory(inventoryData);
-        setSupplies(suppliesData);
         setOrderSupplies(orderSuppliesData);
-        setBoxUsage(boxUsageData);
-        setPackingMaterialUsage(packingMaterialData);
         // Set default location if only one
         if (locationsData.filter((l) => l.active).length === 1) {
           setShipLocationId(locationsData.filter((l) => l.active)[0].id);
@@ -336,8 +350,7 @@ export default function OutboundOrderDetailPage() {
           }
         }
 
-        // Calculate box suggestions based on order items
-        // Fetch container types for products in this order
+        // Determine container types from order products and fetch filtered supplies
         const supabase = (await import("@/lib/supabase")).createClient();
         const productIds = orderData.items.map((item) => item.product_id);
         const { data: productData } = await supabase
@@ -345,18 +358,26 @@ export default function OutboundOrderDetailPage() {
           .select("id, container_type")
           .in("id", productIds);
 
+        const containerTypes: string[] = [];
         if (productData) {
-          const containerTypeMap = new Map(
-            productData.map((p) => [p.id, p.container_type || "bottle"])
-          );
+          const typeSet = new Set<string>();
+          for (const p of productData) {
+            typeSet.add(p.container_type || "bottle");
+          }
+          containerTypes.push(...typeSet);
+        }
+        setOrderContainerTypes(containerTypes);
 
-          const itemsForSuggestion = orderData.items.map((item) => ({
-            qty: item.qty_requested,
-            containerType: (containerTypeMap.get(item.product_id) || "bottle") as "bottle" | "can" | "keg" | "bag_in_box" | "other",
-          }));
-
-          const suggestions = suggestBoxesForOrder(itemsForSuggestion);
-          setBoxSuggestions(suggestions);
+        // Fetch supplies filtered by container types (includes universal ones)
+        try {
+          const filteredSupplies = containerTypes.length > 0
+            ? await getSuppliesForContainerTypes(containerTypes)
+            : await getSupplies({ active: true });
+          setSupplies(filteredSupplies);
+        } catch (err) {
+          console.error("Failed to fetch supplies:", err);
+          const allSupplies = await getSupplies({ active: true });
+          setSupplies(allSupplies);
         }
 
         // Fetch pick task if order is confirmed or later
@@ -564,44 +585,98 @@ export default function OutboundOrderDetailPage() {
     }
   };
 
-  // Get suggested supplies based on order items
-  const getSuggestedSupplies = () => {
-    if (!order) return [];
+  // Group supplies by category for display
+  const suppliesByCategory = supplies.reduce<Record<string, SupplyWithInventory[]>>((acc, supply) => {
+    const cat = supply.category || "other";
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(supply);
+    return acc;
+  }, {});
 
-    const totalItems = order.items.reduce((sum, item) => sum + item.qty_requested, 0);
+  const categoryLabels: Record<string, string> = {
+    boxes: "Boxes",
+    tape: "Tape",
+    labels: "Labels",
+    pallets: "Pallets",
+    wrap: "Wrap & Film",
+    cushioning: "Cushioning",
+    other: "Other",
+  };
+
+  // Smart suggestions based on container types and order quantities
+  const getSmartSuggestions = () => {
+    if (!order) return [];
     const suggestions: { supply: SupplyWithInventory; reason: string; qty: number }[] = [];
 
-    // Suggest boxes based on item count
-    const boxSupply = supplies.find((s) =>
-      s.category === "packaging" && s.name.toLowerCase().includes("box")
-    );
-    if (boxSupply) {
-      const boxQty = Math.ceil(totalItems / 10); // 1 box per 10 items
-      suggestions.push({ supply: boxSupply, reason: `${totalItems} items to pack`, qty: boxQty });
+    // Calculate totals by container type
+    const supabaseProducts = new Map<string, string>(); // we use orderContainerTypes already
+    const totalItems = order.items.reduce((sum, item) => sum + item.qty_requested, 0);
+
+    // For bottle orders: suggest boxes and inserts
+    if (orderContainerTypes.includes("bottle")) {
+      // Suggest the largest box that fits, using greedy approach
+      const bottleBoxes = supplies
+        .filter((s) => s.category === "boxes" && (s.container_types || []).includes("bottle"))
+        .sort((a, b) => {
+          // Sort by capacity hint from name (extract number)
+          const getNum = (name: string) => {
+            const match = name.match(/(\d+)/);
+            return match ? parseInt(match[1]) : 0;
+          };
+          return getNum(b.name) - getNum(a.name);
+        });
+
+      let remaining = totalItems;
+      for (const box of bottleBoxes) {
+        const capacity = parseInt(box.name.match(/(\d+)/)?.[1] || "0");
+        if (capacity > 0 && remaining >= capacity) {
+          const qty = Math.floor(remaining / capacity);
+          suggestions.push({ supply: box, reason: `${qty * capacity} bottles`, qty });
+          remaining -= qty * capacity;
+        }
+      }
+      // Handle remaining with smallest box
+      if (remaining > 0 && bottleBoxes.length > 0) {
+        const smallest = bottleBoxes[bottleBoxes.length - 1];
+        suggestions.push({ supply: smallest, reason: `${remaining} remaining bottle(s)`, qty: 1 });
+      }
+
+      // Suggest inserts (floor(bottles/2) inserts per box)
+      const insertSupply = supplies.find((s) =>
+        s.category === "cushioning" && s.name.toLowerCase().includes("insert")
+      );
+      if (insertSupply) {
+        const totalBoxes = suggestions.reduce((sum, s) => sum + s.qty, 0);
+        const insertQty = Math.floor(totalItems / 2);
+        if (insertQty > 0) {
+          suggestions.push({ supply: insertSupply, reason: `~1 insert per 2 bottles (${totalBoxes} boxes)`, qty: insertQty });
+        }
+      }
     }
 
-    // Suggest tape for any order
-    const tapeSupply = supplies.find((s) =>
-      s.category === "packaging" && s.name.toLowerCase().includes("tape")
-    );
-    if (tapeSupply) {
-      suggestions.push({ supply: tapeSupply, reason: "Standard packing", qty: 1 });
+    // For can orders: suggest can boxes
+    if (orderContainerTypes.includes("can")) {
+      const canBoxes = supplies.filter(
+        (s) => s.category === "boxes" && (s.container_types || []).includes("can")
+      );
+      for (const box of canBoxes) {
+        const capacity = parseInt(box.name.match(/(\d+)/)?.[1] || "6");
+        const qty = Math.ceil(totalItems / capacity);
+        suggestions.push({ supply: box, reason: `${totalItems} cans`, qty });
+      }
     }
 
-    // Suggest bubble wrap for fragile items
-    const bubbleWrap = supplies.find((s) =>
-      s.category === "packaging" && s.name.toLowerCase().includes("bubble")
-    );
-    if (bubbleWrap && totalItems > 5) {
-      suggestions.push({ supply: bubbleWrap, reason: "Protection for items", qty: Math.ceil(totalItems / 5) });
-    }
-
-    // Suggest packing peanuts for larger orders
-    const peanutsSupply = supplies.find((s) =>
-      s.category === "packaging" && (s.name.toLowerCase().includes("peanut") || s.name.toLowerCase().includes("fill"))
-    );
-    if (peanutsSupply && totalItems > 10) {
-      suggestions.push({ supply: peanutsSupply, reason: "Void fill for larger order", qty: 1 });
+    // Suggest brown paper for any order with boxes
+    if (suggestions.length > 0) {
+      const paperSupply = supplies.find((s) =>
+        s.category === "cushioning" && s.name.toLowerCase().includes("paper")
+      );
+      if (paperSupply) {
+        const totalBoxes = suggestions.filter((s) => s.supply.category === "boxes").reduce((sum, s) => sum + s.qty, 0);
+        if (totalBoxes > 0) {
+          suggestions.push({ supply: paperSupply, reason: `${totalBoxes} boxes need cushioning`, qty: totalBoxes });
+        }
+      }
     }
 
     return suggestions;
@@ -612,45 +687,7 @@ export default function OutboundOrderDetailPage() {
     label: `${s.name} (${s.sku})`,
   }));
 
-  const handleAddBox = async () => {
-    if (!selectedBoxCode || boxQty <= 0 || !order) return;
-
-    setAddingBox(true);
-    try {
-      const result = await recordBoxUsage(order.id, selectedBoxCode, boxQty);
-      if (result) {
-        setBoxUsage((prev) => [...prev, result]);
-      }
-      // Reset form
-      setSelectedBoxCode("");
-      setBoxQty(1);
-    } catch (err) {
-      console.error("Failed to add box:", err);
-    } finally {
-      setAddingBox(false);
-    }
-  };
-
-  const handleAddPackingMaterial = async () => {
-    if (!selectedMaterialCode || materialQty <= 0 || !order) return;
-
-    setAddingMaterial(true);
-    try {
-      const result = await recordPackingMaterialUsage(order.id, selectedMaterialCode, materialQty);
-      if (result) {
-        setPackingMaterialUsage((prev) => [...prev, result]);
-      }
-      // Reset form
-      setSelectedMaterialCode("");
-      setMaterialQty(1);
-    } catch (err) {
-      console.error("Failed to add packing material:", err);
-    } finally {
-      setAddingMaterial(false);
-    }
-  };
-
-  const suggestedSupplies = getSuggestedSupplies();
+  const smartSuggestions = getSmartSuggestions();
 
   const handleCancelOrder = async () => {
     if (!order) return;
@@ -668,6 +705,60 @@ export default function OutboundOrderDetailPage() {
     }
   };
 
+  const enterEditMode = () => {
+    if (!order) return;
+    setEditForm({
+      recipient_name: (order as any).recipient_name || "",
+      requestor: (order as any).requestor || "",
+      ship_to_address: order.ship_to_address || "",
+      ship_to_address2: (order as any).ship_to_address2 || "",
+      ship_to_city: (order as any).ship_to_city || "",
+      ship_to_state: (order as any).ship_to_state || "",
+      ship_to_zip: (order as any).ship_to_zip || "",
+      ship_to_country: (order as any).ship_to_country || "",
+      preferred_carrier: (order as any).preferred_carrier || "",
+      notes: order.notes || "",
+      requires_repack: (order as any).requires_repack !== false,
+      requested_at: order.requested_at ? order.requested_at.split("T")[0] : "",
+      confirmed_at: order.confirmed_at ? order.confirmed_at.split("T")[0] : "",
+      shipped_date: order.shipped_date ? order.shipped_date.split("T")[0] : "",
+      delivered_date: order.delivered_date ? order.delivered_date.split("T")[0] : "",
+    });
+    setIsEditingOrder(true);
+  };
+
+  const handleSaveOrder = async () => {
+    if (!order) return;
+    setSavingOrder(true);
+    try {
+      const data: UpdateOutboundOrderData = {
+        recipient_name: editForm.recipient_name || null,
+        requestor: editForm.requestor || null,
+        ship_to_address: editForm.ship_to_address || null,
+        ship_to_address2: editForm.ship_to_address2 || null,
+        ship_to_city: editForm.ship_to_city || null,
+        ship_to_state: editForm.ship_to_state || null,
+        ship_to_zip: editForm.ship_to_zip || null,
+        ship_to_country: editForm.ship_to_country || null,
+        preferred_carrier: editForm.preferred_carrier || null,
+        notes: editForm.notes || null,
+        requires_repack: editForm.requires_repack,
+        requested_at: editForm.requested_at ? `${editForm.requested_at}T12:00:00${getTimezoneOffset(warehouseTimezone)}` : null,
+        confirmed_at: editForm.confirmed_at ? `${editForm.confirmed_at}T12:00:00${getTimezoneOffset(warehouseTimezone)}` : null,
+        shipped_date: editForm.shipped_date ? `${editForm.shipped_date}T12:00:00${getTimezoneOffset(warehouseTimezone)}` : null,
+        delivered_date: editForm.delivered_date ? `${editForm.delivered_date}T12:00:00${getTimezoneOffset(warehouseTimezone)}` : null,
+      };
+      await updateOutboundOrder(order.id, data);
+      await fetchOrder();
+      setIsEditingOrder(false);
+    } catch (err) {
+      console.error("Failed to update order:", err);
+      setError(err instanceof Error ? err.message : "Failed to update order");
+    } finally {
+      setSavingOrder(false);
+    }
+  };
+
   const dropdownMenuItems = order ? [
     {
       label: "Print Pick List",
@@ -680,10 +771,9 @@ export default function OutboundOrderDetailPage() {
       onClick: handlePrintPackingSlip,
     },
     {
-      label: "Edit Order",
-      icon: <Pencil className="w-4 h-4" />,
-      onClick: () => router.push(`/outbound/${order.id}/edit`),
-      disabled: order.status !== "pending",
+      label: isEditingOrder ? "Cancel Edit" : "Edit Order",
+      icon: isEditingOrder ? <X className="w-4 h-4" /> : <Pencil className="w-4 h-4" />,
+      onClick: () => isEditingOrder ? setIsEditingOrder(false) : enterEditMode(),
       divider: true,
     },
     {
@@ -747,6 +837,7 @@ export default function OutboundOrderDetailPage() {
   }
 
   const currentStatusIndex = getStatusIndex(order.status);
+  const warehouseTimezone = locations[0]?.timezone || "America/New_York";
   const totalRequested = order.items.reduce((sum, item) => sum + item.qty_requested, 0);
   const totalShipped = order.items.reduce((sum, item) => sum + item.qty_shipped, 0);
   const allItemsShipped = order.items.every((item) => item.qty_shipped >= item.qty_requested);
@@ -917,7 +1008,7 @@ export default function OutboundOrderDetailPage() {
                               isCompleted ? "text-gray-600" : "text-gray-400"
                             }`}
                           >
-                            {step.date ? formatDateTime(step.date) : "Pending"}
+                            {step.date ? formatDateTime(step.date, warehouseTimezone) : "Pending"}
                           </p>
                         )}
                       </div>
@@ -1314,81 +1405,208 @@ export default function OutboundOrderDetailPage() {
             </Card>
           )}
 
-          {/* Supplies Section - Show during packing */}
-          {(order.status === "processing" || order.status === "packed") && (
+          {/* Unified Packing Supplies Section */}
+          {(order.status === "processing" || order.status === "packed" || order.status === "shipped") && (
             <Card>
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <Box className="w-5 h-5 text-blue-600" />
+                  <Package className="w-5 h-5 text-indigo-600" />
                   <h2 className="text-lg font-semibold text-gray-900">
                     Packing Supplies
                   </h2>
                 </div>
-                <span className="text-sm text-gray-500">
-                  {orderSupplies.length} supplies used
-                </span>
+                <div className="flex items-center gap-3">
+                  {orderContainerTypes.length > 0 && (
+                    <div className="flex items-center gap-1">
+                      {orderContainerTypes.map((ct) => (
+                        <span key={ct} className="inline-flex px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-700 rounded-full capitalize">
+                          {ct === "bag_in_box" ? "BIB" : ct}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <span className="text-sm text-gray-500">
+                    {orderSupplies.length} used
+                  </span>
+                </div>
               </div>
 
-              {/* Suggested Supplies */}
-              {suggestedSupplies.length > 0 && orderSupplies.length === 0 && (
-                <div className="mb-6">
-                  <p className="text-sm font-medium text-gray-700 mb-3">Suggested Supplies</p>
+              {/* Smart Suggestions */}
+              {smartSuggestions.length > 0 && orderSupplies.length === 0 && orderRequiresRepack && (
+                <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Zap className="w-4 h-4 text-blue-600" />
+                    <p className="text-sm font-semibold text-blue-800">Suggested Supplies</p>
+                    <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                      Based on order contents
+                    </span>
+                  </div>
                   <div className="space-y-2">
-                    {suggestedSupplies.map(({ supply, reason, qty }) => (
+                    {smartSuggestions.map(({ supply, reason, qty }, idx) => (
                       <div
-                        key={supply.id}
-                        className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3"
+                        key={`${supply.id}-${idx}`}
+                        className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-3"
                       >
-                        <div>
-                          <p className="font-medium text-gray-900">{supply.name}</p>
-                          <p className="text-xs text-blue-600">{reason}</p>
+                        <div className="flex items-center gap-3">
+                          <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 text-sm font-bold">
+                            {qty}
+                          </span>
+                          <div>
+                            <p className="font-medium text-gray-900 text-sm">{supply.name}</p>
+                            <p className="text-xs text-gray-500">{reason} &middot; ${supply.base_price.toFixed(2)}/ea</p>
+                          </div>
                         </div>
                         <button
-                          onClick={() => {
-                            setSelectedSupplyId(supply.id);
-                            setSupplyQty(qty);
+                          onClick={async () => {
+                            setAddingSupply(true);
+                            try {
+                              await recordSupplyUsage(order.id, supply.id, qty);
+                              const updatedSupplies = await getOrderSupplies(orderId);
+                              setOrderSupplies(updatedSupplies);
+                            } catch (err) {
+                              console.error("Failed to add suggested supply:", err);
+                            } finally {
+                              setAddingSupply(false);
+                            }
                           }}
-                          className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-100 rounded-md transition-colors"
+                          disabled={addingSupply}
+                          className="px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 border border-indigo-200 rounded-md transition-colors disabled:opacity-50"
                         >
-                          Add {qty}
+                          <Plus className="w-3 h-3 inline mr-1" />
+                          Add
                         </button>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-sm font-medium text-gray-700 mt-3">
+                    Estimated Cost: <span className="text-indigo-700">
+                      ${smartSuggestions.reduce((sum, s) => sum + s.qty * s.supply.base_price, 0).toFixed(2)}
+                    </span>
+                  </p>
+                </div>
+              )}
+
+              {/* Available Supplies by Category */}
+              {orderRequiresRepack && Object.keys(suppliesByCategory).length > 0 && (
+                <div className="mb-6">
+                  <p className="text-sm font-medium text-gray-700 mb-3">
+                    {orderSupplies.length > 0 ? "Add More Supplies" : "Available Supplies"}
+                  </p>
+                  <div className="space-y-4">
+                    {Object.entries(suppliesByCategory).map(([category, categorySupplies]) => (
+                      <div key={category}>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                          {categoryLabels[category] || category}
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {categorySupplies.map((supply) => (
+                            <button
+                              key={supply.id}
+                              onClick={() => {
+                                setSelectedSupplyId(supply.id);
+                                setSupplyQty(1);
+                              }}
+                              className={`
+                                p-3 rounded-lg border-2 text-left transition-all
+                                ${selectedSupplyId === supply.id
+                                  ? "border-indigo-500 bg-indigo-50"
+                                  : "border-gray-200 hover:border-indigo-300 hover:bg-gray-50"
+                                }
+                              `}
+                            >
+                              <p className={`font-medium text-sm truncate ${
+                                selectedSupplyId === supply.id ? "text-indigo-700" : "text-gray-900"
+                              }`}>
+                                {supply.name}
+                              </p>
+                              <p className={`text-xs ${
+                                selectedSupplyId === supply.id ? "text-indigo-600" : "text-gray-500"
+                              }`}>
+                                ${supply.base_price.toFixed(2)} / {supply.unit}
+                              </p>
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Add Supply Form */}
-              <div className="space-y-3 mb-6">
-                <p className="text-sm font-medium text-gray-700">Add Supply</p>
-                <div className="flex gap-2 items-end">
+              {/* Quantity and Add */}
+              {selectedSupplyId && (
+                <div className="flex gap-2 items-end mb-6 p-4 bg-indigo-50 rounded-lg">
                   <div className="flex-1">
-                    <Select
-                      name="supply-select"
-                      options={supplyOptions}
-                      value={selectedSupplyId}
-                      onChange={(e) => setSelectedSupplyId(e.target.value)}
-                      placeholder="Select supply..."
-                    />
-                  </div>
-                  <div className="w-20">
-                    <Input
-                      name="supply-qty"
-                      type="number"
-                      min={1}
-                      value={supplyQty}
-                      onChange={(e) => setSupplyQty(parseInt(e.target.value) || 1)}
-                    />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Quantity
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setSupplyQty(Math.max(1, supplyQty - 1))}
+                        className="w-10 h-10 rounded-lg border border-gray-300 bg-white flex items-center justify-center text-gray-600 hover:bg-gray-50"
+                      >
+                        -
+                      </button>
+                      <Input
+                        name="supply-qty"
+                        type="number"
+                        min={1}
+                        value={supplyQty}
+                        onChange={(e) => setSupplyQty(parseInt(e.target.value) || 1)}
+                        className="w-20 text-center"
+                      />
+                      <button
+                        onClick={() => setSupplyQty(supplyQty + 1)}
+                        className="w-10 h-10 rounded-lg border border-gray-300 bg-white flex items-center justify-center text-gray-600 hover:bg-gray-50"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
                   <Button
                     onClick={handleAddSupply}
-                    disabled={!selectedSupplyId || supplyQty <= 0 || addingSupply}
+                    disabled={addingSupply}
                     loading={addingSupply}
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add {supplyQty} {supplies.find((s) => s.id === selectedSupplyId)?.unit || ""}
                   </Button>
                 </div>
-              </div>
+              )}
+
+              {/* Or select from dropdown (fallback) */}
+              {!selectedSupplyId && (
+                <div className="space-y-3 mb-6">
+                  <p className="text-sm font-medium text-gray-700">Or search all supplies</p>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <Select
+                        name="supply-select"
+                        options={supplyOptions}
+                        value={selectedSupplyId}
+                        onChange={(e) => setSelectedSupplyId(e.target.value)}
+                        placeholder="Select supply..."
+                      />
+                    </div>
+                    <div className="w-20">
+                      <Input
+                        name="supply-qty-fallback"
+                        type="number"
+                        min={1}
+                        value={supplyQty}
+                        onChange={(e) => setSupplyQty(parseInt(e.target.value) || 1)}
+                      />
+                    </div>
+                    <Button
+                      onClick={handleAddSupply}
+                      disabled={!selectedSupplyId || supplyQty <= 0 || addingSupply}
+                      loading={addingSupply}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {/* Supplies Used List */}
               {orderSupplies.length > 0 ? (
@@ -1436,9 +1654,9 @@ export default function OutboundOrderDetailPage() {
                       <tfoot className="bg-gray-50">
                         <tr>
                           <td colSpan={3} className="px-4 py-2 text-sm font-medium text-gray-900 text-right">
-                            Total Supplies Cost:
+                            Total Packing Cost:
                           </td>
-                          <td className="px-4 py-2 text-right text-sm font-bold text-gray-900">
+                          <td className="px-4 py-2 text-right text-sm font-bold text-indigo-700">
                             ${orderSupplies.reduce((sum, u) => sum + u.total, 0).toFixed(2)}
                           </td>
                         </tr>
@@ -1449,7 +1667,7 @@ export default function OutboundOrderDetailPage() {
                   {/* Billing Note */}
                   <p className="text-xs text-gray-500 mt-3 flex items-center gap-1">
                     <CheckCircle2 className="w-3 h-3 text-green-500" />
-                    Supplies will be recorded for billing
+                    All packing charges automatically added to client billing
                   </p>
                 </div>
               ) : (
@@ -1462,542 +1680,389 @@ export default function OutboundOrderDetailPage() {
             </Card>
           )}
 
-          {/* Box Usage Section - 7Degrees Box Rates (only if repack required) */}
-          {orderRequiresRepack && (order.status === "processing" || order.status === "packed" || order.status === "shipped") && (
-            <Card>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Package className="w-5 h-5 text-purple-600" />
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    Box Usage
-                  </h2>
-                </div>
-                <span className="text-sm text-gray-500">
-                  7Degrees Box Rates
-                </span>
-              </div>
-
-              {/* Preview for Processing - Shows what will be auto-assigned */}
-              {order.status === "processing" && boxSuggestions && (boxSuggestions.totalBottles > 0 || boxSuggestions.totalCans > 0) && boxUsage.length === 0 && (
-                <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Zap className="w-4 h-4 text-blue-600" />
-                    <p className="text-sm font-semibold text-blue-800">Box Preview</p>
-                    <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
-                      Will auto-assign when packed
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-600 mb-3">
-                    Based on {boxSuggestions.totalBottles > 0 ? `${boxSuggestions.totalBottles} bottle${boxSuggestions.totalBottles !== 1 ? "s" : ""}` : ""}
-                    {boxSuggestions.totalBottles > 0 && boxSuggestions.totalCans > 0 ? " and " : ""}
-                    {boxSuggestions.totalCans > 0 ? `${boxSuggestions.totalCans} can${boxSuggestions.totalCans !== 1 ? "s" : ""}` : ""}:
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {[...boxSuggestions.bottles, ...boxSuggestions.cans].map((suggestion, idx) => (
-                      <div
-                        key={idx}
-                        className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm"
-                      >
-                        <span className="font-medium text-gray-700">{suggestion.qty}x</span>
-                        <span className="text-gray-600">{suggestion.name}</span>
-                        <span className="text-xs text-gray-400">(${(suggestion.qty * suggestion.price).toFixed(2)})</span>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-sm font-medium text-gray-700 mt-3">
-                    Estimated Cost: <span className="text-purple-700">${boxSuggestions.estimatedCost.toFixed(2)}</span>
-                  </p>
-                  {boxSuggestions.hasNonBoxItems && (
-                    <p className="text-xs text-amber-600 flex items-center gap-1 mt-2">
-                      <AlertCircle className="w-3 h-3" />
-                      Some items (kegs, bag-in-box) don't use standard boxes
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Auto-Assigned Notice for Packed/Shipped orders with boxes */}
-              {(order.status === "packed" || order.status === "shipped") && boxUsage.length > 0 && (
-                <div className="mb-4 flex items-center gap-2 text-sm text-green-700 bg-green-50 px-3 py-2 rounded-lg">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Boxes auto-assigned based on order contents</span>
-                </div>
-              )}
-
-              {/* Manual Add for Processing - Allow early manual assignment */}
-              {order.status === "processing" && boxUsage.length === 0 && boxSuggestions && (boxSuggestions.totalBottles > 0 || boxSuggestions.totalCans > 0) && (
-                <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-3">
-                    <p className="text-sm font-medium text-gray-700">Or manually assign now:</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {[...boxSuggestions.bottles, ...boxSuggestions.cans].map((suggestion, idx) => (
-                      <button
-                        key={idx}
-                        onClick={async () => {
-                          setAddingBox(true);
-                          try {
-                            const result = await recordBoxUsage(order.id, suggestion.code, suggestion.qty);
-                            if (result) {
-                              setBoxUsage((prev) => [...prev, result]);
-                            }
-                          } catch (err) {
-                            console.error("Failed to add suggested box:", err);
-                          } finally {
-                            setAddingBox(false);
-                          }
-                        }}
-                        disabled={addingBox}
-                        className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-purple-300 rounded-lg text-sm hover:bg-purple-50 transition-colors disabled:opacity-50"
-                      >
-                        <span className="font-medium text-purple-700">{suggestion.qty}x</span>
-                        <span className="text-gray-700">{suggestion.name}</span>
-                        <span className="text-xs text-gray-500">(${(suggestion.qty * suggestion.price).toFixed(2)})</span>
-                        <Plus className="w-3 h-3 text-purple-600" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Quick Box Selection Grid - For manual additions */}
-              <div className="mb-6">
-                <p className="text-sm font-medium text-gray-700 mb-3">
-                  {boxUsage.length > 0 ? "Add More Boxes" : "Select Box Type"}
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {BOX_TYPES.map((box) => (
-                    <button
-                      key={box.code}
-                      onClick={() => setSelectedBoxCode(box.code)}
-                      className={`
-                        p-3 rounded-lg border-2 text-left transition-all
-                        ${selectedBoxCode === box.code
-                          ? "border-purple-500 bg-purple-50"
-                          : box.isCan
-                            ? "border-blue-200 hover:border-blue-400 hover:bg-blue-50"
-                            : "border-gray-200 hover:border-purple-300 hover:bg-gray-50"
-                        }
-                      `}
-                    >
-                      <p className={`font-medium text-sm ${
-                        selectedBoxCode === box.code ? "text-purple-700" : "text-gray-900"
-                      }`}>
-                        {box.name}
-                      </p>
-                      <p className={`text-xs ${
-                        selectedBoxCode === box.code ? "text-purple-600" : box.isCan ? "text-blue-500" : "text-gray-500"
-                      }`}>
-                        ${box.price.toFixed(2)}
-                        {box.isCan && <span className="ml-1 text-blue-400">(cans)</span>}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Quantity and Add */}
-              {selectedBoxCode && (
-                <div className="flex gap-2 items-end mb-6 p-4 bg-purple-50 rounded-lg">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Quantity
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setBoxQty(Math.max(1, boxQty - 1))}
-                        className="w-10 h-10 rounded-lg border border-gray-300 bg-white flex items-center justify-center text-gray-600 hover:bg-gray-50"
-                      >
-                        -
-                      </button>
-                      <Input
-                        name="box-qty"
-                        type="number"
-                        min={1}
-                        value={boxQty}
-                        onChange={(e) => setBoxQty(parseInt(e.target.value) || 1)}
-                        className="w-20 text-center"
-                      />
-                      <button
-                        onClick={() => setBoxQty(boxQty + 1)}
-                        className="w-10 h-10 rounded-lg border border-gray-300 bg-white flex items-center justify-center text-gray-600 hover:bg-gray-50"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={handleAddBox}
-                    disabled={addingBox}
-                    loading={addingBox}
-                    className="bg-purple-600 hover:bg-purple-700"
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add {boxQty} Box{boxQty > 1 ? "es" : ""}
-                  </Button>
-                </div>
-              )}
-
-              {/* Box Usage List */}
-              {boxUsage.length > 0 ? (
-                <div>
-                  <p className="text-sm font-medium text-gray-700 mb-3">Boxes Used</p>
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                            Box Type
-                          </th>
-                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                            Qty
-                          </th>
-                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                            Price
-                          </th>
-                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                            Total
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {boxUsage.map((usage) => (
-                          <tr key={usage.id}>
-                            <td className="px-4 py-2">
-                              <p className="font-medium text-gray-900 text-sm">
-                                {usage.box_name}
-                              </p>
-                            </td>
-                            <td className="px-4 py-2 text-right text-sm">
-                              {usage.quantity}
-                            </td>
-                            <td className="px-4 py-2 text-right text-sm text-gray-600">
-                              ${usage.unit_price.toFixed(2)}
-                            </td>
-                            <td className="px-4 py-2 text-right text-sm font-medium">
-                              ${usage.total.toFixed(2)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="bg-gray-50">
-                        <tr>
-                          <td colSpan={3} className="px-4 py-2 text-sm font-medium text-gray-900 text-right">
-                            Total Box Cost:
-                          </td>
-                          <td className="px-4 py-2 text-right text-sm font-bold text-purple-700">
-                            ${boxUsage.reduce((sum, u) => sum + u.total, 0).toFixed(2)}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-6 text-gray-500 border border-dashed border-gray-300 rounded-lg">
-                  <Package className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                  <p className="text-sm">No boxes recorded yet</p>
-                  <p className="text-xs text-gray-400 mt-1">Select a box type above to record usage</p>
-                </div>
-              )}
-
-              {/* Packing Materials Section */}
-              <div className="mt-6 pt-6 border-t border-gray-200">
-                <p className="text-sm font-medium text-gray-700 mb-3">Packing Materials</p>
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  {PACKING_MATERIALS.map((material) => (
-                    <button
-                      key={material.code}
-                      onClick={() => setSelectedMaterialCode(material.code)}
-                      className={`
-                        p-3 rounded-lg border-2 text-left transition-all
-                        ${selectedMaterialCode === material.code
-                          ? "border-amber-500 bg-amber-50"
-                          : "border-gray-200 hover:border-amber-300 hover:bg-gray-50"
-                        }
-                      `}
-                    >
-                      <p className={`font-medium text-sm ${
-                        selectedMaterialCode === material.code ? "text-amber-700" : "text-gray-900"
-                      }`}>
-                        {material.name}
-                      </p>
-                      <p className={`text-xs ${
-                        selectedMaterialCode === material.code ? "text-amber-600" : "text-gray-500"
-                      }`}>
-                        ${material.price.toFixed(2)} / {material.unit}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Quantity and Add for Materials */}
-                {selectedMaterialCode && (
-                  <div className="flex gap-2 items-end mb-4 p-4 bg-amber-50 rounded-lg">
-                    <div className="flex-1">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Quantity
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setMaterialQty(Math.max(1, materialQty - 1))}
-                          className="w-10 h-10 rounded-lg border border-gray-300 bg-white flex items-center justify-center text-gray-600 hover:bg-gray-50"
-                        >
-                          -
-                        </button>
-                        <Input
-                          name="material-qty"
-                          type="number"
-                          min={1}
-                          value={materialQty}
-                          onChange={(e) => setMaterialQty(parseInt(e.target.value) || 1)}
-                          className="w-20 text-center"
-                        />
-                        <button
-                          onClick={() => setMaterialQty(materialQty + 1)}
-                          className="w-10 h-10 rounded-lg border border-gray-300 bg-white flex items-center justify-center text-gray-600 hover:bg-gray-50"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                    <Button
-                      onClick={handleAddPackingMaterial}
-                      disabled={addingMaterial}
-                      loading={addingMaterial}
-                      className="bg-amber-600 hover:bg-amber-700"
-                    >
-                      <Plus className="w-4 h-4 mr-1" />
-                      Add
-                    </Button>
-                  </div>
-                )}
-
-                {/* Packing Materials Used List */}
-                {packingMaterialUsage.length > 0 && (
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                            Material
-                          </th>
-                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                            Qty
-                          </th>
-                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                            Price
-                          </th>
-                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                            Total
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {packingMaterialUsage.map((usage) => (
-                          <tr key={usage.id}>
-                            <td className="px-4 py-2">
-                              <p className="font-medium text-gray-900 text-sm">
-                                {usage.material_name}
-                              </p>
-                            </td>
-                            <td className="px-4 py-2 text-right text-sm">
-                              {usage.quantity}
-                            </td>
-                            <td className="px-4 py-2 text-right text-sm text-gray-600">
-                              ${usage.unit_price.toFixed(2)}
-                            </td>
-                            <td className="px-4 py-2 text-right text-sm font-medium">
-                              ${usage.total.toFixed(2)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="bg-gray-50">
-                        <tr>
-                          <td colSpan={3} className="px-4 py-2 text-sm font-medium text-gray-900 text-right">
-                            Total Materials Cost:
-                          </td>
-                          <td className="px-4 py-2 text-right text-sm font-bold text-amber-700">
-                            ${packingMaterialUsage.reduce((sum, u) => sum + u.total, 0).toFixed(2)}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* Grand Total & Auto-billing Note */}
-              {(boxUsage.length > 0 || packingMaterialUsage.length > 0) && (
-                <div className="mt-6 pt-4 border-t border-gray-200">
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-sm font-semibold text-gray-900">Total Packaging Cost:</span>
-                    <span className="text-lg font-bold text-gray-900">
-                      ${(boxUsage.reduce((sum, u) => sum + u.total, 0) + packingMaterialUsage.reduce((sum, u) => sum + u.total, 0)).toFixed(2)}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-green-500" />
-                    All packaging charges automatically added to client billing
-                  </p>
-                </div>
-              )}
-            </Card>
-          )}
         </div>
 
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Order Info */}
           <Card>
-            <div className="space-y-4">
-              {/* Order Number - Large */}
-              <div className="pb-4 border-b border-gray-200">
-                <p className="text-sm text-gray-500 mb-1">Order Number</p>
-                <div className="flex items-center gap-2">
-                  <p className="text-2xl font-bold text-gray-900">
-                    {order.order_number}
-                  </p>
-                  {/* Source Badge */}
-                  {(order as any).source === "portal" ? (
-                    <span
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-700"
-                      title="Portal Order - Customer requested"
-                    >
-                      <Globe className="w-3 h-3" />
-                      Portal
-                    </span>
-                  ) : (
-                    <span
-                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600"
-                      title="Internal Order - Staff created"
-                    >
-                      <Building2 className="w-3 h-3" />
-                      Internal
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Status */}
-              <div>
-                <p className="text-sm text-gray-500 mb-1">Status</p>
-                <Badge variant={getStatusColor(order.status)}>
-                  {formatStatus(order.status)}
-                </Badge>
-              </div>
-
-              {/* Client */}
-              {order.client && (
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Client</p>
-                  <Link
-                    href={`/clients/${order.client.id}`}
-                    className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+            {isEditingOrder ? (
+              /* ── Edit Mode ── */
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900">Edit Order</h3>
+                  <button
+                    onClick={() => setIsEditingOrder(false)}
+                    className="text-gray-400 hover:text-gray-600"
                   >
-                    {order.client.company_name}
-                  </Link>
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
-              )}
 
-              {/* Ship To Address */}
-              {order.ship_to_address && (
                 <div>
-                  <p className="text-sm text-gray-500 mb-1">Ship To</p>
-                  <div className="text-gray-900">
-                    <p>{order.ship_to_address}</p>
-                    {(order as any).ship_to_address2 && (
-                      <p>{(order as any).ship_to_address2}</p>
-                    )}
-                    {((order as any).ship_to_city || (order as any).ship_to_state || (order as any).ship_to_postal_code) && (
-                      <p>
-                        {(order as any).ship_to_city && `${(order as any).ship_to_city}, `}
-                        {(order as any).ship_to_state} {(order as any).ship_to_postal_code}
-                      </p>
-                    )}
-                    {(order as any).ship_to_country && (order as any).ship_to_country !== "US" && (order as any).ship_to_country !== "USA" && (
-                      <p>{(order as any).ship_to_country}</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Recipient Name</label>
+                  <Input
+                    name="edit-recipient"
+                    value={editForm.recipient_name}
+                    onChange={(e) => setEditForm({ ...editForm, recipient_name: e.target.value })}
+                    placeholder="Recipient name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Requestor</label>
+                  <Input
+                    name="edit-requestor"
+                    value={editForm.requestor}
+                    onChange={(e) => setEditForm({ ...editForm, requestor: e.target.value })}
+                    placeholder="Requestor name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                  <Input
+                    name="edit-address"
+                    value={editForm.ship_to_address}
+                    onChange={(e) => setEditForm({ ...editForm, ship_to_address: e.target.value })}
+                    placeholder="Street address"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Address 2</label>
+                  <Input
+                    name="edit-address2"
+                    value={editForm.ship_to_address2}
+                    onChange={(e) => setEditForm({ ...editForm, ship_to_address2: e.target.value })}
+                    placeholder="Suite, unit, etc."
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                    <Input
+                      name="edit-city"
+                      value={editForm.ship_to_city}
+                      onChange={(e) => setEditForm({ ...editForm, ship_to_city: e.target.value })}
+                      placeholder="City"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                    <Input
+                      name="edit-state"
+                      value={editForm.ship_to_state}
+                      onChange={(e) => setEditForm({ ...editForm, ship_to_state: e.target.value })}
+                      placeholder="State"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Zip</label>
+                    <Input
+                      name="edit-zip"
+                      value={editForm.ship_to_zip}
+                      onChange={(e) => setEditForm({ ...editForm, ship_to_zip: e.target.value })}
+                      placeholder="Zip"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                  <Input
+                    name="edit-country"
+                    value={editForm.ship_to_country}
+                    onChange={(e) => setEditForm({ ...editForm, ship_to_country: e.target.value })}
+                    placeholder="US"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Carrier</label>
+                  <Select
+                    name="edit-carrier"
+                    value={editForm.preferred_carrier}
+                    onChange={(e) => setEditForm({ ...editForm, preferred_carrier: e.target.value })}
+                    options={[
+                      { value: "", label: "No preference" },
+                      { value: "UPS", label: "UPS" },
+                      { value: "FedEx", label: "FedEx" },
+                      { value: "USPS", label: "USPS" },
+                      { value: "DHL", label: "DHL" },
+                      { value: "Freight", label: "Freight" },
+                    ]}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Requested Date</label>
+                  <Input
+                    name="edit-requested-date"
+                    type="date"
+                    value={editForm.requested_at}
+                    onChange={(e) => setEditForm({ ...editForm, requested_at: e.target.value })}
+                  />
+                </div>
+
+                {order.confirmed_at && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirmed Date</label>
+                    <Input
+                      name="edit-confirmed-date"
+                      type="date"
+                      value={editForm.confirmed_at}
+                      onChange={(e) => setEditForm({ ...editForm, confirmed_at: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                {order.shipped_date && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Shipped Date</label>
+                    <Input
+                      name="edit-shipped-date"
+                      type="date"
+                      value={editForm.shipped_date}
+                      onChange={(e) => setEditForm({ ...editForm, shipped_date: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                {order.delivered_date && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Delivered Date</label>
+                    <Input
+                      name="edit-delivered-date"
+                      type="date"
+                      value={editForm.delivered_date}
+                      onChange={(e) => setEditForm({ ...editForm, delivered_date: e.target.value })}
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                  <Textarea
+                    name="edit-notes"
+                    value={editForm.notes}
+                    onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                    rows={3}
+                    placeholder="Order notes..."
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    id="edit-repack"
+                    type="checkbox"
+                    checked={editForm.requires_repack}
+                    onChange={(e) => setEditForm({ ...editForm, requires_repack: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <label htmlFor="edit-repack" className="text-sm text-gray-700">
+                    Requires repack
+                  </label>
+                </div>
+
+                <div className="flex gap-2 pt-3 border-t border-gray-200">
+                  <Button
+                    onClick={handleSaveOrder}
+                    loading={savingOrder}
+                    disabled={savingOrder}
+                    className="flex-1"
+                  >
+                    <Save className="w-4 h-4 mr-1" />
+                    Save
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setIsEditingOrder(false)}
+                    disabled={savingOrder}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              /* ── View Mode ── */
+              <div className="space-y-4">
+                {/* Order Number - Large */}
+                <div className="pb-4 border-b border-gray-200">
+                  <p className="text-sm text-gray-500 mb-1">Order Number</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-bold text-gray-900">
+                      {order.order_number}
+                    </p>
+                    {/* Source Badge */}
+                    {(order as any).source === "portal" ? (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-700"
+                        title="Portal Order - Customer requested"
+                      >
+                        <Globe className="w-3 h-3" />
+                        Portal
+                      </span>
+                    ) : (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600"
+                        title="Internal Order - Staff created"
+                      >
+                        <Building2 className="w-3 h-3" />
+                        Internal
+                      </span>
                     )}
                   </div>
                 </div>
-              )}
 
-              {/* Requested Date */}
-              <div>
-                <p className="text-sm text-gray-500 mb-1">Requested</p>
-                <p className="font-medium text-gray-900">
-                  {formatDateTime(order.requested_at)}
-                </p>
-              </div>
-
-              {/* Confirmed Date */}
-              {order.confirmed_at && (
+                {/* Status */}
                 <div>
-                  <p className="text-sm text-gray-500 mb-1">Confirmed</p>
+                  <p className="text-sm text-gray-500 mb-1">Status</p>
+                  <Badge variant={getStatusColor(order.status)}>
+                    {formatStatus(order.status)}
+                  </Badge>
+                </div>
+
+                {/* Client */}
+                {order.client && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Client</p>
+                    <Link
+                      href={`/clients/${order.client.id}`}
+                      className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      {order.client.company_name}
+                    </Link>
+                  </div>
+                )}
+
+                {/* Recipient Name */}
+                {(order as any).recipient_name && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Recipient</p>
+                    <p className="font-medium text-gray-900">{(order as any).recipient_name}</p>
+                  </div>
+                )}
+
+                {/* Requestor */}
+                {(order as any).requestor && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Requestor</p>
+                    <p className="font-medium text-gray-900">{(order as any).requestor}</p>
+                  </div>
+                )}
+
+                {/* Ship To Address */}
+                {order.ship_to_address && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Ship To</p>
+                    <div className="text-gray-900">
+                      <p>{order.ship_to_address}</p>
+                      {(order as any).ship_to_address2 && (
+                        <p>{(order as any).ship_to_address2}</p>
+                      )}
+                      {((order as any).ship_to_city || (order as any).ship_to_state || (order as any).ship_to_zip) && (
+                        <p>
+                          {(order as any).ship_to_city && `${(order as any).ship_to_city}, `}
+                          {(order as any).ship_to_state} {(order as any).ship_to_zip}
+                        </p>
+                      )}
+                      {(order as any).ship_to_country && (order as any).ship_to_country !== "US" && (order as any).ship_to_country !== "USA" && (
+                        <p>{(order as any).ship_to_country}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Requested Date */}
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Requested</p>
                   <p className="font-medium text-gray-900">
-                    {formatDateTime(order.confirmed_at)}
+                    {formatDateTime(order.requested_at, warehouseTimezone)}
                   </p>
                 </div>
-              )}
 
-              {/* Shipping Info */}
-              {(order.carrier || order.tracking_number) && (
-                <div className="pt-4 border-t border-gray-200">
-                  <p className="text-sm text-gray-500 mb-2">Shipping Info</p>
-                  {order.carrier && (
-                    <p className="font-medium text-gray-900">{order.carrier}</p>
-                  )}
-                  {order.tracking_number && (
-                    <p className="text-blue-600">{order.tracking_number}</p>
-                  )}
-                </div>
-              )}
-
-              {/* Shipped Date */}
-              {order.shipped_date && (
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Shipped</p>
-                  <p className="font-medium text-green-600">
-                    {formatDateTime(order.shipped_date)}
-                  </p>
-                </div>
-              )}
-
-              {/* Delivered Date */}
-              {order.delivered_date && (
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Delivered</p>
-                  <p className="font-medium text-green-600">
-                    {formatDateTime(order.delivered_date)}
-                  </p>
-                </div>
-              )}
-
-              {/* Notes */}
-              {order.notes && (
-                <div className={`pt-4 border-t ${isUrgent(order.notes) ? "border-red-200" : "border-gray-200"}`}>
-                  <p className="text-sm text-gray-500 mb-1">Notes</p>
-                  <div
-                    className={`${
-                      isUrgent(order.notes)
-                        ? "bg-red-50 border border-red-200 rounded-lg p-3"
-                        : ""
-                    }`}
-                  >
-                    {isUrgent(order.notes) && (
-                      <div className="flex items-center gap-1.5 text-red-600 text-sm font-medium mb-1">
-                        <Flag className="w-3.5 h-3.5" />
-                        Rush/Urgent
-                      </div>
-                    )}
-                    <p className={isUrgent(order.notes) ? "text-red-800" : "text-gray-700"}>
-                      {order.notes}
+                {/* Confirmed Date */}
+                {order.confirmed_at && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Confirmed</p>
+                    <p className="font-medium text-gray-900">
+                      {formatDateTime(order.confirmed_at, warehouseTimezone)}
                     </p>
                   </div>
+                )}
+
+                {/* Shipping Info */}
+                {(order.carrier || order.tracking_number) && (
+                  <div className="pt-4 border-t border-gray-200">
+                    <p className="text-sm text-gray-500 mb-2">Shipping Info</p>
+                    {order.carrier && (
+                      <p className="font-medium text-gray-900">{order.carrier}</p>
+                    )}
+                    {order.tracking_number && (
+                      <p className="text-blue-600">{order.tracking_number}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Shipped Date */}
+                {order.shipped_date && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Shipped</p>
+                    <p className="font-medium text-green-600">
+                      {formatDateTime(order.shipped_date, warehouseTimezone)}
+                    </p>
+                  </div>
+                )}
+
+                {/* Delivered Date */}
+                {order.delivered_date && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Delivered</p>
+                    <p className="font-medium text-green-600">
+                      {formatDateTime(order.delivered_date, warehouseTimezone)}
+                    </p>
+                  </div>
+                )}
+
+                {/* Notes */}
+                {order.notes && (
+                  <div className={`pt-4 border-t ${isUrgent(order.notes) ? "border-red-200" : "border-gray-200"}`}>
+                    <p className="text-sm text-gray-500 mb-1">Notes</p>
+                    <div
+                      className={`${
+                        isUrgent(order.notes)
+                          ? "bg-red-50 border border-red-200 rounded-lg p-3"
+                          : ""
+                      }`}
+                    >
+                      {isUrgent(order.notes) && (
+                        <div className="flex items-center gap-1.5 text-red-600 text-sm font-medium mb-1">
+                          <Flag className="w-3.5 h-3.5" />
+                          Rush/Urgent
+                        </div>
+                      )}
+                      <p className={isUrgent(order.notes) ? "text-red-800" : "text-gray-700"}>
+                        {order.notes}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Quick Edit Button */}
+                <div className="pt-3 border-t border-gray-200">
+                  <button
+                    onClick={enterEditMode}
+                    className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Edit Order Details
+                  </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </Card>
 
           {/* Client Service Options - Show if any options are set */}

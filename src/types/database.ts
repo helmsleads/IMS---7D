@@ -307,6 +307,7 @@ export interface Supply {
   is_active: boolean
   sort_order: number
   industries: ClientIndustry[]
+  container_types: string[]
   created_at: string
   updated_at: string
 }
@@ -726,6 +727,7 @@ export interface Location {
   is_pickable: boolean
   capacity: number | null
   current_occupancy: number
+  timezone: string
 }
 
 export interface Inventory {
@@ -861,7 +863,7 @@ export interface OutboundOrder {
   ship_to_address2: string | null
   ship_to_city: string | null
   ship_to_state: string | null
-  ship_to_postal_code: string | null
+  ship_to_zip: string | null
   ship_to_country: string | null
   ship_to_phone: string | null
   ship_to_email: string | null
