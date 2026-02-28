@@ -23,6 +23,9 @@ import Select from "@/components/ui/Select";
 import Toggle from "@/components/ui/Toggle";
 import Button from "@/components/ui/Button";
 import Spinner from "@/components/ui/Spinner";
+import Alert from "@/components/ui/Alert";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { handleApiError } from "@/lib/utils/error-handler";
 import {
   getMyAddresses,
   createMyAddress,
@@ -211,11 +214,25 @@ export default function PortalSettingsPage() {
   const [userSuccess, setUserSuccess] = useState("");
   const [removingUser, setRemovingUser] = useState<string | null>(null);
 
+  // Alert state
+  const [alert, setAlert] = useState<{type: 'success' | 'error', message: string} | null>(null);
+
+  // ConfirmDialog state
+  const [confirmDialog, setConfirmDialog] = useState<{open: boolean, title: string, description: string, onConfirm: () => void, variant?: 'danger' | 'default'} | null>(null);
+
   // Check if current user can manage team
   const canManageTeam = currentRole === "owner" || currentRole === "admin";
 
   // Compute role options based on current user's role
   const roleOptions = currentRole === "owner" ? ROLE_OPTIONS_WITH_OWNER : BASE_ROLE_OPTIONS;
+
+  // Auto-dismiss success alerts after 3s
+  useEffect(() => {
+    if (alert?.type === 'success') {
+      const timer = setTimeout(() => setAlert(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [alert]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -312,7 +329,7 @@ export default function PortalSettingsPage() {
       resetAddressForm();
     } catch (error) {
       console.error("Failed to save address:", error);
-      alert("Failed to save address. Please try again.");
+      setAlert({ type: 'error', message: handleApiError(error) });
     } finally {
       setSaving(false);
     }
@@ -320,18 +337,25 @@ export default function PortalSettingsPage() {
 
   const handleDeleteAddress = async (addressId: string) => {
     if (!client) return;
-    if (!confirm("Are you sure you want to delete this address?")) return;
 
-    setDeleting(addressId);
-    try {
-      await deleteMyAddress(client.id, addressId);
-      setAddresses((prev) => prev.filter((addr) => addr.id !== addressId));
-    } catch (error) {
-      console.error("Failed to delete address:", error);
-      alert(error instanceof Error ? error.message : "Failed to delete address");
-    } finally {
-      setDeleting(null);
-    }
+    setConfirmDialog({
+      open: true,
+      title: "Delete Address",
+      description: "Are you sure you want to delete this address? This action cannot be undone.",
+      variant: "danger",
+      onConfirm: async () => {
+        setDeleting(addressId);
+        try {
+          await deleteMyAddress(client.id, addressId);
+          setAddresses((prev) => prev.filter((addr) => addr.id !== addressId));
+        } catch (error) {
+          console.error("Failed to delete address:", error);
+          setAlert({ type: 'error', message: handleApiError(error) });
+        } finally {
+          setDeleting(null);
+        }
+      },
+    });
   };
 
   const handleSetDefault = async (addressId: string) => {
@@ -496,23 +520,29 @@ export default function PortalSettingsPage() {
       );
     } catch (error) {
       console.error("Failed to update role:", error);
-      alert("Failed to update role. Please try again.");
+      setAlert({ type: 'error', message: handleApiError(error) });
     }
   };
 
   const handleRemoveUser = async (memberId: string) => {
-    if (!confirm("Are you sure you want to remove this user's access?")) return;
-
-    setRemovingUser(memberId);
-    try {
-      await removeClientUser(memberId);
-      setTeamMembers((prev) => prev.filter((m) => m.id !== memberId));
-    } catch (error) {
-      console.error("Failed to remove user:", error);
-      alert("Failed to remove user. Please try again.");
-    } finally {
-      setRemovingUser(null);
-    }
+    setConfirmDialog({
+      open: true,
+      title: "Remove Team Member",
+      description: "Are you sure you want to remove this user's access? They will no longer be able to access the portal for your company.",
+      variant: "danger",
+      onConfirm: async () => {
+        setRemovingUser(memberId);
+        try {
+          await removeClientUser(memberId);
+          setTeamMembers((prev) => prev.filter((m) => m.id !== memberId));
+        } catch (error) {
+          console.error("Failed to remove user:", error);
+          setAlert({ type: 'error', message: handleApiError(error) });
+        } finally {
+          setRemovingUser(null);
+        }
+      },
+    });
   };
 
   const getRoleBadgeColor = (role: string) => {
@@ -524,9 +554,9 @@ export default function PortalSettingsPage() {
       case "member":
         return "bg-green-100 text-green-700";
       case "viewer":
-        return "bg-gray-100 text-gray-700";
+        return "bg-slate-100 text-slate-700";
       default:
-        return "bg-gray-100 text-gray-700";
+        return "bg-slate-100 text-slate-700";
     }
   };
 
@@ -540,22 +570,25 @@ export default function PortalSettingsPage() {
 
   return (
     <div className="space-y-8">
+      {/* Page-level Alert */}
+      {alert && <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />}
+
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Account Settings</h1>
-        <p className="text-gray-500 mt-1">
+        <h1 className="text-2xl font-semibold text-slate-900">Account Settings</h1>
+        <p className="text-slate-500 mt-1">
           Manage your addresses and notification preferences
         </p>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-2 border-b border-gray-200">
+      <div className="flex gap-2 border-b border-slate-200">
         <button
           onClick={() => setActiveTab("addresses")}
           className={`flex items-center gap-2 px-6 py-3 font-medium transition-colors ${
             activeTab === "addresses"
-              ? "text-blue-600 border-b-2 border-blue-600"
-              : "text-gray-500 hover:text-gray-700"
+              ? "text-cyan-600 border-b-2 border-cyan-600"
+              : "text-slate-500 hover:text-slate-700"
           }`}
         >
           <MapPin className="w-4 h-4" />
@@ -565,8 +598,8 @@ export default function PortalSettingsPage() {
           onClick={() => setActiveTab("notifications")}
           className={`flex items-center gap-2 px-6 py-3 font-medium transition-colors ${
             activeTab === "notifications"
-              ? "text-blue-600 border-b-2 border-blue-600"
-              : "text-gray-500 hover:text-gray-700"
+              ? "text-cyan-600 border-b-2 border-cyan-600"
+              : "text-slate-500 hover:text-slate-700"
           }`}
         >
           <Bell className="w-4 h-4" />
@@ -577,8 +610,8 @@ export default function PortalSettingsPage() {
             onClick={() => setActiveTab("team")}
             className={`flex items-center gap-2 px-6 py-3 font-medium transition-colors ${
               activeTab === "team"
-                ? "text-blue-600 border-b-2 border-blue-600"
-                : "text-gray-500 hover:text-gray-700"
+                ? "text-cyan-600 border-b-2 border-cyan-600"
+                : "text-slate-500 hover:text-slate-700"
             }`}
           >
             <Users className="w-4 h-4" />
@@ -603,11 +636,11 @@ export default function PortalSettingsPage() {
                 <Card key={address.id}>
                   {/* Label and Badges */}
                   <div className="flex items-center gap-2 mb-3">
-                    <span className="font-semibold text-gray-900">
+                    <span className="font-semibold text-slate-900">
                       {address.label || "Address"}
                     </span>
                     {address.is_default && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-cyan-100 text-cyan-700 rounded-full text-xs font-medium">
                         <Star className="w-3 h-3" />
                         Default
                       </span>
@@ -621,14 +654,14 @@ export default function PortalSettingsPage() {
                   </div>
 
                   {/* Full Address */}
-                  <div className="text-sm text-gray-600 space-y-0.5 mb-4">
+                  <div className="text-sm text-slate-600 space-y-0.5 mb-4">
                     {formatAddress(address).map((line, i) => (
                       <p key={i}>{line}</p>
                     ))}
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-3 pt-3 border-t border-gray-100">
+                  <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -664,8 +697,8 @@ export default function PortalSettingsPage() {
           ) : (
             /* Empty State */
             <Card>
-              <div className="text-center py-12 text-gray-500">
-                <MapPin className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <div className="text-center py-12 text-slate-500">
+                <MapPin className="w-12 h-12 mx-auto mb-3 text-slate-300" />
                 <p className="font-medium">No addresses saved</p>
                 <p className="text-sm mt-1 mb-4">
                   Add your shipping and billing addresses
@@ -781,9 +814,9 @@ export default function PortalSettingsPage() {
                 onChange={(e) =>
                   setAddressForm({ ...addressForm, is_default: e.target.checked })
                 }
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-cyan-600 border-slate-300 rounded focus-visible:ring-cyan-500"
               />
-              <span className="text-sm text-gray-700">Set as default shipping address</span>
+              <span className="text-sm text-slate-700">Set as default shipping address</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -792,9 +825,9 @@ export default function PortalSettingsPage() {
                 onChange={(e) =>
                   setAddressForm({ ...addressForm, is_billing: e.target.checked })
                 }
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-cyan-600 border-slate-300 rounded focus-visible:ring-cyan-500"
               />
-              <span className="text-sm text-gray-700">Set as billing address</span>
+              <span className="text-sm text-slate-700">Set as billing address</span>
             </label>
           </div>
         </form>
@@ -804,10 +837,10 @@ export default function PortalSettingsPage() {
       {activeTab === "notifications" && (
         <div className="space-y-6">
           <Card>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            <h2 className="text-lg font-semibold text-slate-900 mb-4">
               Email Notifications
             </h2>
-            <p className="text-sm text-gray-500 mb-6">
+            <p className="text-sm text-slate-500 mb-6">
               Choose which notifications you&apos;d like to receive via email
             </p>
 
@@ -815,11 +848,11 @@ export default function PortalSettingsPage() {
               {NOTIFICATION_OPTIONS.map((option) => (
                 <div
                   key={option.id}
-                  className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0"
+                  className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0"
                 >
                   <div className="flex-1 pr-4">
-                    <p className="font-medium text-gray-900">{option.label}</p>
-                    <p className="text-sm text-gray-500">{option.description}</p>
+                    <p className="font-medium text-slate-900">{option.label}</p>
+                    <p className="text-sm text-slate-500">{option.description}</p>
                   </div>
                   <Toggle
                     checked={notificationSettings[option.id]}
@@ -832,16 +865,16 @@ export default function PortalSettingsPage() {
           </Card>
 
           {/* Save Note */}
-          <Card className="bg-blue-50 border-blue-100">
+          <Card className="bg-cyan-50 border-cyan-100">
             <div className="flex items-start gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Bell className="w-5 h-5 text-blue-600" />
+              <div className="p-2 bg-cyan-100 rounded-lg">
+                <Bell className="w-5 h-5 text-cyan-600" />
               </div>
               <div>
-                <h3 className="font-medium text-gray-900">
+                <h3 className="font-medium text-slate-900">
                   Notification preferences are saved automatically
                 </h3>
-                <p className="text-sm text-gray-600 mt-1">
+                <p className="text-sm text-slate-600 mt-1">
                   Changes to your notification settings will take effect immediately.
                   You can update these preferences at any time.
                 </p>
@@ -867,16 +900,16 @@ export default function PortalSettingsPage() {
             </div>
           ) : teamMembers.length > 0 ? (
             <Card>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              <h2 className="text-lg font-semibold text-slate-900 mb-4">
                 Team Members ({teamMembers.length})
               </h2>
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-slate-100">
                 {teamMembers.map((member) => (
                   <div key={member.id} className="py-4 first:pt-0 last:pb-0">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">
+                          <span className="font-medium text-slate-900">
                             {member.user?.full_name || "Unnamed User"}
                           </span>
                           <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getRoleBadgeColor(member.role)}`}>
@@ -888,10 +921,10 @@ export default function PortalSettingsPage() {
                             </span>
                           )}
                           {member.user_id === user?.id && (
-                            <span className="text-xs text-gray-500">(You)</span>
+                            <span className="text-xs text-slate-500">(You)</span>
                           )}
                         </div>
-                        <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+                        <div className="flex items-center gap-4 mt-1 text-sm text-slate-500">
                           {member.user?.email && (
                             <span className="flex items-center gap-1">
                               <Mail className="w-3.5 h-3.5" />
@@ -906,7 +939,7 @@ export default function PortalSettingsPage() {
                           )}
                         </div>
                         {member.user?.title && (
-                          <p className="text-sm text-gray-500 mt-0.5">{member.user.title}</p>
+                          <p className="text-sm text-slate-500 mt-0.5">{member.user.title}</p>
                         )}
                       </div>
 
@@ -943,8 +976,8 @@ export default function PortalSettingsPage() {
             </Card>
           ) : (
             <Card>
-              <div className="text-center py-12 text-gray-500">
-                <Users className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <div className="text-center py-12 text-slate-500">
+                <Users className="w-12 h-12 mx-auto mb-3 text-slate-300" />
                 <p className="font-medium">No team members yet</p>
                 <p className="text-sm mt-1 mb-4">
                   Add team members to give them access to your company portal
@@ -958,14 +991,14 @@ export default function PortalSettingsPage() {
           )}
 
           {/* Role Permissions Info */}
-          <Card className="bg-gray-50 border-gray-200">
+          <Card className="bg-slate-50 border-slate-200">
             <div className="flex items-start gap-3">
-              <div className="p-2 bg-gray-100 rounded-lg">
-                <Shield className="w-5 h-5 text-gray-600" />
+              <div className="p-2 bg-slate-100 rounded-lg">
+                <Shield className="w-5 h-5 text-slate-600" />
               </div>
               <div>
-                <h3 className="font-medium text-gray-900">Role Permissions</h3>
-                <ul className="text-sm text-gray-600 mt-2 space-y-1">
+                <h3 className="font-medium text-slate-900">Role Permissions</h3>
+                <ul className="text-sm text-slate-600 mt-2 space-y-1">
                   <li><strong>Owner:</strong> Full access including team management</li>
                   <li><strong>Admin:</strong> Manage orders, inventory, and team members</li>
                   <li><strong>Member:</strong> Create orders and view inventory</li>
@@ -985,13 +1018,13 @@ export default function PortalSettingsPage() {
         size="lg"
       >
         {/* Mode Toggle */}
-        <div className="flex border-b border-gray-200 -mx-4 -mt-4 mb-4">
+        <div className="flex border-b border-slate-200 -mx-4 -mt-4 mb-4">
           <button
             onClick={() => { setAddUserMode("invite"); setUserError(""); setUserSuccess(""); }}
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
               addUserMode === "invite"
-                ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
-                : "text-gray-500 hover:text-gray-700"
+                ? "text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50"
+                : "text-slate-500 hover:text-slate-700"
             }`}
           >
             Send Invite
@@ -1000,8 +1033,8 @@ export default function PortalSettingsPage() {
             onClick={() => { setAddUserMode("existing"); setUserError(""); setUserSuccess(""); }}
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
               addUserMode === "existing"
-                ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
-                : "text-gray-500 hover:text-gray-700"
+                ? "text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50"
+                : "text-slate-500 hover:text-slate-700"
             }`}
           >
             Add Existing
@@ -1026,7 +1059,7 @@ export default function PortalSettingsPage() {
         {addUserMode === "invite" && (
           <form onSubmit={handleInviteUser}>
             <div className="space-y-4">
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-slate-500">
                 Send an email invitation. The user will set their own password when they accept.
               </p>
 
@@ -1084,7 +1117,7 @@ export default function PortalSettingsPage() {
               />
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-6 mt-6 border-t border-gray-200">
+            <div className="flex items-center justify-end gap-3 pt-6 mt-6 border-t border-slate-200">
               <Button variant="secondary" onClick={resetUserForm} type="button">
                 Cancel
               </Button>
@@ -1112,7 +1145,7 @@ export default function PortalSettingsPage() {
         {addUserMode === "existing" && (
           <form onSubmit={handleAddExistingUser}>
             <div className="space-y-4">
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-slate-500">
                 Add someone who already has a portal account to your team.
               </p>
 
@@ -1136,7 +1169,7 @@ export default function PortalSettingsPage() {
               />
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-6 mt-6 border-t border-gray-200">
+            <div className="flex items-center justify-end gap-3 pt-6 mt-6 border-t border-slate-200">
               <Button variant="secondary" onClick={resetUserForm} type="button">
                 Cancel
               </Button>
@@ -1148,6 +1181,18 @@ export default function PortalSettingsPage() {
           </form>
         )}
       </Modal>
+
+      {/* Confirm Dialog */}
+      {confirmDialog && (
+        <ConfirmDialog
+          isOpen={confirmDialog.open}
+          onClose={() => setConfirmDialog(null)}
+          onConfirm={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }}
+          title={confirmDialog.title}
+          description={confirmDialog.description}
+          variant={confirmDialog.variant}
+        />
+      )}
     </div>
   );
 }

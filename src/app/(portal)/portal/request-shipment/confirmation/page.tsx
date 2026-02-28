@@ -23,7 +23,7 @@ interface OrderDetails {
   ship_to_address2: string | null;
   ship_to_city: string;
   ship_to_state: string;
-  ship_to_postal_code: string;
+  ship_to_zip: string;
   ship_to_country: string;
   is_rush: boolean;
   items: {
@@ -63,7 +63,7 @@ export default function ShipmentConfirmationPage() {
           ship_to_address2,
           ship_to_city,
           ship_to_state,
-          ship_to_postal_code,
+          ship_to_zip,
           ship_to_country,
           is_rush,
           items:outbound_items (
@@ -94,7 +94,7 @@ export default function ShipmentConfirmationPage() {
         ship_to_address2: data.ship_to_address2,
         ship_to_city: data.ship_to_city,
         ship_to_state: data.ship_to_state,
-        ship_to_postal_code: data.ship_to_postal_code,
+        ship_to_zip: data.ship_to_zip,
         ship_to_country: data.ship_to_country,
         is_rush: data.is_rush || false,
         items: (data.items || []).map((item: { id: string; qty_requested: number; product: { name: string; sku: string } | { name: string; sku: string }[] }) => {
@@ -213,7 +213,7 @@ export default function ShipmentConfirmationPage() {
             <p className="text-gray-900">{order.ship_to_address2}</p>
           )}
           <p className="text-gray-900">
-            {order.ship_to_city}, {order.ship_to_state} {order.ship_to_postal_code}
+            {order.ship_to_city}, {order.ship_to_state} {order.ship_to_zip}
           </p>
           <p className="text-gray-500">{order.ship_to_country}</p>
         </div>

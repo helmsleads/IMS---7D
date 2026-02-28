@@ -22,6 +22,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
+import { handleApiError } from "@/lib/utils/error-handler";
 import Card from "@/components/ui/Card";
 import {
   getMyProfitability,
@@ -302,6 +303,7 @@ export default function PortalProfitabilityPage() {
           total,
         });
       } catch (err) {
+        handleApiError(err);
         console.error("Failed to fetch profitability data:", err);
       } finally {
         setLoading(false);
@@ -322,6 +324,7 @@ export default function PortalProfitabilityPage() {
         const data = await getMyProductValues(client.id);
         setProductValues(data);
       } catch (err) {
+        handleApiError(err);
         console.error("Failed to fetch product values:", err);
       } finally {
         setProductValuesLoading(false);
@@ -402,6 +405,7 @@ export default function PortalProfitabilityPage() {
       );
       setEditedValues({});
     } catch (err) {
+      handleApiError(err);
       console.error("Failed to save product values:", err);
     } finally {
       setSaving(false);
@@ -478,6 +482,7 @@ export default function PortalProfitabilityPage() {
         setEditedValues(newEdits);
         setImportError(null);
       } catch (err) {
+        handleApiError(err);
         setImportError("Failed to parse CSV file");
       }
     };
@@ -534,14 +539,14 @@ export default function PortalProfitabilityPage() {
   }) => (
     <th
       onClick={() => handleSort(field)}
-      className={`py-3 px-4 text-sm font-medium text-gray-500 cursor-pointer hover:text-gray-700 ${
+      className={`py-3 px-4 text-sm font-medium text-slate-500 cursor-pointer hover:text-slate-700 ${
         align === "right" ? "text-right" : "text-left"
       }`}
     >
       <span className="inline-flex items-center gap-1">
         {label}
         {sortField === field && (
-          <span className="text-blue-600">
+          <span className="text-cyan-600">
             {sortDirection === "asc" ? "↑" : "↓"}
           </span>
         )}
@@ -552,7 +557,7 @@ export default function PortalProfitabilityPage() {
   if (loading && !summary) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+        <div className="animate-spin w-8 h-8 border-4 border-cyan-600 border-t-transparent rounded-full"></div>
       </div>
     );
   }
@@ -562,22 +567,22 @@ export default function PortalProfitabilityPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Profitability</h1>
-          <p className="text-gray-500 mt-1">
+          <h1 className="text-2xl font-semibold text-slate-900">My Profitability</h1>
+          <p className="text-slate-500 mt-1">
             Track your revenue, costs, and margins
           </p>
         </div>
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-slate-200">
         <nav className="flex gap-6">
           <button
             onClick={() => setActiveTab("summary")}
             className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "summary"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                ? "border-cyan-600 text-cyan-600"
+                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}
           >
             Summary
@@ -586,8 +591,8 @@ export default function PortalProfitabilityPage() {
             onClick={() => setActiveTab("product_values")}
             className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "product_values"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                ? "border-cyan-600 text-cyan-600"
+                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}
           >
             My Product Values
@@ -603,13 +608,13 @@ export default function PortalProfitabilityPage() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           {/* Quick Period Buttons */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-gray-500 mr-2">Quick:</span>
+            <span className="text-sm font-medium text-slate-500 mr-2">Quick:</span>
             <button
               onClick={() => handleQuickPeriod("this_month")}
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 quickPeriod === "this_month"
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  ? "bg-cyan-600 text-white"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
               }`}
             >
               This Month
@@ -618,8 +623,8 @@ export default function PortalProfitabilityPage() {
               onClick={() => handleQuickPeriod("last_month")}
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 quickPeriod === "last_month"
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  ? "bg-cyan-600 text-white"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
               }`}
             >
               Last Month
@@ -628,8 +633,8 @@ export default function PortalProfitabilityPage() {
               onClick={() => handleQuickPeriod("this_quarter")}
               className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 quickPeriod === "this_quarter"
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  ? "bg-cyan-600 text-white"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
               }`}
             >
               This Quarter
@@ -641,7 +646,7 @@ export default function PortalProfitabilityPage() {
             {/* Previous Month Button */}
             <button
               onClick={() => navigateMonth("prev")}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
               title="Previous month"
             >
               <ChevronLeft className="w-5 h-5" />
@@ -649,11 +654,11 @@ export default function PortalProfitabilityPage() {
 
             {/* Month Dropdown */}
             <div className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-gray-400" />
+              <Calendar className="w-5 h-5 text-slate-400" />
               <select
                 value={selectedMonth}
                 onChange={(e) => handleMonthChange(parseInt(e.target.value))}
-                className="px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+                className="px-3 py-2 border border-slate-300 rounded-lg bg-white focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-cyan-500 text-sm font-medium"
               >
                 {MONTHS.map((month, index) => (
                   <option key={month} value={index}>
@@ -666,7 +671,7 @@ export default function PortalProfitabilityPage() {
               <select
                 value={selectedYear}
                 onChange={(e) => handleYearChange(parseInt(e.target.value))}
-                className="px-3 py-2 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium"
+                className="px-3 py-2 border border-slate-300 rounded-lg bg-white focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-cyan-500 text-sm font-medium"
               >
                 {getYearOptions().map((year) => (
                   <option key={year} value={year}>
@@ -679,7 +684,7 @@ export default function PortalProfitabilityPage() {
             {/* Next Month Button */}
             <button
               onClick={() => navigateMonth("next")}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
               title="Next month"
             >
               <ChevronRight className="w-5 h-5" />
@@ -688,10 +693,10 @@ export default function PortalProfitabilityPage() {
         </div>
 
         {/* Current Period Display */}
-        <div className="mt-4 pt-4 border-t border-gray-200">
-          <p className="text-sm text-gray-500">
+        <div className="mt-4 pt-4 border-t border-slate-200">
+          <p className="text-sm text-slate-500">
             Showing data for:{" "}
-            <span className="font-semibold text-gray-900">{getPeriodLabel()}</span>
+            <span className="font-semibold text-slate-900">{getPeriodLabel()}</span>
           </p>
         </div>
       </Card>
@@ -703,11 +708,11 @@ export default function PortalProfitabilityPage() {
           <Card>
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm text-gray-500">Total Sales</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
+                <p className="text-sm text-slate-500">Total Sales</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">
                   {formatCurrency(totalSales)}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-slate-400 mt-1">
                   Revenue from shipped orders
                 </p>
               </div>
@@ -721,11 +726,11 @@ export default function PortalProfitabilityPage() {
           <Card>
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm text-gray-500">Product Cost</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
+                <p className="text-sm text-slate-500">Product Cost</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">
                   {formatCurrency(productCost)}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-slate-400 mt-1">
                   Your cost of goods
                 </p>
               </div>
@@ -739,43 +744,43 @@ export default function PortalProfitabilityPage() {
           <Card>
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm text-gray-500">7D Costs</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
+                <p className="text-sm text-slate-500">7D Costs</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">
                   {formatCurrency(sevenDTotal)}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-slate-400 mt-1">
                   All warehouse fees
                 </p>
               </div>
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Building2 className="w-5 h-5 text-blue-600" />
+              <div className="p-2 bg-cyan-100 rounded-lg">
+                <Building2 className="w-5 h-5 text-cyan-600" />
               </div>
             </div>
             {/* 7D Costs Breakdown */}
-            <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5">
+            <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
               <div className="flex justify-between text-xs">
-                <span className="text-gray-500">Storage fees</span>
-                <span className="text-gray-700">{formatCurrency(sevenDCosts.storage)}</span>
+                <span className="text-slate-500">Storage fees</span>
+                <span className="text-slate-700">{formatCurrency(sevenDCosts.storage)}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-gray-500">Fulfillment fees</span>
-                <span className="text-gray-700">{formatCurrency(sevenDCosts.fulfillment)}</span>
+                <span className="text-slate-500">Fulfillment fees</span>
+                <span className="text-slate-700">{formatCurrency(sevenDCosts.fulfillment)}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-gray-500">Shipping charges</span>
-                <span className="text-gray-700">{formatCurrency(sevenDCosts.shipping)}</span>
+                <span className="text-slate-500">Shipping charges</span>
+                <span className="text-slate-700">{formatCurrency(sevenDCosts.shipping)}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-gray-500">Supplies used</span>
-                <span className="text-gray-700">{formatCurrency(sevenDCosts.supplies)}</span>
+                <span className="text-slate-500">Supplies used</span>
+                <span className="text-slate-700">{formatCurrency(sevenDCosts.supplies)}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-gray-500">Add-on fees</span>
-                <span className="text-gray-700">{formatCurrency(sevenDCosts.addons)}</span>
+                <span className="text-slate-500">Add-on fees</span>
+                <span className="text-slate-700">{formatCurrency(sevenDCosts.addons)}</span>
               </div>
-              <div className="flex justify-between text-xs pt-1.5 border-t border-gray-100 font-medium">
-                <span className="text-gray-700">Total</span>
-                <span className="text-gray-900">{formatCurrency(sevenDCosts.total)}</span>
+              <div className="flex justify-between text-xs pt-1.5 border-t border-slate-100 font-medium">
+                <span className="text-slate-700">Total</span>
+                <span className="text-slate-900">{formatCurrency(sevenDCosts.total)}</span>
               </div>
             </div>
           </Card>
@@ -784,7 +789,7 @@ export default function PortalProfitabilityPage() {
           <Card>
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm text-gray-500">Net Profit</p>
+                <p className="text-sm text-slate-500">Net Profit</p>
                 <p
                   className={`text-2xl font-bold mt-1 ${
                     netProfit >= 0 ? "text-green-600" : "text-red-600"
@@ -792,7 +797,7 @@ export default function PortalProfitabilityPage() {
                 >
                   {formatCurrency(netProfit)}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-slate-400 mt-1">
                   Sales − costs − 7D fees
                 </p>
               </div>
@@ -814,7 +819,7 @@ export default function PortalProfitabilityPage() {
           <Card>
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm text-gray-500">Net Margin</p>
+                <p className="text-sm text-slate-500">Net Margin</p>
                 <p
                   className={`text-2xl font-bold mt-1 ${
                     netMarginPercent >= 15
@@ -826,7 +831,7 @@ export default function PortalProfitabilityPage() {
                 >
                   {formatPercent(netMarginPercent)}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-slate-400 mt-1">
                   Net profit ÷ sales
                 </p>
               </div>
@@ -841,25 +846,25 @@ export default function PortalProfitabilityPage() {
       {/* Activity Stats */}
       {summary && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="bg-gray-50 rounded-lg p-4 text-center">
-            <p className="text-2xl font-bold text-gray-900">{formatNumber(summary.orderCount)}</p>
-            <p className="text-sm text-gray-500">Orders Shipped</p>
+          <div className="bg-slate-50 rounded-lg p-4 text-center">
+            <p className="text-2xl font-bold text-slate-900">{formatNumber(summary.orderCount)}</p>
+            <p className="text-sm text-slate-500">Orders Shipped</p>
           </div>
-          <div className="bg-gray-50 rounded-lg p-4 text-center">
-            <p className="text-2xl font-bold text-gray-900">{formatNumber(summary.itemsShipped)}</p>
-            <p className="text-sm text-gray-500">Items Shipped</p>
+          <div className="bg-slate-50 rounded-lg p-4 text-center">
+            <p className="text-2xl font-bold text-slate-900">{formatNumber(summary.itemsShipped)}</p>
+            <p className="text-sm text-slate-500">Items Shipped</p>
           </div>
-          <div className="bg-gray-50 rounded-lg p-4 text-center">
-            <p className="text-2xl font-bold text-gray-900">
+          <div className="bg-slate-50 rounded-lg p-4 text-center">
+            <p className="text-2xl font-bold text-slate-900">
               {summary.orderCount > 0 ? formatCurrency(totalSales / summary.orderCount) : "$0.00"}
             </p>
-            <p className="text-sm text-gray-500">Avg Order Value</p>
+            <p className="text-sm text-slate-500">Avg Order Value</p>
           </div>
-          <div className="bg-gray-50 rounded-lg p-4 text-center">
-            <p className="text-2xl font-bold text-gray-900">
+          <div className="bg-slate-50 rounded-lg p-4 text-center">
+            <p className="text-2xl font-bold text-slate-900">
               {summary.orderCount > 0 ? formatCurrency(netProfit / summary.orderCount) : "$0.00"}
             </p>
-            <p className="text-sm text-gray-500">Profit per Order</p>
+            <p className="text-sm text-slate-500">Profit per Order</p>
           </div>
         </div>
       )}
@@ -868,17 +873,17 @@ export default function PortalProfitabilityPage() {
       <Card>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">
+            <h2 className="text-lg font-semibold text-slate-900">
               Product Breakdown
             </h2>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-slate-500">
               {products.length} product{products.length !== 1 ? "s" : ""} • Sort by profit or margin
             </p>
           </div>
           {products.length > 0 && (
             <button
               onClick={handleExportCSV}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium"
             >
               <Download className="w-4 h-4" />
               Export CSV
@@ -888,13 +893,13 @@ export default function PortalProfitabilityPage() {
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <div className="animate-spin w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+            <div className="animate-spin w-6 h-6 border-2 border-cyan-600 border-t-transparent rounded-full"></div>
           </div>
         ) : products.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-200">
+                <tr className="border-b border-slate-200">
                   <SortHeader field="productName" label="Product" />
                   <SortHeader field="totalQuantity" label="Units Sold" align="right" />
                   <SortHeader field="totalRevenue" label="Sales" align="right" />
@@ -908,28 +913,28 @@ export default function PortalProfitabilityPage() {
                 {sortedProducts.map((product) => (
                   <tr
                     key={product.productId}
-                    className="border-b border-gray-100 last:border-0 hover:bg-gray-50"
+                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
                   >
                     <td className="py-3 px-4">
                       <div>
-                        <span className="font-medium text-gray-900 block">
+                        <span className="font-medium text-slate-900 block">
                           {product.productName}
                         </span>
-                        <span className="font-mono text-xs text-gray-500">
+                        <span className="font-mono text-xs text-slate-500">
                           {product.productSku}
                         </span>
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-right text-gray-600">
+                    <td className="py-3 px-4 text-right text-slate-600">
                       {formatNumber(product.totalQuantity)}
                     </td>
-                    <td className="py-3 px-4 text-right text-gray-900 font-medium">
+                    <td className="py-3 px-4 text-right text-slate-900 font-medium">
                       {formatCurrency(product.totalRevenue)}
                     </td>
-                    <td className="py-3 px-4 text-right text-gray-600">
+                    <td className="py-3 px-4 text-right text-slate-600">
                       {formatCurrency(product.totalCost)}
                     </td>
-                    <td className="py-3 px-4 text-right text-gray-600">
+                    <td className="py-3 px-4 text-right text-slate-600">
                       {formatCurrency(product.allocated7DCost)}
                     </td>
                     <td className="py-3 px-4 text-right">
@@ -968,20 +973,20 @@ export default function PortalProfitabilityPage() {
               </tbody>
               {/* Totals Row */}
               <tfoot>
-                <tr className="bg-gray-50 font-medium">
-                  <td className="py-3 px-4 text-gray-700">
+                <tr className="bg-slate-50 font-medium">
+                  <td className="py-3 px-4 text-slate-700">
                     Total
                   </td>
-                  <td className="py-3 px-4 text-right text-gray-900">
+                  <td className="py-3 px-4 text-right text-slate-900">
                     {formatNumber(totalItemsSold)}
                   </td>
-                  <td className="py-3 px-4 text-right text-gray-900">
+                  <td className="py-3 px-4 text-right text-slate-900">
                     {formatCurrency(totalSales)}
                   </td>
-                  <td className="py-3 px-4 text-right text-gray-900">
+                  <td className="py-3 px-4 text-right text-slate-900">
                     {formatCurrency(productCost)}
                   </td>
-                  <td className="py-3 px-4 text-right text-gray-900">
+                  <td className="py-3 px-4 text-right text-slate-900">
                     {formatCurrency(sevenDTotal)}
                   </td>
                   <td className="py-3 px-4 text-right">
@@ -1011,8 +1016,8 @@ export default function PortalProfitabilityPage() {
             </table>
           </div>
         ) : (
-          <div className="text-center py-12 text-gray-500">
-            <Package className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <div className="text-center py-12 text-slate-500">
+            <Package className="w-12 h-12 mx-auto mb-3 text-slate-300" />
             <p className="font-medium">No data for this period</p>
             <p className="text-sm mt-1">
               Try selecting a different time period
@@ -1022,16 +1027,16 @@ export default function PortalProfitabilityPage() {
       </Card>
 
       {/* Info Note */}
-          <Card className="bg-blue-50 border-blue-100">
+          <Card className="bg-cyan-50 border-cyan-100">
             <div className="flex items-start gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <DollarSign className="w-5 h-5 text-blue-600" />
+              <div className="p-2 bg-cyan-100 rounded-lg">
+                <DollarSign className="w-5 h-5 text-cyan-600" />
               </div>
               <div>
-                <h3 className="font-medium text-gray-900">
+                <h3 className="font-medium text-slate-900">
                   About Your Profitability Data
                 </h3>
-                <p className="text-sm text-gray-600 mt-1">
+                <p className="text-sm text-slate-600 mt-1">
                   This report shows profitability based on shipped orders during the
                   selected period. Revenue is calculated from your sale prices, and
                   costs are based on your product cost settings. Contact 7 Degrees if
@@ -1039,7 +1044,7 @@ export default function PortalProfitabilityPage() {
                 </p>
                 <a
                   href="/portal/messages"
-                  className="inline-flex items-center gap-1 mt-3 text-sm font-medium text-blue-600 hover:text-blue-700"
+                  className="inline-flex items-center gap-1 mt-3 text-sm font-medium text-cyan-600 hover:text-cyan-700"
                 >
                   Contact Us
                   <span aria-hidden="true">→</span>
@@ -1056,10 +1061,10 @@ export default function PortalProfitabilityPage() {
           <div className="flex flex-col gap-4 mb-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">
+                <h2 className="text-lg font-semibold text-slate-900">
                   Product Sale Prices & Costs
                 </h2>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-slate-500">
                   Set your sale prices and costs for accurate profitability tracking
                 </p>
               </div>
@@ -1067,7 +1072,7 @@ export default function PortalProfitabilityPage() {
               {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-2">
                 {/* Import CSV */}
-                <label className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium cursor-pointer">
+                <label className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium cursor-pointer">
                   <Upload className="w-4 h-4" />
                   Import CSV
                   <input
@@ -1083,7 +1088,7 @@ export default function PortalProfitabilityPage() {
                   <button
                     onClick={handleDiscardChanges}
                     disabled={saving}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium disabled:opacity-50"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors text-sm font-medium disabled:opacity-50"
                   >
                     <RotateCcw className="w-4 h-4" />
                     Discard
@@ -1094,7 +1099,7 @@ export default function PortalProfitabilityPage() {
                 <button
                   onClick={handleSaveAll}
                   disabled={!hasUnsavedChanges || saving}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Save className="w-4 h-4" />
                   {saving ? "Saving..." : `Save All${hasUnsavedChanges ? ` (${Object.keys(editedValues).length})` : ""}`}
@@ -1105,13 +1110,13 @@ export default function PortalProfitabilityPage() {
             {/* Search and Status */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Search products..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 pr-4 py-2 w-full sm:w-64 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="pl-9 pr-4 py-2 w-full sm:w-64 border border-slate-300 rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-cyan-500 text-sm"
                 />
               </div>
 
@@ -1133,26 +1138,26 @@ export default function PortalProfitabilityPage() {
 
           {productValuesLoading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+              <div className="animate-spin w-6 h-6 border-2 border-cyan-600 border-t-transparent rounded-full"></div>
             </div>
           ) : filteredProductValues.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
                       Product
                     </th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
+                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
                       SKU
                     </th>
-                    <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">
+                    <th className="text-right py-3 px-4 text-sm font-medium text-slate-500">
                       Sale Price
                     </th>
-                    <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">
+                    <th className="text-right py-3 px-4 text-sm font-medium text-slate-500">
                       Cost
                     </th>
-                    <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">
+                    <th className="text-right py-3 px-4 text-sm font-medium text-slate-500">
                       Margin
                     </th>
                   </tr>
@@ -1172,17 +1177,17 @@ export default function PortalProfitabilityPage() {
                     return (
                       <tr
                         key={product.productId}
-                        className={`border-b border-gray-100 last:border-0 ${
-                          isEdited ? "bg-amber-50" : "hover:bg-gray-50"
+                        className={`border-b border-slate-100 last:border-0 ${
+                          isEdited ? "bg-amber-50" : "hover:bg-slate-50"
                         }`}
                       >
                         <td className="py-3 px-4">
-                          <span className="font-medium text-gray-900">
+                          <span className="font-medium text-slate-900">
                             {product.productName}
                           </span>
                         </td>
                         <td className="py-3 px-4">
-                          <span className="font-mono text-sm text-gray-500">
+                          <span className="font-mono text-sm text-slate-500">
                             {product.productSku}
                           </span>
                         </td>
@@ -1196,8 +1201,8 @@ export default function PortalProfitabilityPage() {
                               handleValueChange(product.productId, "salePrice", e.target.value)
                             }
                             placeholder="0.00"
-                            className={`w-28 px-2 py-1.5 text-right border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm ${
-                              isEdited ? "border-amber-400 bg-white" : "border-gray-300"
+                            className={`w-28 px-2 py-1.5 text-right border rounded focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-cyan-500 text-sm ${
+                              isEdited ? "border-amber-400 bg-white" : "border-slate-300"
                             }`}
                           />
                         </td>
@@ -1211,8 +1216,8 @@ export default function PortalProfitabilityPage() {
                               handleValueChange(product.productId, "cost", e.target.value)
                             }
                             placeholder={product.defaultUnitCost.toFixed(2)}
-                            className={`w-28 px-2 py-1.5 text-right border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm ${
-                              isEdited ? "border-amber-400 bg-white" : "border-gray-300"
+                            className={`w-28 px-2 py-1.5 text-right border rounded focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-cyan-500 text-sm ${
+                              isEdited ? "border-amber-400 bg-white" : "border-slate-300"
                             }`}
                           />
                         </td>
@@ -1232,7 +1237,7 @@ export default function PortalProfitabilityPage() {
                               {formatPercent(margin)}
                             </span>
                           ) : (
-                            <span className="text-gray-400">—</span>
+                            <span className="text-slate-400">—</span>
                           )}
                         </td>
                       </tr>
@@ -1242,8 +1247,8 @@ export default function PortalProfitabilityPage() {
               </table>
             </div>
           ) : (
-            <div className="text-center py-12 text-gray-500">
-              <Package className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+            <div className="text-center py-12 text-slate-500">
+              <Package className="w-12 h-12 mx-auto mb-3 text-slate-300" />
               {searchQuery ? (
                 <>
                   <p className="font-medium">No products match "{searchQuery}"</p>
@@ -1261,11 +1266,11 @@ export default function PortalProfitabilityPage() {
           )}
 
           {/* Help Note */}
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg">
-              <DollarSign className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-gray-600">
-                <p className="font-medium text-gray-700 mb-1">
+          <div className="mt-6 pt-6 border-t border-slate-200">
+            <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-lg">
+              <DollarSign className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-slate-600">
+                <p className="font-medium text-slate-700 mb-1">
                   How these values affect your profitability
                 </p>
                 <ul className="list-disc list-inside space-y-1">

@@ -17,6 +17,8 @@ import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
 import Button from "@/components/ui/Button";
 import Spinner from "@/components/ui/Spinner";
+import Alert from "@/components/ui/Alert";
+import { handleApiError } from "@/lib/utils/error-handler";
 import {
   getMyConversations,
   getMyConversation,
@@ -35,6 +37,7 @@ export default function PortalMessagesPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const [alert, setAlert] = useState<{type: 'success' | 'error', message: string} | null>(null);
 
   // New conversation modal
   const [showNewModal, setShowNewModal] = useState(false);
@@ -46,6 +49,14 @@ export default function PortalMessagesPage() {
   const [mobileShowThread, setMobileShowThread] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-dismiss success alerts after 3s
+  useEffect(() => {
+    if (alert?.type === 'success') {
+      const timer = setTimeout(() => setAlert(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [alert]);
 
   useEffect(() => {
     const fetchConversations = async () => {
@@ -61,7 +72,8 @@ export default function PortalMessagesPage() {
           setSelectedConversation(firstConv);
         }
       } catch (err) {
-        console.error("Failed to fetch conversations:", err);
+        const message = handleApiError(err);
+        setAlert({ type: 'error', message });
       } finally {
         setLoading(false);
       }
@@ -90,7 +102,8 @@ export default function PortalMessagesPage() {
         prev.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c))
       );
     } catch (err) {
-      console.error("Failed to fetch conversation:", err);
+      const message = handleApiError(err);
+      setAlert({ type: 'error', message });
     } finally {
       setLoadingMessages(false);
     }
@@ -130,7 +143,8 @@ export default function PortalMessagesPage() {
 
       setNewMessage("");
     } catch (err) {
-      console.error("Failed to send message:", err);
+      const message = handleApiError(err);
+      setAlert({ type: 'error', message: `Failed to send message: ${message}` });
     } finally {
       setSending(false);
     }
@@ -171,7 +185,8 @@ export default function PortalMessagesPage() {
       setNewSubject("");
       setNewContent("");
     } catch (err) {
-      console.error("Failed to start conversation:", err);
+      const message = handleApiError(err);
+      setAlert({ type: 'error', message: `Failed to start conversation: ${message}` });
     } finally {
       setCreating(false);
     }
@@ -259,11 +274,20 @@ export default function PortalMessagesPage() {
 
   return (
     <div className="space-y-6">
+      {/* Alert Banner */}
+      {alert && (
+        <Alert
+          type={alert.type}
+          message={alert.message}
+          onClose={() => setAlert(null)}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
-          <p className="text-gray-500 mt-1">
+          <h1 className="text-2xl font-semibold text-slate-900">Messages</h1>
+          <p className="text-slate-500 mt-1">
             Contact the 7 Degrees team
           </p>
         </div>
@@ -274,16 +298,16 @@ export default function PortalMessagesPage() {
       </div>
 
       {/* Split View Container */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden min-h-[600px] flex">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden min-h-[600px] flex">
         {/* Conversations List */}
         <div
-          className={`w-full md:w-80 lg:w-96 border-r border-gray-200 flex flex-col ${
+          className={`w-full md:w-80 lg:w-96 border-r border-slate-200 flex flex-col ${
             mobileShowThread ? "hidden md:flex" : "flex"
           }`}
         >
           {/* List Header */}
-          <div className="p-4 border-b border-gray-200 bg-gray-50">
-            <p className="font-medium text-gray-700">
+          <div className="p-4 border-b border-slate-200 bg-slate-50">
+            <p className="font-medium text-slate-700">
               {conversations.length} conversation
               {conversations.length !== 1 ? "s" : ""}
             </p>
@@ -296,9 +320,9 @@ export default function PortalMessagesPage() {
                 <button
                   key={conv.id}
                   onClick={() => handleSelectConversation(conv.id)}
-                  className={`w-full text-left p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                  className={`w-full text-left p-4 border-b border-slate-100 hover:bg-slate-50 transition-colors ${
                     selectedConversation?.id === conv.id
-                      ? "bg-blue-50 border-l-4 border-l-blue-600"
+                      ? "bg-cyan-50 border-l-4 border-l-cyan-600"
                       : ""
                   }`}
                 >
@@ -306,19 +330,19 @@ export default function PortalMessagesPage() {
                     <p
                       className={`font-medium truncate ${
                         conv.unread_count > 0
-                          ? "text-gray-900"
-                          : "text-gray-700"
+                          ? "text-slate-900"
+                          : "text-slate-700"
                       }`}
                     >
                       {conv.subject}
                     </p>
                     {conv.unread_count > 0 && (
-                      <span className="flex-shrink-0 w-5 h-5 bg-blue-600 text-white text-xs rounded-full flex items-center justify-center">
+                      <span className="flex-shrink-0 w-5 h-5 bg-cyan-600 text-white text-xs rounded-full flex items-center justify-center">
                         {conv.unread_count}
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-gray-500 truncate mt-1">
+                  <p className="text-sm text-slate-500 truncate mt-1">
                     {conv.last_message_preview || "No messages yet"}
                   </p>
                   <div className="flex items-center justify-between mt-2">
@@ -326,12 +350,12 @@ export default function PortalMessagesPage() {
                       className={`text-xs px-2 py-0.5 rounded-full ${
                         conv.status === "open"
                           ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-600"
+                          : "bg-slate-100 text-slate-600"
                       }`}
                     >
                       {conv.status === "open" ? "Open" : "Closed"}
                     </span>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-slate-400">
                       {conv.last_message_at
                         ? formatTime(conv.last_message_at)
                         : formatTime(conv.created_at)}
@@ -341,16 +365,16 @@ export default function PortalMessagesPage() {
               ))
             ) : (
               <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                <MessageSquare className="w-12 h-12 text-gray-300 mb-3" />
-                <p className="text-gray-500 font-medium">No conversations yet</p>
-                <p className="text-sm text-gray-400 mt-1">
+                <MessageSquare className="w-12 h-12 text-slate-300 mb-3" />
+                <p className="text-slate-500 font-medium">No conversations yet</p>
+                <p className="text-sm text-slate-400 mt-1">
                   Start a new conversation to contact support
                 </p>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setShowNewModal(true)}
-                  className="mt-4 text-blue-600 hover:text-blue-700"
+                  className="mt-4 text-cyan-600 hover:text-cyan-700"
                 >
                   Start a conversation
                 </Button>
@@ -368,18 +392,18 @@ export default function PortalMessagesPage() {
           {selectedConversation ? (
             <>
               {/* Thread Header */}
-              <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center gap-3">
+              <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
                 <button
                   onClick={() => setMobileShowThread(false)}
-                  className="md:hidden p-2 -ml-2 hover:bg-gray-200 rounded-lg"
+                  className="md:hidden p-2 -ml-2 hover:bg-slate-200 rounded-lg"
                 >
-                  <ChevronLeft className="w-5 h-5 text-gray-600" />
+                  <ChevronLeft className="w-5 h-5 text-slate-600" />
                 </button>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900 truncate">
+                  <p className="font-semibold text-slate-900 truncate">
                     {selectedConversation.subject}
                   </p>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-slate-500">
                     {selectedConversation.status === "open" ? (
                       <span className="flex items-center gap-1">
                         <CheckCircle className="w-3 h-3 text-green-500" />
@@ -387,7 +411,7 @@ export default function PortalMessagesPage() {
                       </span>
                     ) : (
                       <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-gray-400" />
+                        <Clock className="w-3 h-3 text-slate-400" />
                         Closed
                       </span>
                     )}
@@ -407,11 +431,11 @@ export default function PortalMessagesPage() {
                       <div key={groupIndex}>
                         {/* Date Divider */}
                         <div className="flex items-center gap-4 my-4">
-                          <div className="flex-1 h-px bg-gray-200" />
-                          <span className="text-xs text-gray-400 font-medium">
+                          <div className="flex-1 h-px bg-slate-200" />
+                          <span className="text-xs text-slate-400 font-medium">
                             {formatMessageDate(group.date)}
                           </span>
-                          <div className="flex-1 h-px bg-gray-200" />
+                          <div className="flex-1 h-px bg-slate-200" />
                         </div>
 
                         {/* Messages in this group */}
@@ -428,14 +452,14 @@ export default function PortalMessagesPage() {
                               {/* 7D Support Message - Left side */}
                               {message.sender_type !== "client" && (
                                 <div className="flex items-end gap-2 max-w-[80%]">
-                                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                                  <div className="w-8 h-8 bg-cyan-600 rounded-full flex items-center justify-center flex-shrink-0">
                                     <span className="text-white text-xs font-bold">7D</span>
                                   </div>
-                                  <div className="bg-gray-100 text-gray-900 rounded-2xl rounded-bl-md px-4 py-2.5">
+                                  <div className="bg-slate-100 text-slate-900 rounded-2xl rounded-bl-md px-4 py-2.5">
                                     <p className="whitespace-pre-wrap">
                                       {message.content}
                                     </p>
-                                    <p className="text-xs text-gray-400 mt-1">
+                                    <p className="text-xs text-slate-400 mt-1">
                                       {formatMessageTime(message.created_at)}
                                     </p>
                                   </div>
@@ -444,21 +468,21 @@ export default function PortalMessagesPage() {
 
                               {/* Client Message - Right side */}
                               {message.sender_type === "client" && (
-                                <div className="bg-blue-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%]">
+                                <div className="bg-cyan-600 text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%]">
                                   <p className="whitespace-pre-wrap">
                                     {message.content}
                                   </p>
                                   <div className="flex items-center justify-end gap-1 mt-1">
-                                    <span className="text-xs text-blue-200">
+                                    <span className="text-xs text-cyan-200">
                                       {formatMessageTime(message.created_at)}
                                     </span>
                                     {/* Read status indicator */}
                                     {message.read_at ? (
-                                      <span className="flex text-blue-200" title="Read">
+                                      <span className="flex text-cyan-200" title="Read">
                                         <CheckCircle className="w-3.5 h-3.5" />
                                       </span>
                                     ) : (
-                                      <span className="text-blue-300" title="Sent">
+                                      <span className="text-cyan-300" title="Sent">
                                         <Check className="w-3.5 h-3.5" />
                                       </span>
                                     )}
@@ -477,7 +501,7 @@ export default function PortalMessagesPage() {
 
               {/* Message Input */}
               {selectedConversation.status === "open" ? (
-                <div className="p-4 border-t border-gray-200 bg-white">
+                <div className="p-4 border-t border-slate-200 bg-white">
                   <div className="flex items-end gap-3">
                     <textarea
                       value={newMessage}
@@ -490,24 +514,24 @@ export default function PortalMessagesPage() {
                       }}
                       placeholder="Type your message..."
                       rows={1}
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                      className="flex-1 px-4 py-3 border border-slate-300 rounded-xl focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-cyan-500 resize-none"
                       style={{ minHeight: "48px", maxHeight: "120px" }}
                     />
                     <button
                       onClick={handleSendMessage}
                       disabled={!newMessage.trim() || sending}
-                      className="p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="p-3 bg-cyan-600 text-white rounded-xl hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       <Send className="w-5 h-5" />
                     </button>
                   </div>
-                  <p className="text-xs text-gray-400 mt-2">
+                  <p className="text-xs text-slate-400 mt-2">
                     Press Enter to send, Shift+Enter for new line
                   </p>
                 </div>
               ) : (
-                <div className="p-4 border-t border-gray-200 bg-gray-50">
-                  <div className="flex items-center gap-2 text-gray-500">
+                <div className="p-4 border-t border-slate-200 bg-slate-50">
+                  <div className="flex items-center gap-2 text-slate-500">
                     <AlertCircle className="w-4 h-4" />
                     <p className="text-sm">
                       This conversation is closed. Start a new conversation if
@@ -519,11 +543,11 @@ export default function PortalMessagesPage() {
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-              <MessageSquare className="w-16 h-16 text-gray-300 mb-4" />
-              <p className="text-gray-500 font-medium">
+              <MessageSquare className="w-16 h-16 text-slate-300 mb-4" />
+              <p className="text-slate-500 font-medium">
                 Select a conversation to view messages
               </p>
-              <p className="text-sm text-gray-400 mt-1">
+              <p className="text-sm text-slate-400 mt-1">
                 Or start a new conversation with the team
               </p>
               <Button size="sm" onClick={() => setShowNewModal(true)} className="mt-4">

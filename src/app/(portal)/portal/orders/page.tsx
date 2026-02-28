@@ -12,10 +12,12 @@ import {
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
 import { formatDate } from "@/lib/utils/formatting";
+import { handleApiError } from "@/lib/utils/error-handler";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import Spinner from "@/components/ui/Spinner";
 import StatusBadge from "@/components/ui/StatusBadge";
+import FetchError from "@/components/ui/FetchError";
 
 interface Order {
   id: string;
@@ -46,6 +48,7 @@ export default function PortalOrdersPage() {
   const { client } = useClient();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -57,49 +60,57 @@ export default function PortalOrdersPage() {
       setRefreshing(true);
     }
 
-    const supabase = createClient();
+    try {
+      setError(null);
+      const supabase = createClient();
 
-    const { data } = await supabase
-      .from("outbound_orders")
-      .select(`
-        id,
-        order_number,
-        status,
-        created_at,
-        updated_at,
-        ship_to_city,
-        ship_to_state,
-        is_rush,
-        tracking_number,
-        preferred_carrier,
-        items:outbound_items (
-          qty_requested
-        )
-      `)
-      .eq("client_id", client.id)
-      .order("created_at", { ascending: false });
+      const { data, error: fetchErr } = await supabase
+        .from("outbound_orders")
+        .select(`
+          id,
+          order_number,
+          status,
+          created_at,
+          updated_at,
+          ship_to_city,
+          ship_to_state,
+          is_rush,
+          tracking_number,
+          preferred_carrier,
+          items:outbound_items (
+            qty_requested
+          )
+        `)
+        .eq("client_id", client.id)
+        .order("created_at", { ascending: false });
 
-    const ordersData = (data || []).map((order) => {
-      const items = order.items as { qty_requested: number }[];
-      return {
-        id: order.id,
-        order_number: order.order_number,
-        status: order.status,
-        created_at: order.created_at,
-        updated_at: order.updated_at,
-        ship_to_city: order.ship_to_city,
-        ship_to_state: order.ship_to_state,
-        is_rush: order.is_rush || false,
-        item_count: items.length,
-        total_units: items.reduce((sum, item) => sum + item.qty_requested, 0),
-        tracking_number: order.tracking_number || null,
-        carrier: order.preferred_carrier || null,
-      };
-    });
+      if (fetchErr) throw fetchErr;
 
-    setOrders(ordersData);
-    setLoading(false);
-    setRefreshing(false);
+      const ordersData = (data || []).map((order) => {
+        const items = order.items as { qty_requested: number }[];
+        return {
+          id: order.id,
+          order_number: order.order_number,
+          status: order.status,
+          created_at: order.created_at,
+          updated_at: order.updated_at,
+          ship_to_city: order.ship_to_city,
+          ship_to_state: order.ship_to_state,
+          is_rush: order.is_rush || false,
+          item_count: items.length,
+          total_units: items.reduce((sum, item) => sum + item.qty_requested, 0),
+          tracking_number: order.tracking_number || null,
+          carrier: order.preferred_carrier || null,
+        };
+      });
+
+      setOrders(ordersData);
+    } catch (err) {
+      setError(handleApiError(err));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
   useEffect(() => {
@@ -147,16 +158,20 @@ export default function PortalOrdersPage() {
     );
   }
 
+  if (error) {
+    return <FetchError message={error} onRetry={() => fetchOrders()} />;
+  }
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Orders</h1>
-          <p className="text-gray-500 mt-1">Track and manage your shipment requests</p>
+          <h1 className="text-2xl font-semibold text-slate-900">My Orders</h1>
+          <p className="text-slate-500 mt-1">Track and manage your shipment requests</p>
         </div>
         <Link href="/portal/request-shipment">
-          <Button variant="primary" className="gap-2 rounded-xl">
+          <Button variant="primary" className="gap-2 rounded-lg">
             <Package className="w-4 h-4" />
             New Shipment
           </Button>
@@ -174,10 +189,10 @@ export default function PortalOrdersPage() {
               key={tab.value}
               onClick={() => setStatusFilter(tab.value)}
               className={`
-                flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors
+                flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
                 ${isActive
-                  ? "bg-blue-600 text-white"
-                  : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                  ? "bg-cyan-600 text-white"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
                 }
               `}
             >
@@ -185,7 +200,7 @@ export default function PortalOrdersPage() {
               <span
                 className={`
                   px-2 py-0.5 rounded-full text-xs
-                  ${isActive ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-600"}
+                  ${isActive ? "bg-cyan-500 text-white" : "bg-slate-100 text-slate-600"}
                 `}
               >
                 {count}
@@ -197,13 +212,13 @@ export default function PortalOrdersPage() {
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 z-10" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 z-10" />
         <Input
           type="text"
           placeholder="Search by order number or city..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10 py-3 rounded-xl border-gray-200"
+          className="pl-10 py-3 rounded-xl border-slate-200"
         />
       </div>
 
@@ -213,14 +228,14 @@ export default function PortalOrdersPage() {
           {filteredOrders.map((order) => (
               <div
                 key={order.id}
-                className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md hover:border-gray-300 transition-all"
+                className="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-md hover:border-slate-300 transition-all"
               >
                 <div className="p-4">
                   {/* Order Header */}
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <div className="flex items-center gap-3 mb-1">
-                        <span className="font-mono font-bold text-lg text-gray-900">
+                        <span className="font-mono font-bold text-lg text-slate-900">
                           {order.order_number}
                         </span>
                         {order.is_rush && (
@@ -229,7 +244,7 @@ export default function PortalOrdersPage() {
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-slate-500">
                         Requested {formatDate(order.created_at, "short")}
                       </p>
                     </div>
@@ -237,29 +252,29 @@ export default function PortalOrdersPage() {
                   </div>
 
                   {/* Order Info Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 py-3 border-t border-gray-100">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 py-3 border-t border-slate-100">
                     <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Items</p>
-                      <p className="font-semibold text-gray-900">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Items</p>
+                      <p className="font-semibold text-slate-900">
                         {order.item_count} product{order.item_count !== 1 ? "s" : ""}
                       </p>
-                      <p className="text-sm text-gray-500">{order.total_units.toLocaleString()} units</p>
+                      <p className="text-sm text-slate-500">{order.total_units.toLocaleString()} units</p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Destination</p>
-                      <p className="font-semibold text-gray-900">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Destination</p>
+                      <p className="font-semibold text-slate-900">
                         {order.ship_to_city}, {order.ship_to_state}
                       </p>
                     </div>
                     {(order.status === "shipped" || order.status === "delivered") && order.tracking_number && (
                       <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Tracking</p>
+                        <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Tracking</p>
                         <div className="flex items-center gap-2">
                           <Truck className="w-4 h-4 text-cyan-600" />
-                          <span className="font-mono text-sm text-gray-900">{order.tracking_number}</span>
+                          <span className="font-mono text-sm text-slate-900">{order.tracking_number}</span>
                         </div>
                         {order.carrier && (
-                          <p className="text-sm text-gray-500">{order.carrier}</p>
+                          <p className="text-sm text-slate-500">{order.carrier}</p>
                         )}
                       </div>
                     )}
@@ -267,12 +282,12 @@ export default function PortalOrdersPage() {
                 </div>
 
                 {/* Card Footer */}
-                <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
-                  <span className="text-xs text-gray-500">
+                <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-xs text-slate-500">
                     Last updated {formatDate(order.updated_at, "short")}
                   </span>
                   <Link href={`/portal/orders/${order.id}`}>
-                    <Button variant="ghost" size="sm" className="gap-1 text-blue-600 hover:text-blue-700 hover:bg-transparent">
+                    <Button variant="ghost" size="sm" className="gap-1 text-cyan-600 hover:text-cyan-700 hover:bg-transparent">
                       View Details
                       <ChevronRight className="w-4 h-4" />
                     </Button>
@@ -282,11 +297,11 @@ export default function PortalOrdersPage() {
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+          <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
           {searchQuery || statusFilter !== "all" ? (
             <>
-              <p className="text-lg text-gray-600">No orders match your filters</p>
+              <p className="text-lg text-slate-600">No orders match your filters</p>
               <Button
                 variant="ghost"
                 size="sm"
@@ -294,16 +309,16 @@ export default function PortalOrdersPage() {
                   setSearchQuery("");
                   setStatusFilter("all");
                 }}
-                className="text-blue-600 hover:text-blue-700 mt-2"
+                className="text-cyan-600 hover:text-cyan-700 mt-2"
               >
                 Clear all filters
               </Button>
             </>
           ) : (
             <>
-              <p className="text-lg text-gray-600 mb-4">No orders yet</p>
+              <p className="text-lg text-slate-600 mb-4">No orders yet</p>
               <Link href="/portal/request-shipment">
-                <Button variant="primary" className="gap-2 rounded-xl">
+                <Button variant="primary" className="gap-2 rounded-lg">
                   <Package className="w-4 h-4" />
                   Request Your First Shipment
                 </Button>
@@ -314,7 +329,7 @@ export default function PortalOrdersPage() {
       )}
 
       {/* Footer */}
-      <div className="flex items-center justify-between text-sm text-gray-500">
+      <div className="flex items-center justify-between text-sm text-slate-500">
         <span>
           {filteredOrders.length > 0 && (
             <>Showing {filteredOrders.length} of {orders.length} orders</>
@@ -325,7 +340,7 @@ export default function PortalOrdersPage() {
           size="sm"
           onClick={() => fetchOrders(true)}
           disabled={refreshing}
-          className="gap-2 text-blue-600 hover:bg-blue-50"
+          className="gap-2 text-cyan-600 hover:bg-cyan-50"
         >
           <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
           {refreshing ? "Refreshing..." : "Refresh"}

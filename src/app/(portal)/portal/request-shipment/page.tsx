@@ -7,6 +7,7 @@ import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
 import { getMyTemplate, getMyTemplates, PortalTemplate } from "@/lib/api/portal-templates";
 import { getMyServices } from "@/lib/api/portal-services";
+import { handleApiError } from "@/lib/utils/error-handler";
 
 interface ShippingAddress {
   id: string;
@@ -369,7 +370,7 @@ export default function RequestShipmentPage() {
   if (templateLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+        <div className="animate-spin w-8 h-8 border-4 border-cyan-600 border-t-transparent rounded-full"></div>
       </div>
     );
   }
@@ -379,17 +380,17 @@ export default function RequestShipmentPage() {
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Request Shipment</h1>
-          <p className="text-gray-500 mt-1">
+          <h1 className="text-2xl font-semibold text-slate-900">Request Shipment</h1>
+          <p className="text-slate-500 mt-1">
             Create a new outbound order to ship your products
           </p>
           {templateName && (
-            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm">
+            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-cyan-50 text-cyan-700 rounded-lg text-sm">
               <FileText className="w-4 h-4" />
               Using template: <span className="font-medium">{templateName}</span>
               <button
                 onClick={clearTemplate}
-                className="ml-1 p-0.5 hover:bg-blue-100 rounded"
+                className="ml-1 p-0.5 hover:bg-cyan-100 rounded"
                 title="Clear template"
               >
                 <X className="w-3.5 h-3.5" />
@@ -399,7 +400,7 @@ export default function RequestShipmentPage() {
         </div>
         <button
           onClick={openTemplateModal}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
         >
           <FolderOpen className="w-4 h-4" />
           Load from Template
@@ -407,7 +408,7 @@ export default function RequestShipmentPage() {
       </div>
 
       {/* Step Indicator */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
         <div className="flex items-center justify-between">
           {STEPS.map((step, index) => {
             const Icon = step.icon;
@@ -431,8 +432,8 @@ export default function RequestShipmentPage() {
                       ${isCompleted
                         ? "bg-green-600 text-white"
                         : isCurrent
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-100 text-gray-400"
+                        ? "bg-cyan-600 text-white"
+                        : "bg-slate-100 text-slate-400"
                       }
                     `}
                   >
@@ -445,14 +446,14 @@ export default function RequestShipmentPage() {
                   <div className="hidden sm:block text-left">
                     <p
                       className={`text-sm font-medium ${
-                        isCurrent ? "text-blue-600" : isCompleted ? "text-green-600" : "text-gray-400"
+                        isCurrent ? "text-cyan-600" : isCompleted ? "text-green-600" : "text-slate-400"
                       }`}
                     >
                       Step {step.number}
                     </p>
                     <p
                       className={`text-sm ${
-                        isCurrent || isCompleted ? "text-gray-900" : "text-gray-400"
+                        isCurrent || isCompleted ? "text-slate-900" : "text-slate-400"
                       }`}
                     >
                       {step.title}
@@ -465,7 +466,7 @@ export default function RequestShipmentPage() {
                   <div className="flex-1 mx-4">
                     <div
                       className={`h-1 rounded-full transition-colors ${
-                        currentStep > step.number ? "bg-green-600" : "bg-gray-200"
+                        currentStep > step.number ? "bg-green-600" : "bg-slate-200"
                       }`}
                     />
                   </div>
@@ -477,7 +478,7 @@ export default function RequestShipmentPage() {
       </div>
 
       {/* Step Content */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
         {currentStep === 1 && (
           <StepSelectProducts
             onNext={nextStep}
@@ -513,19 +514,19 @@ export default function RequestShipmentPage() {
 
       {/* Template Selection Modal */}
       {showTemplateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Load from Template</h2>
-                <p className="text-sm text-gray-500">Select a template to pre-fill your order</p>
+                <h2 className="text-lg font-semibold text-slate-900">Load from Template</h2>
+                <p className="text-sm text-slate-500">Select a template to pre-fill your order</p>
               </div>
               <button
                 onClick={() => setShowTemplateModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
               >
-                <X className="w-5 h-5 text-gray-500" />
+                <X className="w-5 h-5 text-slate-500" />
               </button>
             </div>
 
@@ -533,13 +534,13 @@ export default function RequestShipmentPage() {
             <div className="flex-1 overflow-y-auto p-4">
               {loadingTemplates ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+                  <div className="animate-spin w-8 h-8 border-4 border-cyan-600 border-t-transparent rounded-full"></div>
                 </div>
               ) : templates.length === 0 ? (
                 <div className="text-center py-12">
-                  <FolderOpen className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                  <p className="text-gray-500">No templates found</p>
-                  <p className="text-sm text-gray-400 mt-1">
+                  <FolderOpen className="w-12 h-12 mx-auto text-slate-300 mb-4" />
+                  <p className="text-slate-500">No templates found</p>
+                  <p className="text-sm text-slate-400 mt-1">
                     Create templates from the Templates page to use them here
                   </p>
                 </div>
@@ -549,20 +550,20 @@ export default function RequestShipmentPage() {
                     <button
                       key={template.id}
                       onClick={() => applyTemplate(template.id)}
-                      className="w-full text-left p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                      className="w-full text-left p-4 rounded-lg border border-slate-200 hover:border-cyan-300 hover:bg-cyan-50 transition-colors"
                     >
                       <div className="flex items-start gap-3">
-                        <div className="p-2 bg-gray-100 rounded-lg">
-                          <FileText className="w-5 h-5 text-gray-600" />
+                        <div className="p-2 bg-slate-100 rounded-lg">
+                          <FileText className="w-5 h-5 text-slate-600" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900">{template.name}</p>
+                          <p className="font-medium text-slate-900">{template.name}</p>
                           {template.description && (
-                            <p className="text-sm text-gray-500 mt-0.5 truncate">
+                            <p className="text-sm text-slate-500 mt-0.5 truncate">
                               {template.description}
                             </p>
                           )}
-                          <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                          <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
                             <span className="flex items-center gap-1">
                               <Package className="w-3.5 h-3.5" />
                               {template.item_count} item{template.item_count !== 1 ? "s" : ""}
@@ -583,10 +584,10 @@ export default function RequestShipmentPage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-gray-200">
+            <div className="p-4 border-t border-slate-200">
               <button
                 onClick={() => setShowTemplateModal(false)}
-                className="w-full px-4 py-2.5 text-gray-700 font-medium rounded-xl border border-gray-300 hover:bg-gray-50 transition-colors"
+                className="w-full px-4 py-2.5 text-slate-700 font-medium rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors"
               >
                 Cancel
               </button>
@@ -741,7 +742,7 @@ function StepSelectProducts({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+        <div className="animate-spin w-8 h-8 border-4 border-cyan-600 border-t-transparent rounded-full"></div>
       </div>
     );
   }
@@ -749,8 +750,8 @@ function StepSelectProducts({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900">Select Products</h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <h2 className="text-lg font-semibold text-slate-900">Select Products</h2>
+        <p className="text-sm text-slate-500 mt-1">
           Choose the products and quantities you want to ship
         </p>
       </div>
@@ -762,23 +763,23 @@ function StepSelectProducts({
           placeholder="Search products..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
         />
       </div>
 
       {/* Product List */}
       {filteredItems.length > 0 ? (
-        <div className="border border-gray-200 rounded-xl overflow-hidden">
+        <div className="border border-slate-200 rounded-xl overflow-hidden">
           <table className="w-full">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-600">
                   Product
                 </th>
-                <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">
+                <th className="text-center py-3 px-4 text-sm font-semibold text-slate-600">
                   Available
                 </th>
-                <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600 w-40">
+                <th className="text-center py-3 px-4 text-sm font-semibold text-slate-600 w-40">
                   Qty to Ship
                 </th>
               </tr>
@@ -793,23 +794,23 @@ function StepSelectProducts({
                 return (
                   <tr
                     key={item.id}
-                    className={`border-b border-gray-100 last:border-0 ${
-                      error ? "bg-red-50" : isSelected ? "bg-blue-50" : "hover:bg-gray-50"
+                    className={`border-b border-slate-100 last:border-0 ${
+                      error ? "bg-red-50" : isSelected ? "bg-cyan-50" : "hover:bg-slate-50"
                     }`}
                   >
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <Package className="w-5 h-5 text-gray-400" />
+                        <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <Package className="w-5 h-5 text-slate-400" />
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900">{item.product_name}</p>
-                          <p className="text-sm text-gray-500 font-mono">{item.sku}</p>
+                          <p className="font-medium text-slate-900">{item.product_name}</p>
+                          <p className="text-sm text-slate-500 font-mono">{item.sku}</p>
                         </div>
                       </div>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <span className="text-gray-600">{item.qty_available.toLocaleString()}</span>
+                      <span className="text-slate-600">{item.qty_available.toLocaleString()}</span>
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex flex-col items-center gap-1">
@@ -817,7 +818,7 @@ function StepSelectProducts({
                           <button
                             onClick={() => handleQtyChange(item, qty - 1)}
                             disabled={qty === 0}
-                            className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             -
                           </button>
@@ -836,16 +837,16 @@ function StepSelectProducts({
                                 setInputErrors(newErrors);
                               }
                             }}
-                            className={`w-16 text-center py-1.5 border rounded-lg focus:outline-none focus:ring-2 ${
+                            className={`w-16 text-center py-1.5 border rounded-lg focus-visible:outline-none focus-visible:ring-2 ${
                               error
-                                ? "border-red-500 focus:ring-red-500 bg-red-50"
-                                : "border-gray-200 focus:ring-blue-500"
+                                ? "border-red-500 focus-visible:ring-red-500 bg-red-50"
+                                : "border-slate-200 focus-visible:ring-cyan-500"
                             }`}
                           />
                           <button
                             onClick={() => handleQtyChange(item, qty + 1)}
                             disabled={qty >= item.qty_available}
-                            className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             +
                           </button>
@@ -865,19 +866,19 @@ function StepSelectProducts({
           </table>
         </div>
       ) : (
-        <div className="border-2 border-dashed border-gray-200 rounded-xl p-12 text-center">
-          <Package className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-          <p className="text-gray-500">
+        <div className="border-2 border-dashed border-slate-200 rounded-xl p-12 text-center">
+          <Package className="w-12 h-12 mx-auto text-slate-300 mb-4" />
+          <p className="text-slate-500">
             {searchQuery ? "No products match your search" : "No products available"}
           </p>
         </div>
       )}
 
       {/* Running Total */}
-      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
         <div>
-          <p className="text-sm text-gray-500">Selected</p>
-          <p className="font-semibold text-gray-900">
+          <p className="text-sm text-slate-500">Selected</p>
+          <p className="font-semibold text-slate-900">
             {totalProducts} product{totalProducts !== 1 ? "s" : ""}, {totalItems.toLocaleString()} unit{totalItems !== 1 ? "s" : ""}
           </p>
         </div>
@@ -900,11 +901,11 @@ function StepSelectProducts({
       )}
 
       {/* Navigation */}
-      <div className="flex justify-end pt-4 border-t border-gray-200">
+      <div className="flex justify-end pt-4 border-t border-slate-200">
         <button
           onClick={onNext}
           disabled={totalProducts === 0 || hasErrors}
-          className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-6 py-2.5 bg-cyan-600 text-white font-medium rounded-lg hover:bg-cyan-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Continue to Shipping
         </button>
@@ -963,8 +964,8 @@ function StepShippingDetails({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900">Shipping Address</h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <h2 className="text-lg font-semibold text-slate-900">Shipping Address</h2>
+        <p className="text-sm text-slate-500 mt-1">
           Select or enter the delivery address for this shipment
         </p>
       </div>
@@ -972,7 +973,7 @@ function StepShippingDetails({
       {/* Address Dropdown - Only show if there are saved addresses */}
       {savedAddresses.length > 0 && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-slate-700 mb-1">
             Ship To
           </label>
           <select
@@ -988,7 +989,7 @@ function StepShippingDetails({
                 }
               }
             }}
-            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
           >
             {savedAddresses.map((address) => (
               <option key={address.id} value={address.id}>
@@ -1003,46 +1004,46 @@ function StepShippingDetails({
 
       {/* Selected Address Preview (when saved address is selected) */}
       {!isNewAddress && savedAddresses.length > 0 && shippingAddress.address_line1 && (
-        <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+        <div className="p-4 bg-cyan-50 border border-cyan-200 rounded-xl">
           <div className="flex items-start gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Building2 className="w-4 h-4 text-blue-600" />
+            <div className="p-2 bg-cyan-100 rounded-lg">
+              <Building2 className="w-4 h-4 text-cyan-600" />
             </div>
             <div className="flex-1">
-              <p className="font-medium text-gray-900">
+              <p className="font-medium text-slate-900">
                 {shippingAddress.label || "Shipping Address"}
                 {shippingAddress.is_default && (
-                  <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
+                  <span className="ml-2 px-2 py-0.5 bg-cyan-100 text-cyan-700 text-xs rounded-full">
                     Default
                   </span>
                 )}
               </p>
-              <p className="text-sm text-gray-600 mt-1">{shippingAddress.address_line1}</p>
+              <p className="text-sm text-slate-600 mt-1">{shippingAddress.address_line1}</p>
               {shippingAddress.address_line2 && (
-                <p className="text-sm text-gray-600">{shippingAddress.address_line2}</p>
+                <p className="text-sm text-slate-600">{shippingAddress.address_line2}</p>
               )}
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-slate-600">
                 {shippingAddress.city}, {shippingAddress.state} {shippingAddress.postal_code}
               </p>
-              <p className="text-sm text-gray-500">{shippingAddress.country}</p>
+              <p className="text-sm text-slate-500">{shippingAddress.country}</p>
             </div>
-            <Check className="w-5 h-5 text-blue-600" />
+            <Check className="w-5 h-5 text-cyan-600" />
           </div>
         </div>
       )}
 
       {/* New Address Form - Show when "Use New Address" is selected OR no saved addresses */}
       {(isNewAddress || savedAddresses.length === 0) && (
-        <div className="space-y-4 p-4 bg-gray-50 border border-gray-200 rounded-xl">
+        <div className="space-y-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-gray-700">New Address Details</p>
+            <p className="text-sm font-medium text-slate-700">New Address Details</p>
             {savedAddresses.length > 0 && (
               <button
                 onClick={() => {
                   // Go back to first saved address
                   setShippingAddress(savedAddresses[0]);
                 }}
-                className="text-sm text-gray-500 hover:text-gray-700"
+                className="text-sm text-slate-500 hover:text-slate-700"
               >
                 Cancel
               </button>
@@ -1051,7 +1052,7 @@ function StepShippingDetails({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
                 Address Line 1 *
               </label>
               <input
@@ -1059,12 +1060,12 @@ function StepShippingDetails({
                 value={shippingAddress.address_line1}
                 onChange={(e) => handleFieldChange("address_line1", e.target.value)}
                 placeholder="Street address"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
               />
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
                 Address Line 2
               </label>
               <input
@@ -1072,12 +1073,12 @@ function StepShippingDetails({
                 value={shippingAddress.address_line2}
                 onChange={(e) => handleFieldChange("address_line2", e.target.value)}
                 placeholder="Apt, suite, unit, etc. (optional)"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
                 City *
               </label>
               <input
@@ -1085,12 +1086,12 @@ function StepShippingDetails({
                 value={shippingAddress.city}
                 onChange={(e) => handleFieldChange("city", e.target.value)}
                 placeholder="City"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
                 State *
               </label>
               <input
@@ -1098,12 +1099,12 @@ function StepShippingDetails({
                 value={shippingAddress.state}
                 onChange={(e) => handleFieldChange("state", e.target.value)}
                 placeholder="State"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
                 Postal Code *
               </label>
               <input
@@ -1111,12 +1112,12 @@ function StepShippingDetails({
                 value={shippingAddress.postal_code}
                 onChange={(e) => handleFieldChange("postal_code", e.target.value)}
                 placeholder="ZIP / Postal code"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
                 Country
               </label>
               <input
@@ -1124,7 +1125,7 @@ function StepShippingDetails({
                 value={shippingAddress.country}
                 onChange={(e) => handleFieldChange("country", e.target.value)}
                 placeholder="Country"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
               />
             </div>
           </div>
@@ -1132,17 +1133,17 @@ function StepShippingDetails({
       )}
 
       {/* Additional Info Section */}
-      <div className="space-y-4 pt-6 border-t border-gray-200">
+      <div className="space-y-4 pt-6 border-t border-slate-200">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">Additional Information</h3>
-          <p className="text-sm text-gray-500 mt-1">
+          <h3 className="text-lg font-semibold text-slate-900">Additional Information</h3>
+          <p className="text-sm text-slate-500 mt-1">
             Optional details to help us process your shipment
           </p>
         </div>
 
         {/* Notes */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-slate-700 mb-1">
             Special Instructions
           </label>
           <textarea
@@ -1150,7 +1151,7 @@ function StepShippingDetails({
             onChange={(e) => setAdditionalInfo({ ...additionalInfo, notes: e.target.value })}
             placeholder="Any special handling instructions, delivery notes, etc."
             rows={3}
-            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent resize-none"
           />
         </div>
 
@@ -1162,8 +1163,8 @@ function StepShippingDetails({
                 <Zap className="w-5 h-5 text-orange-600" />
               </div>
               <div>
-                <span className="block text-sm font-medium text-gray-900">Rush Processing</span>
-                <span className="block text-sm text-gray-500">
+                <span className="block text-sm font-medium text-slate-900">Rush Processing</span>
+                <span className="block text-sm text-slate-500">
                   Priority handling for faster fulfillment
                 </span>
               </div>
@@ -1175,8 +1176,8 @@ function StepShippingDetails({
               onClick={() => setAdditionalInfo({ ...additionalInfo, isRushOrder: !additionalInfo.isRushOrder })}
               className={`
                 relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
-                transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2
-                ${additionalInfo.isRushOrder ? "bg-orange-500" : "bg-gray-200"}
+                transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2
+                ${additionalInfo.isRushOrder ? "bg-orange-500" : "bg-slate-200"}
               `}
             >
               <span
@@ -1192,13 +1193,13 @@ function StepShippingDetails({
 
         {/* Preferred Carrier */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-slate-700 mb-1">
             Preferred Carrier
           </label>
           <select
             value={additionalInfo.preferredCarrier}
             onChange={(e) => setAdditionalInfo({ ...additionalInfo, preferredCarrier: e.target.value })}
-            className="w-full sm:w-64 px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full sm:w-64 px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
           >
             {CARRIERS.map((carrier) => (
               <option key={carrier.value} value={carrier.value}>
@@ -1206,20 +1207,20 @@ function StepShippingDetails({
               </option>
             ))}
           </select>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-slate-500 mt-1">
             We'll do our best to accommodate your preference
           </p>
         </div>
 
         {/* Packaging Option */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-white rounded-lg">
-              <Package className="w-5 h-5 text-gray-600" />
+              <Package className="w-5 h-5 text-slate-600" />
             </div>
             <div>
-              <span className="block text-sm font-medium text-gray-900">Requires Repacking</span>
-              <span className="block text-sm text-gray-500">
+              <span className="block text-sm font-medium text-slate-900">Requires Repacking</span>
+              <span className="block text-sm text-slate-500">
                 {additionalInfo.requiresRepack
                   ? "Items will be packed into shipping boxes"
                   : "Ship in original cases (no box fees)"
@@ -1234,8 +1235,8 @@ function StepShippingDetails({
             onClick={() => setAdditionalInfo({ ...additionalInfo, requiresRepack: !additionalInfo.requiresRepack })}
             className={`
               relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
-              transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
-              ${additionalInfo.requiresRepack ? "bg-blue-600" : "bg-gray-200"}
+              transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2
+              ${additionalInfo.requiresRepack ? "bg-cyan-600" : "bg-slate-200"}
             `}
           >
             <span
@@ -1250,17 +1251,17 @@ function StepShippingDetails({
       </div>
 
       {/* Navigation */}
-      <div className="flex justify-between pt-4 border-t border-gray-200">
+      <div className="flex justify-between pt-4 border-t border-slate-200">
         <button
           onClick={onBack}
-          className="px-6 py-2.5 text-gray-600 font-medium rounded-xl hover:bg-gray-100 transition-colors"
+          className="px-6 py-2.5 text-slate-600 font-medium rounded-lg hover:bg-slate-100 transition-colors"
         >
           Back
         </button>
         <button
           onClick={onNext}
           disabled={!isFormValid}
-          className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-6 py-2.5 bg-cyan-600 text-white font-medium rounded-lg hover:bg-cyan-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Review Order
         </button>
@@ -1343,7 +1344,7 @@ function StepReviewSubmit({
           ship_to_address2: shippingAddress.address_line2 || null,
           ship_to_city: shippingAddress.city,
           ship_to_state: shippingAddress.state,
-          ship_to_postal_code: shippingAddress.postal_code,
+          ship_to_zip: shippingAddress.postal_code,
           ship_to_country: shippingAddress.country,
           notes: additionalInfo.notes || null,
           is_rush: additionalInfo.isRushOrder,
@@ -1388,7 +1389,7 @@ function StepReviewSubmit({
 
     } catch (error) {
       console.error("Error submitting order:", error);
-      setSubmitError(error instanceof Error ? error.message : "An unexpected error occurred. Please try again.");
+      setSubmitError(handleApiError(error));
     } finally {
       setSubmitting(false);
     }
@@ -1401,15 +1402,15 @@ function StepReviewSubmit({
         <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <CheckCircle2 className="w-8 h-8 text-green-600" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Order Submitted!</h2>
-        <p className="text-gray-600 mb-4">
+        <h2 className="text-2xl font-bold text-slate-900 mb-2">Order Submitted!</h2>
+        <p className="text-slate-600 mb-4">
           Your shipment request has been submitted successfully.
         </p>
-        <div className="bg-gray-50 rounded-xl p-4 max-w-sm mx-auto mb-6">
-          <p className="text-sm text-gray-500">Order Number</p>
-          <p className="text-lg font-mono font-bold text-gray-900">{submitSuccess.orderNumber}</p>
+        <div className="bg-slate-50 rounded-xl p-4 max-w-sm mx-auto mb-6">
+          <p className="text-sm text-slate-500">Order Number</p>
+          <p className="text-lg font-mono font-bold text-slate-900">{submitSuccess.orderNumber}</p>
         </div>
-        <p className="text-sm text-gray-500">Redirecting to order details...</p>
+        <p className="text-sm text-slate-500">Redirecting to order details...</p>
       </div>
     );
   }
@@ -1417,22 +1418,22 @@ function StepReviewSubmit({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900">Review & Submit</h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <h2 className="text-lg font-semibold text-slate-900">Review & Submit</h2>
+        <p className="text-sm text-slate-500 mt-1">
           Review your order details before submitting
         </p>
       </div>
 
       {/* Products Summary */}
-      <div className="border border-gray-200 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
+      <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between p-4 bg-slate-50 border-b border-slate-200">
           <div className="flex items-center gap-2">
-            <Package className="w-4 h-4 text-gray-500" />
-            <h3 className="font-medium text-gray-900">Products</h3>
+            <Package className="w-4 h-4 text-slate-500" />
+            <h3 className="font-medium text-slate-900">Products</h3>
           </div>
           <button
             onClick={() => onEditStep(1)}
-            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+            className="text-sm text-cyan-600 hover:text-cyan-700 font-medium"
           >
             Edit
           </button>
@@ -1440,14 +1441,14 @@ function StepReviewSubmit({
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-600">
                   Product
                 </th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-600">
                   SKU
                 </th>
-                <th className="text-right py-3 px-4 text-sm font-semibold text-gray-600">
+                <th className="text-right py-3 px-4 text-sm font-semibold text-slate-600">
                   Qty to Ship
                 </th>
               </tr>
@@ -1456,27 +1457,27 @@ function StepReviewSubmit({
               {selectedProducts.map((product) => (
                 <tr
                   key={product.inventory_id}
-                  className="border-b border-gray-100 last:border-0"
+                  className="border-b border-slate-100 last:border-0"
                 >
                   <td className="py-3 px-4">
-                    <span className="font-medium text-gray-900">{product.product_name}</span>
+                    <span className="font-medium text-slate-900">{product.product_name}</span>
                   </td>
                   <td className="py-3 px-4">
-                    <span className="text-sm text-gray-500 font-mono">{product.sku}</span>
+                    <span className="text-sm text-slate-500 font-mono">{product.sku}</span>
                   </td>
                   <td className="py-3 px-4 text-right">
-                    <span className="font-semibold text-gray-900">{product.qty_to_ship.toLocaleString()}</span>
+                    <span className="font-semibold text-slate-900">{product.qty_to_ship.toLocaleString()}</span>
                   </td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr className="bg-gray-50 border-t border-gray-200">
+              <tr className="bg-slate-50 border-t border-slate-200">
                 <td colSpan={2} className="py-3 px-4 text-right">
-                  <span className="font-medium text-gray-700">Total Units:</span>
+                  <span className="font-medium text-slate-700">Total Units:</span>
                 </td>
                 <td className="py-3 px-4 text-right">
-                  <span className="font-bold text-gray-900 text-lg">{totalItems.toLocaleString()}</span>
+                  <span className="font-bold text-slate-900 text-lg">{totalItems.toLocaleString()}</span>
                 </td>
               </tr>
             </tfoot>
@@ -1485,41 +1486,41 @@ function StepReviewSubmit({
       </div>
 
       {/* Shipping Address Summary */}
-      <div className="border border-gray-200 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
+      <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between p-4 bg-slate-50 border-b border-slate-200">
           <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-gray-500" />
-            <h3 className="font-medium text-gray-900">Shipping Address</h3>
+            <MapPin className="w-4 h-4 text-slate-500" />
+            <h3 className="font-medium text-slate-900">Shipping Address</h3>
           </div>
           <button
             onClick={() => onEditStep(2)}
-            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+            className="text-sm text-cyan-600 hover:text-cyan-700 font-medium"
           >
             Edit
           </button>
         </div>
         <div className="p-4">
-          <p className="text-gray-900">{shippingAddress.address_line1}</p>
+          <p className="text-slate-900">{shippingAddress.address_line1}</p>
           {shippingAddress.address_line2 && (
-            <p className="text-gray-900">{shippingAddress.address_line2}</p>
+            <p className="text-slate-900">{shippingAddress.address_line2}</p>
           )}
-          <p className="text-gray-900">
+          <p className="text-slate-900">
             {shippingAddress.city}, {shippingAddress.state} {shippingAddress.postal_code}
           </p>
-          <p className="text-gray-500">{shippingAddress.country}</p>
+          <p className="text-slate-500">{shippingAddress.country}</p>
         </div>
       </div>
 
       {/* Additional Info Summary */}
-      <div className="border border-gray-200 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
+      <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between p-4 bg-slate-50 border-b border-slate-200">
           <div className="flex items-center gap-2">
-            <ClipboardCheck className="w-4 h-4 text-gray-500" />
-            <h3 className="font-medium text-gray-900">Additional Details</h3>
+            <ClipboardCheck className="w-4 h-4 text-slate-500" />
+            <h3 className="font-medium text-slate-900">Additional Details</h3>
           </div>
           <button
             onClick={() => onEditStep(2)}
-            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+            className="text-sm text-cyan-600 hover:text-cyan-700 font-medium"
           >
             Edit
           </button>
@@ -1540,43 +1541,43 @@ function StepReviewSubmit({
               )}
               {additionalInfo.preferredCarrier && (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500">Preferred Carrier:</span>
-                  <span className="text-sm text-gray-900 font-medium">
+                  <span className="text-sm text-slate-500">Preferred Carrier:</span>
+                  <span className="text-sm text-slate-900 font-medium">
                     {CARRIERS.find((c) => c.value === additionalInfo.preferredCarrier)?.label || additionalInfo.preferredCarrier}
                   </span>
                 </div>
               )}
               {additionalInfo.notes && (
                 <div>
-                  <p className="text-sm text-gray-500 mb-1">Special Instructions:</p>
-                  <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg">
+                  <p className="text-sm text-slate-500 mb-1">Special Instructions:</p>
+                  <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded-lg">
                     {additionalInfo.notes}
                   </p>
                 </div>
               )}
             </div>
           ) : (
-            <p className="text-sm text-gray-500 italic">No additional details provided</p>
+            <p className="text-sm text-slate-500 italic">No additional details provided</p>
           )}
         </div>
       </div>
 
       {/* Estimated Costs */}
-      <div className="border border-gray-200 rounded-xl overflow-hidden">
-        <div className="flex items-center gap-2 p-4 bg-gray-50 border-b border-gray-200">
-          <DollarSign className="w-4 h-4 text-gray-500" />
-          <h3 className="font-medium text-gray-900">Estimated Costs</h3>
+      <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <div className="flex items-center gap-2 p-4 bg-slate-50 border-b border-slate-200">
+          <DollarSign className="w-4 h-4 text-slate-500" />
+          <h3 className="font-medium text-slate-900">Estimated Costs</h3>
         </div>
         <div className="p-4">
           <div className="space-y-3">
             {/* Fulfillment Fee */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Package className="w-4 h-4 text-gray-400" />
-                <span className="text-sm text-gray-600">Fulfillment Fee</span>
-                <span className="text-xs text-gray-400">({totalItems} items @ $0.50/item)</span>
+                <Package className="w-4 h-4 text-slate-400" />
+                <span className="text-sm text-slate-600">Fulfillment Fee</span>
+                <span className="text-xs text-slate-400">({totalItems} items @ $0.50/item)</span>
               </div>
-              <span className="text-sm font-medium text-gray-900">
+              <span className="text-sm font-medium text-slate-900">
                 ${(totalItems * 0.50).toFixed(2)}
               </span>
             </div>
@@ -1584,10 +1585,10 @@ function StepReviewSubmit({
             {/* Estimated Shipping */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Truck className="w-4 h-4 text-gray-400" />
-                <span className="text-sm text-gray-600">Estimated Shipping</span>
+                <Truck className="w-4 h-4 text-slate-400" />
+                <span className="text-sm text-slate-600">Estimated Shipping</span>
               </div>
-              <span className="text-sm font-medium text-gray-500 italic">
+              <span className="text-sm font-medium text-slate-500 italic">
                 TBD
               </span>
             </div>
@@ -1597,7 +1598,7 @@ function StepReviewSubmit({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Zap className="w-4 h-4 text-orange-500" />
-                  <span className="text-sm text-gray-600">Rush Processing Fee</span>
+                  <span className="text-sm text-slate-600">Rush Processing Fee</span>
                 </div>
                 <span className="text-sm font-medium text-orange-600">
                   $15.00
@@ -1606,12 +1607,12 @@ function StepReviewSubmit({
             )}
 
             {/* Divider */}
-            <div className="border-t border-gray-200 pt-3 mt-3">
+            <div className="border-t border-slate-200 pt-3 mt-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700">Estimated Total</span>
-                <span className="text-lg font-bold text-gray-900">
+                <span className="text-sm font-medium text-slate-700">Estimated Total</span>
+                <span className="text-lg font-bold text-slate-900">
                   ${((totalItems * 0.50) + (additionalInfo.isRushOrder ? 15 : 0)).toFixed(2)}
-                  <span className="text-sm font-normal text-gray-500 ml-1">+ shipping</span>
+                  <span className="text-sm font-normal text-slate-500 ml-1">+ shipping</span>
                 </span>
               </div>
             </div>
@@ -1639,18 +1640,18 @@ function StepReviewSubmit({
       )}
 
       {/* Navigation */}
-      <div className="flex justify-between pt-4 border-t border-gray-200">
+      <div className="flex justify-between pt-4 border-t border-slate-200">
         <button
           onClick={onBack}
           disabled={submitting}
-          className="px-6 py-2.5 text-gray-600 font-medium rounded-xl hover:bg-gray-100 transition-colors disabled:opacity-50"
+          className="px-6 py-2.5 text-slate-600 font-medium rounded-lg hover:bg-slate-100 transition-colors disabled:opacity-50"
         >
           Back
         </button>
         <button
           onClick={handleSubmit}
           disabled={submitting}
-          className="px-6 py-2.5 bg-green-600 text-white font-medium rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+          className="px-6 py-2.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-2"
         >
           {submitting ? (
             <>

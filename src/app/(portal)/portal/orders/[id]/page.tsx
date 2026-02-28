@@ -5,7 +5,6 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import {
-  ArrowLeft,
   Package,
   MapPin,
   Clock,
@@ -19,6 +18,9 @@ import {
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import FetchError from "@/components/ui/FetchError";
+import { handleApiError } from "@/lib/utils/error-handler";
 
 interface OrderItem {
   id: string;
@@ -42,7 +44,7 @@ interface OrderDetail {
   ship_to_address2: string | null;
   ship_to_city: string;
   ship_to_state: string;
-  ship_to_postal_code: string;
+  ship_to_zip: string;
   ship_to_country: string;
   notes: string | null;
   is_rush: boolean;
@@ -203,7 +205,7 @@ export default function OrderDetailPage() {
           ship_to_address2,
           ship_to_city,
           ship_to_state,
-          ship_to_postal_code,
+          ship_to_zip,
           ship_to_country,
           notes,
           is_rush,
@@ -230,7 +232,7 @@ export default function OrderDetailPage() {
         .single();
 
       if (fetchError || !data) {
-        setError("Order not found");
+        setError(handleApiError(fetchError || "Order not found"));
         setLoading(false);
         return;
       }
@@ -253,7 +255,7 @@ export default function OrderDetailPage() {
         ship_to_address2: data.ship_to_address2,
         ship_to_city: data.ship_to_city,
         ship_to_state: data.ship_to_state,
-        ship_to_postal_code: data.ship_to_postal_code,
+        ship_to_zip: data.ship_to_zip,
         ship_to_country: data.ship_to_country,
         notes: data.notes,
         is_rush: data.is_rush || false,
@@ -329,26 +331,22 @@ export default function OrderDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+        <div className="animate-spin w-8 h-8 border-4 border-cyan-600 border-t-transparent rounded-full"></div>
       </div>
     );
   }
 
   if (error || !order) {
     return (
-      <div className="max-w-lg mx-auto py-12 text-center">
-        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <FileText className="w-8 h-8 text-red-600" />
-        </div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Order Not Found</h1>
-        <p className="text-gray-600 mb-6">{error || "We couldn't find the order you're looking for."}</p>
-        <Link
-          href="/portal/orders"
-          className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Orders
-        </Link>
+      <div className="space-y-6">
+        <Breadcrumbs
+          homeHref="/portal"
+          items={[
+            { label: "Orders", href: "/portal/orders" },
+            { label: "Error" },
+          ]}
+        />
+        <FetchError message={error || "We couldn't find the order you're looking for."} />
       </div>
     );
   }
@@ -359,21 +357,21 @@ export default function OrderDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Back Link */}
-      <Link
-        href="/portal/orders"
-        className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Orders
-      </Link>
+      {/* Breadcrumbs */}
+      <Breadcrumbs
+        homeHref="/portal"
+        items={[
+          { label: "Orders", href: "/portal/orders" },
+          { label: order.order_number },
+        ]}
+      />
 
       {/* Order Header */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="bg-white rounded-lg border border-slate-200 p-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-2xl font-bold text-gray-900 font-mono">
+              <h1 className="text-2xl font-semibold text-slate-900 font-mono">
                 {order.order_number}
               </h1>
               {order.is_rush && (
@@ -382,7 +380,7 @@ export default function OrderDetailPage() {
                 </span>
               )}
             </div>
-            <p className="text-gray-500">
+            <p className="text-slate-500">
               Requested on {formatDateTime(order.created_at)}
             </p>
           </div>
@@ -397,8 +395,8 @@ export default function OrderDetailPage() {
 
       {/* Status Timeline */}
       {order.status !== "cancelled" && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="font-semibold text-gray-900 mb-6">Order Progress</h2>
+        <div className="bg-white rounded-lg border border-slate-200 p-6">
+          <h2 className="font-semibold text-slate-900 mb-6">Order Progress</h2>
 
           {/* Vertical Timeline */}
           <div className="relative">
@@ -424,7 +422,7 @@ export default function OrderDetailPage() {
                   {!isLast && (
                     <div
                       className={`absolute left-[15px] top-8 w-0.5 h-full ${
-                        isCompleted && index < currentStepIndex ? "bg-green-500" : "bg-gray-200"
+                        isCompleted && index < currentStepIndex ? "bg-green-500" : "bg-slate-200"
                       }`}
                     />
                   )}
@@ -435,15 +433,15 @@ export default function OrderDetailPage() {
                       <div
                         className={`w-8 h-8 rounded-full flex items-center justify-center ${
                           isCurrent
-                            ? "bg-blue-600 text-white ring-4 ring-blue-100"
+                            ? "bg-cyan-600 text-white ring-4 ring-cyan-100"
                             : "bg-green-500 text-white"
                         }`}
                       >
                         <Check className="w-4 h-4" />
                       </div>
                     ) : (
-                      <div className="w-8 h-8 rounded-full border-2 border-gray-300 bg-white flex items-center justify-center">
-                        <div className="w-2 h-2 rounded-full bg-gray-300" />
+                      <div className="w-8 h-8 rounded-full border-2 border-slate-300 bg-white flex items-center justify-center">
+                        <div className="w-2 h-2 rounded-full bg-slate-300" />
                       </div>
                     )}
                   </div>
@@ -454,21 +452,21 @@ export default function OrderDetailPage() {
                       <span
                         className={`font-medium ${
                           isCurrent
-                            ? "text-blue-600"
+                            ? "text-cyan-600"
                             : isCompleted
-                            ? "text-gray-900"
-                            : "text-gray-400"
+                            ? "text-slate-900"
+                            : "text-slate-400"
                         }`}
                       >
                         {step.label}
                       </span>
                       {isCurrent && (
-                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                        <span className="px-2 py-0.5 bg-cyan-100 text-cyan-700 text-xs font-medium rounded-full">
                           Current
                         </span>
                       )}
                     </div>
-                    <p className={`text-sm mt-0.5 ${isPending ? "text-gray-400" : "text-gray-500"}`}>
+                    <p className={`text-sm mt-0.5 ${isPending ? "text-slate-400" : "text-slate-500"}`}>
                       {isCompleted ? (
                         stepDate ? formatDate(stepDate) : "Completed"
                       ) : (
@@ -476,7 +474,7 @@ export default function OrderDetailPage() {
                       )}
                     </p>
                     {isCurrent && (
-                      <p className="text-sm text-gray-600 mt-2 bg-gray-50 p-3 rounded-lg">
+                      <p className="text-sm text-slate-600 mt-2 bg-slate-50 p-3 rounded-lg">
                         {step.description}
                       </p>
                     )}
@@ -490,7 +488,7 @@ export default function OrderDetailPage() {
 
       {/* Cancelled Status */}
       {order.status === "cancelled" && (
-        <div className="bg-red-50 rounded-xl border border-red-200 p-6">
+        <div className="bg-red-50 rounded-lg border border-red-200 p-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
               <XCircle className="w-5 h-5 text-red-600" />
@@ -509,7 +507,7 @@ export default function OrderDetailPage() {
         const carrierName = getCarrierDisplayName(order.preferred_carrier);
 
         return (
-          <div className="bg-cyan-50 rounded-xl border border-cyan-200 p-6">
+          <div className="bg-cyan-50 rounded-lg border border-cyan-200 p-6">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 bg-cyan-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -581,19 +579,19 @@ export default function OrderDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Items List */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="p-4 bg-gray-50 border-b border-gray-200">
+        <div className="lg:col-span-2 bg-white rounded-lg border border-slate-200 overflow-hidden">
+          <div className="p-4 bg-slate-50 border-b border-slate-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Package className="w-4 h-4 text-gray-500" />
-                <h2 className="font-semibold text-gray-900">Order Items</h2>
+                <Package className="w-4 h-4 text-slate-500" />
+                <h2 className="font-semibold text-slate-900">Order Items</h2>
               </div>
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-slate-500">
                 {order.items.length} item{order.items.length !== 1 ? "s" : ""} | {totalUnits.toLocaleString()} units
               </span>
             </div>
           </div>
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-slate-100">
             {order.items.map((item) => {
               const isPartiallyShipped = item.qty_shipped > 0 && item.qty_shipped < item.qty_requested;
               const isFullyShipped = item.qty_shipped >= item.qty_requested;
@@ -601,7 +599,7 @@ export default function OrderDetailPage() {
               return (
                 <div key={item.id} className="p-4 flex items-center gap-4">
                   {/* Product Image */}
-                  <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  <div className="w-16 h-16 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
                     {item.image_url ? (
                       <Image
                         src={item.image_url}
@@ -611,14 +609,14 @@ export default function OrderDetailPage() {
                         className="object-cover w-full h-full"
                       />
                     ) : (
-                      <Package className="w-6 h-6 text-gray-400" />
+                      <Package className="w-6 h-6 text-slate-400" />
                     )}
                   </div>
 
                   {/* Product Info */}
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 truncate">{item.product_name}</p>
-                    <p className="text-sm text-gray-500 font-mono">{item.sku}</p>
+                    <p className="font-medium text-slate-900 truncate">{item.product_name}</p>
+                    <p className="text-sm text-slate-500 font-mono">{item.sku}</p>
                   </div>
 
                   {/* Quantities */}
@@ -626,16 +624,16 @@ export default function OrderDetailPage() {
                     <div className="flex items-center gap-3">
                       {/* Qty Requested */}
                       <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide">Requested</p>
-                        <p className="font-semibold text-gray-900">{item.qty_requested.toLocaleString()}</p>
+                        <p className="text-xs text-slate-500 uppercase tracking-wide">Requested</p>
+                        <p className="font-semibold text-slate-900">{item.qty_requested.toLocaleString()}</p>
                       </div>
 
                       {/* Qty Shipped (if applicable) */}
                       {(order.status === "shipped" || order.status === "delivered" || item.qty_shipped > 0) && (
-                        <div className="pl-3 border-l border-gray-200">
-                          <p className="text-xs text-gray-500 uppercase tracking-wide">Shipped</p>
-                          <p className={`font-semibold ${isPartiallyShipped ? "text-yellow-600" : isFullyShipped ? "text-green-600" : "text-gray-400"}`}>
-                            {item.qty_shipped > 0 ? item.qty_shipped.toLocaleString() : "—"}
+                        <div className="pl-3 border-l border-slate-200">
+                          <p className="text-xs text-slate-500 uppercase tracking-wide">Shipped</p>
+                          <p className={`font-semibold ${isPartiallyShipped ? "text-yellow-600" : isFullyShipped ? "text-green-600" : "text-slate-400"}`}>
+                            {item.qty_shipped > 0 ? item.qty_shipped.toLocaleString() : "\u2014"}
                           </p>
                         </div>
                       )}
@@ -657,65 +655,65 @@ export default function OrderDetailPage() {
         {/* Shipping Address & Notes */}
         <div className="space-y-6">
           {/* Shipping Address */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="p-4 bg-gray-50 border-b border-gray-200">
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <div className="p-4 bg-slate-50 border-b border-slate-200">
               <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-gray-500" />
-                <h2 className="font-semibold text-gray-900">Shipping Address</h2>
+                <MapPin className="w-4 h-4 text-slate-500" />
+                <h2 className="font-semibold text-slate-900">Shipping Address</h2>
               </div>
             </div>
             <div className="p-4">
-              <p className="text-gray-900">{order.ship_to_address}</p>
+              <p className="text-slate-900">{order.ship_to_address}</p>
               {order.ship_to_address2 && (
-                <p className="text-gray-900">{order.ship_to_address2}</p>
+                <p className="text-slate-900">{order.ship_to_address2}</p>
               )}
-              <p className="text-gray-900">
-                {order.ship_to_city}, {order.ship_to_state} {order.ship_to_postal_code}
+              <p className="text-slate-900">
+                {order.ship_to_city}, {order.ship_to_state} {order.ship_to_zip}
               </p>
-              <p className="text-gray-500">{order.ship_to_country}</p>
+              <p className="text-slate-500">{order.ship_to_country}</p>
             </div>
           </div>
 
           {/* Notes */}
           {order.notes && (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="p-4 bg-gray-50 border-b border-gray-200">
+            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+              <div className="p-4 bg-slate-50 border-b border-slate-200">
                 <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-gray-500" />
-                  <h2 className="font-semibold text-gray-900">Special Instructions</h2>
+                  <FileText className="w-4 h-4 text-slate-500" />
+                  <h2 className="font-semibold text-slate-900">Special Instructions</h2>
                 </div>
               </div>
               <div className="p-4">
-                <p className="text-gray-700 text-sm">{order.notes}</p>
+                <p className="text-slate-700 text-sm">{order.notes}</p>
               </div>
             </div>
           )}
 
           {/* Order Info */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="p-4 bg-gray-50 border-b border-gray-200">
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <div className="p-4 bg-slate-50 border-b border-slate-200">
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-gray-500" />
-                <h2 className="font-semibold text-gray-900">Order Details</h2>
+                <Clock className="w-4 h-4 text-slate-500" />
+                <h2 className="font-semibold text-slate-900">Order Details</h2>
               </div>
             </div>
             <div className="p-4 space-y-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-500">Order ID</span>
-                <span className="font-mono text-gray-900 text-xs">{order.id}</span>
+                <span className="text-slate-500">Order ID</span>
+                <span className="font-mono text-slate-900 text-xs">{order.id}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Created</span>
-                <span className="text-gray-900">{formatDate(order.created_at)}</span>
+                <span className="text-slate-500">Created</span>
+                <span className="text-slate-900">{formatDate(order.created_at)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Last Updated</span>
-                <span className="text-gray-900">{formatDate(order.updated_at)}</span>
+                <span className="text-slate-500">Last Updated</span>
+                <span className="text-slate-900">{formatDate(order.updated_at)}</span>
               </div>
               {order.preferred_carrier && (
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Preferred Carrier</span>
-                  <span className="text-gray-900">{order.preferred_carrier}</span>
+                  <span className="text-slate-500">Preferred Carrier</span>
+                  <span className="text-slate-900">{order.preferred_carrier}</span>
                 </div>
               )}
             </div>

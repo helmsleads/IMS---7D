@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import {
   RotateCcw,
   Plus,
@@ -18,7 +18,11 @@ import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import Spinner from "@/components/ui/Spinner";
 import StatusBadge from "@/components/ui/StatusBadge";
+import Table from "@/components/ui/Table";
+import FetchError from "@/components/ui/FetchError";
+import Pagination, { usePagination } from "@/components/ui/Pagination";
 import { formatDate, formatCurrency } from "@/lib/utils/formatting";
+import { handleApiError } from "@/lib/utils/error-handler";
 import {
   getMyReturns,
   getReturnReasons,
@@ -60,6 +64,7 @@ export default function PortalReturnsPage() {
   const { client } = useClient();
   const [returns, setReturns] = useState<PortalReturn[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -77,22 +82,34 @@ export default function PortalReturnsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchReturns = async () => {
-      if (!client) return;
+  // Pagination
+  const {
+    currentPage,
+    setCurrentPage,
+    paginatedItems,
+    totalItems,
+    itemsPerPage,
+  } = usePagination(returns, 20);
 
-      try {
-        const data = await getMyReturns(client.id);
-        setReturns(data);
-      } catch (error) {
-        console.error("Failed to fetch returns:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchReturns = useCallback(async () => {
+    if (!client) return;
 
-    fetchReturns();
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = await getMyReturns(client.id);
+      setReturns(data);
+    } catch (err) {
+      setError(handleApiError(err));
+    } finally {
+      setLoading(false);
+    }
   }, [client]);
+
+  useEffect(() => {
+    fetchReturns();
+  }, [fetchReturns]);
 
   useEffect(() => {
     const fetchModalData = async () => {
@@ -116,8 +133,8 @@ export default function PortalReturnsPage() {
               name: p.name,
             }))
         );
-      } catch (error) {
-        console.error("Failed to fetch modal data:", error);
+      } catch (err) {
+        console.error("Failed to fetch modal data:", handleApiError(err));
       }
     };
 
@@ -216,9 +233,8 @@ export default function PortalReturnsPage() {
       // Reset and close modal
       resetForm();
       setShowModal(false);
-    } catch (error) {
-      console.error("Failed to submit return:", error);
-      setSubmitError("Failed to submit return request. Please try again.");
+    } catch (err) {
+      setSubmitError(handleApiError(err));
     } finally {
       setSubmitting(false);
     }
@@ -245,6 +261,95 @@ export default function PortalReturnsPage() {
     return reasonObj?.label || reason;
   };
 
+  // Table columns
+  const columns = useMemo(
+    () => [
+      {
+        key: "return_number",
+        header: "Return #",
+        mobilePriority: 1 as const,
+        render: (ret: PortalReturn) => (
+          <span className="font-medium text-slate-900">
+            {ret.return_number}
+          </span>
+        ),
+      },
+      {
+        key: "original_order",
+        header: "Original Order",
+        mobilePriority: 3 as const,
+        hideOnMobile: true,
+        render: (ret: PortalReturn) => (
+          <span className="text-sm text-slate-600">
+            {ret.original_order?.order_number || "\u2014"}
+          </span>
+        ),
+      },
+      {
+        key: "reason",
+        header: "Reason",
+        mobilePriority: 2 as const,
+        render: (ret: PortalReturn) => (
+          <span className="text-sm text-slate-600">
+            {getReasonLabel(ret.reason)}
+          </span>
+        ),
+      },
+      {
+        key: "requested_at",
+        header: "Requested Date",
+        mobilePriority: 3 as const,
+        hideOnMobile: true,
+        render: (ret: PortalReturn) => (
+          <span className="text-sm text-slate-600">
+            {formatDate(ret.requested_at || ret.created_at)}
+          </span>
+        ),
+      },
+      {
+        key: "status",
+        header: "Status",
+        align: "center" as const,
+        mobilePriority: 2 as const,
+        render: (ret: PortalReturn) => (
+          <StatusBadge status={ret.status} entityType="return" />
+        ),
+      },
+      {
+        key: "credit_amount",
+        header: "Credit",
+        align: "right" as const,
+        mobilePriority: 3 as const,
+        hideOnMobile: true,
+        render: (ret: PortalReturn) =>
+          ret.status === "processed" && ret.credit_amount ? (
+            <span className="font-medium text-green-600">
+              {formatCurrency(ret.credit_amount)}
+            </span>
+          ) : (
+            <span className="text-slate-400">{"\u2014"}</span>
+          ),
+      },
+      {
+        key: "actions",
+        header: "Actions",
+        align: "right" as const,
+        hideOnMobile: true,
+        render: (ret: PortalReturn) => (
+          <a
+            href={`/portal/returns/${ret.id}`}
+            className="inline-flex items-center gap-1 text-sm text-cyan-600 hover:text-cyan-700 font-medium"
+          >
+            <Eye className="w-4 h-4" />
+            View
+          </a>
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   // Build Select options for the modal
   const orderOptions = returnableOrders.map((order) => ({
     value: order.id,
@@ -269,13 +374,17 @@ export default function PortalReturnsPage() {
     );
   }
 
+  if (error) {
+    return <FetchError message={error} onRetry={() => fetchReturns()} />;
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Returns</h1>
-          <p className="text-gray-500 mt-1">
+          <h1 className="text-2xl font-semibold text-slate-900">Returns</h1>
+          <p className="text-slate-500 mt-1">
             Request and track product returns
           </p>
         </div>
@@ -287,111 +396,49 @@ export default function PortalReturnsPage() {
 
       {/* Returns List */}
       <Card>
-        {returns.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
-                    Return #
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
-                    Original Order
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
-                    Reason
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
-                    Requested
-                  </th>
-                  <th className="text-center py-3 px-4 text-sm font-medium text-gray-500">
-                    Status
-                  </th>
-                  <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">
-                    Credit
-                  </th>
-                  <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {returns.map((ret) => (
-                  <tr
-                    key={ret.id}
-                    className="border-b border-gray-100 last:border-0"
-                  >
-                    <td className="py-3 px-4">
-                      <p className="font-medium text-gray-900">
-                        {ret.return_number}
-                      </p>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-600">
-                      {ret.original_order?.order_number || "\u2014"}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-600">
-                      {getReasonLabel(ret.reason)}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-600">
-                      {formatDate(ret.requested_at || ret.created_at)}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <StatusBadge status={ret.status} entityType="return" />
-                    </td>
-                    <td className="py-3 px-4 text-right text-sm">
-                      {ret.status === "processed" && ret.credit_amount ? (
-                        <span className="font-medium text-green-600">
-                          {formatCurrency(ret.credit_amount)}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">{"\u2014"}</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <a
-                        href={`/portal/returns/${ret.id}`}
-                        className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium"
-                      >
-                        <Eye className="w-4 h-4" />
-                        View
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-center py-12 text-gray-500">
-            <RotateCcw className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p className="font-medium">No returns yet</p>
-            <p className="text-sm mt-1">Need to return a product?</p>
-            <div className="mt-4">
-              <Button onClick={() => setShowModal(true)} size="md">
-                <Plus className="w-4 h-4 mr-2" />
-                Request Return
-              </Button>
+        <Table
+          columns={columns}
+          data={paginatedItems}
+          emptyIcon={
+            <RotateCcw className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+          }
+          emptyMessage={
+            <div className="text-center text-slate-500">
+              <p className="font-medium">No returns yet</p>
+              <p className="text-sm mt-1">Need to return a product?</p>
+              <div className="mt-4">
+                <Button onClick={() => setShowModal(true)} size="md">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Request Return
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          }
+        />
+        <Pagination
+          currentPage={currentPage}
+          totalItems={totalItems}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+        />
       </Card>
 
       {/* Help Note */}
-      <Card className="bg-blue-50 border-blue-100">
+      <Card className="bg-cyan-50 border-cyan-100">
         <div className="flex items-start gap-3">
-          <div className="p-2 bg-blue-100 rounded-lg">
-            <AlertCircle className="w-5 h-5 text-blue-600" />
+          <div className="p-2 bg-cyan-100 rounded-lg">
+            <AlertCircle className="w-5 h-5 text-cyan-600" />
           </div>
           <div>
-            <h3 className="font-medium text-gray-900">Return Policy</h3>
-            <p className="text-sm text-gray-600 mt-1">
+            <h3 className="font-medium text-slate-900">Return Policy</h3>
+            <p className="text-sm text-slate-600 mt-1">
               Returns can be requested within 30 days of shipment. Once approved,
               you&apos;ll receive instructions for sending items back. Credits are
               issued after items are received and inspected.
             </p>
             <a
               href="/portal/messages"
-              className="inline-flex items-center gap-1 mt-3 text-sm font-medium text-blue-600 hover:text-blue-700"
+              className="inline-flex items-center gap-1 mt-3 text-sm font-medium text-cyan-600 hover:text-cyan-700"
             >
               Questions? Contact Us
               <span aria-hidden="true">{"\u2192"}</span>
@@ -459,7 +506,7 @@ export default function PortalReturnsPage() {
 
           {/* Items Section */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-slate-700 mb-1">
               Items to Return <span className="text-red-500 ml-1">*</span>
             </label>
 
@@ -497,22 +544,22 @@ export default function PortalReturnsPage() {
 
             {/* Items List */}
             {returnItems.length > 0 ? (
-              <div className="border border-gray-200 rounded-lg divide-y divide-gray-200">
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-200">
                 {returnItems.map((item) => (
                   <div
                     key={item.product_id}
                     className="flex items-center justify-between p-3"
                   >
                     <div>
-                      <p className="font-medium text-gray-900">
+                      <p className="font-medium text-slate-900">
                         {item.product_sku}
                       </p>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-slate-500">
                         {item.product_name}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-sm text-gray-600">
+                      <span className="text-sm text-slate-600">
                         Qty: {item.qty_requested}
                       </span>
                       <Button
@@ -528,8 +575,8 @@ export default function PortalReturnsPage() {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-6 border border-dashed border-gray-300 rounded-lg text-gray-500">
-                <Package className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+              <div className="text-center py-6 border border-dashed border-slate-300 rounded-lg text-slate-500">
+                <Package className="w-8 h-8 mx-auto mb-2 text-slate-300" />
                 <p className="text-sm">No items added yet</p>
               </div>
             )}

@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Package, Truck, Boxes, PackageCheck, Settings } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import StatCard from "@/components/ui/StatCard";
 import Spinner from "@/components/ui/Spinner";
+import FetchError from "@/components/ui/FetchError";
+import { handleApiError } from "@/lib/utils/error-handler";
 import DashboardCustomizer from "@/components/dashboard/DashboardCustomizer";
 import DynamicWidgetGrid from "@/components/dashboard/DynamicWidgetGrid";
 import { PORTAL_WIDGET_COMPONENTS } from "@/components/dashboard/portal";
@@ -79,6 +81,7 @@ export default function PortalDashboardPage() {
   const [productPerformance, setProductPerformance] = useState<ProductPerformancePoint[]>([]);
   const [stockProjection, setStockProjection] = useState<StockProjectionPoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showCustomizer, setShowCustomizer] = useState(false);
 
   const {
@@ -92,13 +95,16 @@ export default function PortalDashboardPage() {
     resetToDefaults,
   } = useDashboardLayout("portal", PORTAL_WIDGETS, client?.id, "client");
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      if (!client || client.id === "staff-preview") {
-        setLoading(false);
-        return;
-      }
+  const fetchData = useCallback(async () => {
+    if (!client || client.id === "staff-preview") {
+      setLoading(false);
+      return;
+    }
 
+    setLoading(true);
+    setError(null);
+
+    try {
       const supabase = createClient();
 
       const { data: inventoryData } = await supabase
@@ -258,12 +264,20 @@ export default function PortalDashboardPage() {
       setSpendingBreakdown(spending);
       setProductPerformance(performance);
       setStockProjection(projection);
-
+    } catch (err) {
+      setError(handleApiError(err));
+    } finally {
       setLoading(false);
-    };
-
-    fetchDashboardData();
+    }
   }, [client]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  if (error) {
+    return <FetchError message={error} onRetry={fetchData} />;
+  }
 
   if (loading) {
     return (
@@ -295,78 +309,68 @@ export default function PortalDashboardPage() {
 
   return (
     <div className="space-y-8">
-      {/* Welcome Section — Gradient Mesh Hero */}
-      <div className="relative bg-gradient-to-br from-cyan-600 via-teal-600 to-blue-700 rounded-2xl p-8 text-white overflow-hidden animate-widget-enter">
-        {/* Depth circles */}
-        <div className="absolute -top-12 -right-12 w-48 h-48 bg-white/10 rounded-full blur-2xl" />
-        <div className="absolute bottom-4 left-1/4 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
-        <div className="absolute top-1/2 right-1/3 w-24 h-24 bg-white/15 rounded-full blur-xl" />
-        {/* Dot grid overlay */}
-        <div
-          className="absolute inset-0 opacity-[0.03]"
-          style={{
-            backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)",
-            backgroundSize: "20px 20px",
-          }}
-        />
-        <div className="relative z-10">
-          <h1 className="text-2xl font-bold mb-2">
-            {getGreeting()}, {client?.company_name}
-          </h1>
-          <p className="text-white/80 mb-6">
-            Welcome to your 7 Degrees inventory portal. Here&apos;s an overview of your account.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/portal/request-shipment"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-white text-cyan-700 font-semibold rounded-xl hover:bg-cyan-50 transition-colors shadow-lg"
-            >
-              <Truck className="w-5 h-5" />
-              Request Shipment
-            </Link>
-            <Link
-              href="/portal/inventory"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-white/15 text-white font-semibold rounded-xl hover:bg-white/25 transition-colors border border-white/20 backdrop-blur-sm"
-            >
-              <Package className="w-5 h-5" />
-              View Inventory
-            </Link>
-          </div>
+      {/* Welcome Message */}
+      <div className="mb-8 animate-widget-enter">
+        <h2 className="text-2xl font-semibold text-slate-900">
+          {getGreeting()}, {client?.company_name}
+        </h2>
+        <p className="text-slate-500 mt-1">
+          Welcome to your 7 Degrees inventory portal. Here&apos;s an overview of your account.
+        </p>
+        <div className="flex flex-wrap gap-3 mt-4">
+          <Link
+            href="/portal/request-shipment"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-600 text-white font-medium rounded-lg hover:from-cyan-600 hover:to-teal-700 transition-all shadow-sm text-sm"
+          >
+            <Truck className="w-4 h-4" />
+            Request Shipment
+          </Link>
+          <Link
+            href="/portal/inventory"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-lg border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors text-sm"
+          >
+            <Package className="w-4 h-4" />
+            View Inventory
+          </Link>
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Overview Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="animate-widget-enter" style={{ animationDelay: "50ms" }}>
           <StatCard
-            icon={<Package className="w-6 h-6 text-blue-600" />}
-            iconColor="bg-blue-100"
+            icon={<Package className="w-6 h-6" />}
+            iconColor="bg-cyan-50 text-cyan-600"
             label="Total Products"
-            value={stats.totalProducts}
+            value={loading ? "\u2014" : stats.totalProducts}
+            loading={loading}
           />
         </div>
         <div className="animate-widget-enter" style={{ animationDelay: "100ms" }}>
           <StatCard
-            icon={<Boxes className="w-6 h-6 text-green-600" />}
-            iconColor="bg-green-100"
+            icon={<Boxes className="w-6 h-6" />}
+            iconColor="bg-green-50 text-green-600"
             label="Total Units"
-            value={stats.totalUnits}
+            value={loading ? "\u2014" : stats.totalUnits}
+            loading={loading}
           />
         </div>
         <div className="animate-widget-enter" style={{ animationDelay: "150ms" }}>
           <StatCard
-            icon={<Truck className="w-6 h-6 text-purple-600" />}
-            iconColor="bg-purple-100"
+            icon={<Truck className="w-6 h-6" />}
+            iconColor="bg-purple-50 text-purple-600"
             label="Active Orders"
-            value={stats.activeOrders}
+            value={loading ? "\u2014" : stats.activeOrders}
+            loading={loading}
           />
         </div>
         <div className="animate-widget-enter" style={{ animationDelay: "200ms" }}>
           <StatCard
-            icon={<PackageCheck className="w-6 h-6 text-cyan-600" />}
-            iconColor="bg-cyan-100"
+            icon={<PackageCheck className="w-6 h-6" />}
+            iconColor="bg-amber-50 text-amber-600"
             label="Recent Arrivals"
-            value={stats.recentArrivals}
+            value={loading ? "\u2014" : stats.recentArrivals}
+            loading={loading}
           />
         </div>
       </div>

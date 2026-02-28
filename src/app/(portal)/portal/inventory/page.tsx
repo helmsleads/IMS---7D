@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Package, Search, ChevronDown, LayoutGrid, List, RefreshCw, Truck, X, Plus, Minus, ShoppingCart, Trash2, DollarSign, Settings2, Eye, EyeOff, Pencil } from "lucide-react";
 import { ProductImageCard, ProductThumbnail } from "@/components/ui/ProductImage";
+import Alert from "@/components/ui/Alert";
+import FetchError from "@/components/ui/FetchError";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
 import { getMyProductValues, updateMyProductValue, ProductValue } from "@/lib/api/portal-profitability";
+import { handleApiError } from "@/lib/utils/error-handler";
 
 interface InventoryItem {
   id: string;
@@ -38,6 +41,7 @@ export default function PortalInventoryPage() {
   const router = useRouter();
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<StockStatusFilter>("all");
@@ -66,6 +70,17 @@ export default function PortalInventoryPage() {
   const [editCost, setEditCost] = useState<string>("");
   const [savingValue, setSavingValue] = useState(false);
 
+  // Alert state
+  const [alert, setAlert] = useState<{type: 'success' | 'error', message: string} | null>(null);
+
+  // Auto-dismiss success alerts after 3s
+  useEffect(() => {
+    if (alert?.type === 'success') {
+      const timer = setTimeout(() => setAlert(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [alert]);
+
   const fetchInventory = async (isRefresh = false) => {
     if (!client) return;
 
@@ -75,7 +90,7 @@ export default function PortalInventoryPage() {
 
     const supabase = createClient();
 
-    const { data } = await supabase
+    const { data, error: fetchErr } = await supabase
       .from("inventory")
       .select(`
         id,
@@ -93,6 +108,13 @@ export default function PortalInventoryPage() {
       .eq("product.client_id", client.id)
       .order("qty_on_hand", { ascending: false });
 
+    if (fetchErr) {
+      setError(fetchErr.message || "Failed to load inventory data.");
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     const inventoryItems = (data || []).map((item) => {
       const product = Array.isArray(item.product) ? item.product[0] : item.product;
 
@@ -109,6 +131,7 @@ export default function PortalInventoryPage() {
     });
 
     setInventory(inventoryItems);
+    setError(null);
 
     // Extract unique categories
     const uniqueCategories = Array.from(
@@ -162,7 +185,7 @@ export default function PortalInventoryPage() {
   };
 
   const formatCurrency = (value: number | null): string => {
-    if (value === null) return "—";
+    if (value === null) return "\u2014";
     return `$${value.toFixed(2)}`;
   };
 
@@ -196,7 +219,7 @@ export default function PortalInventoryPage() {
       cancelEditingValue();
     } catch (error) {
       console.error("Failed to save product value:", error);
-      alert("Failed to save. Please try again.");
+      setAlert({ type: 'error', message: handleApiError(error) });
     } finally {
       setSavingValue(false);
     }
@@ -324,24 +347,40 @@ export default function PortalInventoryPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+        <div className="animate-spin w-8 h-8 border-4 border-cyan-600 border-t-transparent rounded-full"></div>
       </div>
+    );
+  }
+
+  if (error && !loading) {
+    return (
+      <FetchError
+        message={error}
+        onRetry={() => {
+          setError(null);
+          setLoading(true);
+          fetchInventory();
+        }}
+      />
     );
   }
 
   return (
     <div className="space-y-6">
+      {/* Alert Banner */}
+      {alert && <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />}
+
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Your Inventory</h1>
-          <p className="text-gray-500 mt-1">Products stored at 7 Degrees</p>
+          <h1 className="text-2xl font-semibold text-slate-900">Your Inventory</h1>
+          <p className="text-slate-500 mt-1">Products stored at 7 Degrees</p>
         </div>
 
         {/* Cart Button */}
         <button
           onClick={() => setShowCartModal(true)}
-          className="relative flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
+          className="relative flex items-center gap-2 px-4 py-2.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors"
         >
           <ShoppingCart className="w-5 h-5" />
           <span className="font-medium">View Cart</span>
@@ -357,13 +396,13 @@ export default function PortalInventoryPage() {
       <div className="flex flex-col sm:flex-row gap-4">
         {/* Search */}
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
           <input
             type="text"
             placeholder="Search by product name or SKU..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
           />
         </div>
 
@@ -372,7 +411,7 @@ export default function PortalInventoryPage() {
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="appearance-none w-full sm:w-48 px-4 py-3 pr-10 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="appearance-none w-full sm:w-48 px-4 py-3 pr-10 border border-slate-200 rounded-lg bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
           >
             <option value="all">All Categories</option>
             {categories.map((category) => (
@@ -381,7 +420,7 @@ export default function PortalInventoryPage() {
               </option>
             ))}
           </select>
-          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
         </div>
 
         {/* Status Filter */}
@@ -389,24 +428,24 @@ export default function PortalInventoryPage() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StockStatusFilter)}
-            className="appearance-none w-full sm:w-44 px-4 py-3 pr-10 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="appearance-none w-full sm:w-44 px-4 py-3 pr-10 border border-slate-200 rounded-lg bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
           >
             <option value="all">All Status</option>
             <option value="in_stock">In Stock</option>
             <option value="low_stock">Low Stock</option>
             <option value="out_of_stock">Out of Stock</option>
           </select>
-          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
         </div>
 
         {/* View Toggle */}
-        <div className="flex border border-gray-200 rounded-xl overflow-hidden">
+        <div className="flex border border-slate-200 rounded-lg overflow-hidden">
           <button
             onClick={() => setViewMode("grid")}
             className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
               viewMode === "grid"
-                ? "bg-blue-600 text-white"
-                : "bg-white text-gray-600 hover:bg-gray-50"
+                ? "bg-cyan-600 text-white"
+                : "bg-white text-slate-600 hover:bg-slate-50"
             }`}
           >
             <LayoutGrid className="w-4 h-4" />
@@ -414,10 +453,10 @@ export default function PortalInventoryPage() {
           </button>
           <button
             onClick={() => setViewMode("list")}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-l border-gray-200 ${
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-l border-slate-200 ${
               viewMode === "list"
-                ? "bg-blue-600 text-white border-l-blue-600"
-                : "bg-white text-gray-600 hover:bg-gray-50"
+                ? "bg-cyan-600 text-white border-l-cyan-600"
+                : "bg-white text-slate-600 hover:bg-slate-50"
             }`}
           >
             <List className="w-4 h-4" />
@@ -429,16 +468,16 @@ export default function PortalInventoryPage() {
         <div className="relative">
           <button
             onClick={() => setShowColumnSettings(!showColumnSettings)}
-            className={`flex items-center gap-2 px-4 py-3 border rounded-xl transition-colors ${
+            className={`flex items-center gap-2 px-4 py-3 border rounded-lg transition-colors ${
               showColumnSettings || showSalePrice || showCost || showMargin
-                ? "border-blue-500 bg-blue-50 text-blue-600"
-                : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                ? "border-cyan-500 bg-cyan-50 text-cyan-600"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
             }`}
           >
             <Settings2 className="w-4 h-4" />
             <span className="hidden sm:inline">Columns</span>
             {(showSalePrice || showCost || showMargin) && (
-              <span className="w-5 h-5 bg-blue-600 text-white text-xs font-bold rounded-full flex items-center justify-center">
+              <span className="w-5 h-5 bg-cyan-600 text-white text-xs font-bold rounded-full flex items-center justify-center">
                 {[showSalePrice, showCost, showMargin].filter(Boolean).length}
               </span>
             )}
@@ -451,18 +490,18 @@ export default function PortalInventoryPage() {
                 className="fixed inset-0 z-10"
                 onClick={() => setShowColumnSettings(false)}
               />
-              <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-lg z-20 p-4">
-                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-lg shadow-lg z-20 p-4">
+                <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
                   <DollarSign className="w-4 h-4" />
                   Value Columns
                 </h3>
                 <div className="space-y-3">
                   <label className="flex items-center justify-between cursor-pointer group">
-                    <span className="text-sm text-gray-700">Sale Price</span>
+                    <span className="text-sm text-slate-700">Sale Price</span>
                     <button
                       onClick={() => setShowSalePrice(!showSalePrice)}
                       className={`w-10 h-6 rounded-full transition-colors ${
-                        showSalePrice ? "bg-blue-600" : "bg-gray-200"
+                        showSalePrice ? "bg-cyan-600" : "bg-slate-200"
                       }`}
                     >
                       <span
@@ -473,11 +512,11 @@ export default function PortalInventoryPage() {
                     </button>
                   </label>
                   <label className="flex items-center justify-between cursor-pointer group">
-                    <span className="text-sm text-gray-700">Cost</span>
+                    <span className="text-sm text-slate-700">Cost</span>
                     <button
                       onClick={() => setShowCost(!showCost)}
                       className={`w-10 h-6 rounded-full transition-colors ${
-                        showCost ? "bg-blue-600" : "bg-gray-200"
+                        showCost ? "bg-cyan-600" : "bg-slate-200"
                       }`}
                     >
                       <span
@@ -488,11 +527,11 @@ export default function PortalInventoryPage() {
                     </button>
                   </label>
                   <label className="flex items-center justify-between cursor-pointer group">
-                    <span className="text-sm text-gray-700">Margin</span>
+                    <span className="text-sm text-slate-700">Margin</span>
                     <button
                       onClick={() => setShowMargin(!showMargin)}
                       className={`w-10 h-6 rounded-full transition-colors ${
-                        showMargin ? "bg-blue-600" : "bg-gray-200"
+                        showMargin ? "bg-cyan-600" : "bg-slate-200"
                       }`}
                     >
                       <span
@@ -503,10 +542,10 @@ export default function PortalInventoryPage() {
                     </button>
                   </label>
                 </div>
-                <div className="mt-4 pt-3 border-t border-gray-100">
+                <div className="mt-4 pt-3 border-t border-slate-100">
                   <Link
                     href="/portal/profitability"
-                    className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                    className="flex items-center gap-2 text-sm text-cyan-600 hover:text-cyan-700 font-medium"
                   >
                     <Pencil className="w-3.5 h-3.5" />
                     Edit all values in Profitability
@@ -529,7 +568,7 @@ export default function PortalInventoryPage() {
               return (
                 <div
                   key={item.id}
-                  className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow"
+                  className="bg-white rounded-lg border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow"
                 >
                   {/* Product Image */}
                   <div className="relative">
@@ -550,53 +589,53 @@ export default function PortalInventoryPage() {
                   <div className="p-4">
                     <Link
                       href={`/portal/inventory/${item.product_id}`}
-                      className="font-semibold text-gray-900 truncate block hover:text-blue-600 transition-colors"
+                      className="font-semibold text-slate-900 truncate block hover:text-cyan-600 transition-colors"
                       title={item.product_name}
                     >
                       {item.product_name}
                     </Link>
-                    <p className="text-sm text-gray-500 font-mono mt-1">{item.sku}</p>
+                    <p className="text-sm text-slate-500 font-mono mt-1">{item.sku}</p>
 
                     {/* Quantity */}
-                    <div className="mt-4 pt-4 border-t border-gray-100">
-                      <p className="text-xs text-gray-500 uppercase tracking-wide">Available</p>
-                      <p className="text-3xl font-bold text-gray-900">
+                    <div className="mt-4 pt-4 border-t border-slate-100">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">Available</p>
+                      <p className="text-3xl font-bold text-slate-900">
                         {item.qty_on_hand.toLocaleString()}
                       </p>
-                      <p className="text-xs text-gray-400">units</p>
+                      <p className="text-xs text-slate-400">units</p>
                     </div>
 
                     {/* Value Columns (when enabled) */}
                     {(showSalePrice || showCost || showMargin) && (
-                      <div className="mt-4 pt-4 border-t border-gray-100">
+                      <div className="mt-4 pt-4 border-t border-slate-100">
                         {editingValueId === item.product_id ? (
                           // Inline Edit Mode
                           <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-2">
                               <div>
-                                <label className="text-xs text-gray-500">Sale Price</label>
+                                <label className="text-xs text-slate-500">Sale Price</label>
                                 <div className="relative">
-                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                                   <input
                                     type="number"
                                     step="0.01"
                                     value={editSalePrice}
                                     onChange={(e) => setEditSalePrice(e.target.value)}
-                                    className="w-full pl-6 pr-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                                    className="w-full pl-6 pr-2 py-1.5 text-sm border border-slate-300 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
                                     placeholder="0.00"
                                   />
                                 </div>
                               </div>
                               <div>
-                                <label className="text-xs text-gray-500">Cost</label>
+                                <label className="text-xs text-slate-500">Cost</label>
                                 <div className="relative">
-                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                                   <input
                                     type="number"
                                     step="0.01"
                                     value={editCost}
                                     onChange={(e) => setEditCost(e.target.value)}
-                                    className="w-full pl-6 pr-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                                    className="w-full pl-6 pr-2 py-1.5 text-sm border border-slate-300 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
                                     placeholder="0.00"
                                   />
                                 </div>
@@ -606,13 +645,13 @@ export default function PortalInventoryPage() {
                               <button
                                 onClick={() => saveProductValue(item.product_id)}
                                 disabled={savingValue}
-                                className="flex-1 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                                className="flex-1 px-3 py-1.5 text-xs font-medium bg-cyan-600 text-white rounded hover:bg-cyan-700 disabled:opacity-50"
                               >
                                 {savingValue ? "Saving..." : "Save"}
                               </button>
                               <button
                                 onClick={cancelEditingValue}
-                                className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded hover:bg-gray-200"
+                                className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200"
                               >
                                 Cancel
                               </button>
@@ -624,36 +663,36 @@ export default function PortalInventoryPage() {
                             <div className="grid grid-cols-3 gap-2 text-sm">
                               {showSalePrice && (
                                 <div>
-                                  <p className="text-xs text-gray-500">Sale</p>
-                                  <p className="font-semibold text-gray-900">
+                                  <p className="text-xs text-slate-500">Sale</p>
+                                  <p className="font-semibold text-slate-900">
                                     {formatCurrency(getSalePrice(item.product_id))}
                                   </p>
                                 </div>
                               )}
                               {showCost && (
                                 <div>
-                                  <p className="text-xs text-gray-500">Cost</p>
-                                  <p className="font-semibold text-gray-900">
+                                  <p className="text-xs text-slate-500">Cost</p>
+                                  <p className="font-semibold text-slate-900">
                                     {formatCurrency(getCost(item.product_id))}
                                   </p>
                                 </div>
                               )}
                               {showMargin && (
                                 <div>
-                                  <p className="text-xs text-gray-500">Margin</p>
+                                  <p className="text-xs text-slate-500">Margin</p>
                                   {getMargin(item.product_id) ? (
                                     <p className={`font-semibold ${getMargin(item.product_id)!.value >= 0 ? "text-green-600" : "text-red-600"}`}>
                                       {getMargin(item.product_id)!.percent.toFixed(1)}%
                                     </p>
                                   ) : (
-                                    <p className="text-gray-400">—</p>
+                                    <p className="text-slate-400">{"\u2014"}</p>
                                   )}
                                 </div>
                               )}
                             </div>
                             <button
                               onClick={() => startEditingValue(item)}
-                              className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition-colors"
+                              className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 transition-colors"
                             >
                               <Pencil className="w-3 h-3" />
                               Edit Values
@@ -667,7 +706,7 @@ export default function PortalInventoryPage() {
                     <button
                       onClick={() => openQuickAddModal(item)}
                       disabled={item.qty_on_hand === 0}
-                      className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                      className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 bg-cyan-600 text-white text-sm font-medium rounded-lg hover:bg-cyan-700 transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed"
                     >
                       <Truck className="w-4 h-4" />
                       Add to Shipment
@@ -679,42 +718,42 @@ export default function PortalInventoryPage() {
           </div>
         ) : (
           // List View
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="text-left py-4 px-4 text-sm font-semibold text-gray-600">
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="text-left py-4 px-4 text-sm font-semibold text-slate-600">
                       Product
                     </th>
-                    <th className="text-left py-4 px-4 text-sm font-semibold text-gray-600">
+                    <th className="text-left py-4 px-4 text-sm font-semibold text-slate-600">
                       SKU
                     </th>
-                    <th className="text-left py-4 px-4 text-sm font-semibold text-gray-600">
+                    <th className="text-left py-4 px-4 text-sm font-semibold text-slate-600">
                       Category
                     </th>
-                    <th className="text-right py-4 px-4 text-sm font-semibold text-gray-600">
+                    <th className="text-right py-4 px-4 text-sm font-semibold text-slate-600">
                       Available
                     </th>
                     {showSalePrice && (
-                      <th className="text-right py-4 px-4 text-sm font-semibold text-gray-600">
+                      <th className="text-right py-4 px-4 text-sm font-semibold text-slate-600">
                         Sale Price
                       </th>
                     )}
                     {showCost && (
-                      <th className="text-right py-4 px-4 text-sm font-semibold text-gray-600">
+                      <th className="text-right py-4 px-4 text-sm font-semibold text-slate-600">
                         Cost
                       </th>
                     )}
                     {showMargin && (
-                      <th className="text-right py-4 px-4 text-sm font-semibold text-gray-600">
+                      <th className="text-right py-4 px-4 text-sm font-semibold text-slate-600">
                         Margin
                       </th>
                     )}
-                    <th className="text-center py-4 px-4 text-sm font-semibold text-gray-600">
+                    <th className="text-center py-4 px-4 text-sm font-semibold text-slate-600">
                       Status
                     </th>
-                    <th className="text-center py-4 px-4 text-sm font-semibold text-gray-600">
+                    <th className="text-center py-4 px-4 text-sm font-semibold text-slate-600">
                       Action
                     </th>
                   </tr>
@@ -726,7 +765,7 @@ export default function PortalInventoryPage() {
                     return (
                       <tr
                         key={item.id}
-                        className="border-b border-gray-100 last:border-0 hover:bg-gray-50"
+                        className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
                       >
                         <td className="py-4 px-4">
                           <Link
@@ -738,21 +777,21 @@ export default function PortalInventoryPage() {
                               alt={item.product_name}
                               size="md"
                             />
-                            <span className="font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
+                            <span className="font-medium text-slate-900 group-hover:text-cyan-600 transition-colors">
                               {item.product_name}
                             </span>
                           </Link>
                         </td>
                         <td className="py-4 px-4">
-                          <span className="text-sm text-gray-500 font-mono">{item.sku}</span>
+                          <span className="text-sm text-slate-500 font-mono">{item.sku}</span>
                         </td>
                         <td className="py-4 px-4">
-                          <span className="text-sm text-gray-600">
-                            {item.category || "—"}
+                          <span className="text-sm text-slate-600">
+                            {item.category || "\u2014"}
                           </span>
                         </td>
                         <td className="py-4 px-4 text-right">
-                          <span className="font-semibold text-gray-900">
+                          <span className="font-semibold text-slate-900">
                             {item.qty_on_hand.toLocaleString()}
                           </span>
                         </td>
@@ -760,18 +799,18 @@ export default function PortalInventoryPage() {
                           <td className="py-4 px-4 text-right">
                             {editingValueId === item.product_id ? (
                               <div className="relative inline-block">
-                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                                 <input
                                   type="number"
                                   step="0.01"
                                   value={editSalePrice}
                                   onChange={(e) => setEditSalePrice(e.target.value)}
-                                  className="w-20 pl-5 pr-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                                  className="w-20 pl-5 pr-2 py-1 text-sm border border-slate-300 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
                                   placeholder="0.00"
                                 />
                               </div>
                             ) : (
-                              <span className="font-medium text-gray-900">
+                              <span className="font-medium text-slate-900">
                                 {formatCurrency(getSalePrice(item.product_id))}
                               </span>
                             )}
@@ -781,18 +820,18 @@ export default function PortalInventoryPage() {
                           <td className="py-4 px-4 text-right">
                             {editingValueId === item.product_id ? (
                               <div className="relative inline-block">
-                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                                 <input
                                   type="number"
                                   step="0.01"
                                   value={editCost}
                                   onChange={(e) => setEditCost(e.target.value)}
-                                  className="w-20 pl-5 pr-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                                  className="w-20 pl-5 pr-2 py-1 text-sm border border-slate-300 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
                                   placeholder="0.00"
                                 />
                               </div>
                             ) : (
-                              <span className="font-medium text-gray-900">
+                              <span className="font-medium text-slate-900">
                                 {formatCurrency(getCost(item.product_id))}
                               </span>
                             )}
@@ -805,7 +844,7 @@ export default function PortalInventoryPage() {
                                 {getMargin(item.product_id)!.percent.toFixed(1)}%
                               </span>
                             ) : (
-                              <span className="text-gray-400">—</span>
+                              <span className="text-slate-400">{"\u2014"}</span>
                             )}
                           </td>
                         )}
@@ -830,7 +869,7 @@ export default function PortalInventoryPage() {
                                   </button>
                                   <button
                                     onClick={cancelEditingValue}
-                                    className="px-2.5 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded hover:bg-gray-200"
+                                    className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200"
                                   >
                                     Cancel
                                   </button>
@@ -838,7 +877,7 @@ export default function PortalInventoryPage() {
                               ) : (
                                 <button
                                   onClick={() => startEditingValue(item)}
-                                  className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                  className="p-1.5 text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 rounded transition-colors"
                                   title="Edit Values"
                                 >
                                   <Pencil className="w-4 h-4" />
@@ -848,7 +887,7 @@ export default function PortalInventoryPage() {
                             <button
                               onClick={() => openQuickAddModal(item)}
                               disabled={item.qty_on_hand === 0}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 text-white text-sm font-medium rounded-lg hover:bg-cyan-700 transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed"
                             >
                               <Truck className="w-3.5 h-3.5" />
                               Add
@@ -864,8 +903,8 @@ export default function PortalInventoryPage() {
           </div>
         )
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
-          <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+        <div className="bg-white rounded-lg border border-slate-200 p-12 text-center text-slate-500">
+          <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
           {searchQuery || categoryFilter !== "all" || statusFilter !== "all" ? (
             <>
               <p className="text-lg">No products match your filters</p>
@@ -875,7 +914,7 @@ export default function PortalInventoryPage() {
                   setCategoryFilter("all");
                   setStatusFilter("all");
                 }}
-                className="text-blue-600 hover:underline mt-2"
+                className="text-cyan-600 hover:underline mt-2"
               >
                 Clear all filters
               </button>
@@ -887,7 +926,7 @@ export default function PortalInventoryPage() {
       )}
 
       {/* Summary & Last Updated */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-500">
         <div>
           {filteredInventory.length > 0 && (
             <span>Showing {filteredInventory.length} of {inventory.length} products</span>
@@ -906,7 +945,7 @@ export default function PortalInventoryPage() {
           <button
             onClick={() => fetchInventory(true)}
             disabled={refreshing}
-            className="flex items-center gap-2 px-3 py-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-3 py-1.5 text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
             {refreshing ? "Refreshing..." : "Refresh"}
@@ -918,19 +957,19 @@ export default function PortalInventoryPage() {
       {showQuickAddModal && selectedItem && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div
-            className="fixed inset-0 bg-black/50 transition-opacity"
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
             onClick={closeQuickAddModal}
           />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative w-full max-w-md bg-white rounded-xl shadow-xl">
+            <div className="relative w-full max-w-md bg-white rounded-lg shadow-xl">
               {/* Modal Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">
+              <div className="flex items-center justify-between p-6 border-b border-slate-200">
+                <h2 className="text-lg font-semibold text-slate-900">
                   Add to Shipment
                 </h2>
                 <button
                   onClick={closeQuickAddModal}
-                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -946,11 +985,11 @@ export default function PortalInventoryPage() {
                     size="lg"
                   />
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 truncate">
+                    <h3 className="font-semibold text-slate-900 truncate">
                       {selectedItem.product_name}
                     </h3>
-                    <p className="text-sm text-gray-500 font-mono">{selectedItem.sku}</p>
-                    <p className="text-sm text-gray-400 mt-1">
+                    <p className="text-sm text-slate-500 font-mono">{selectedItem.sku}</p>
+                    <p className="text-sm text-slate-400 mt-1">
                       {selectedItem.qty_on_hand.toLocaleString()} available
                     </p>
                   </div>
@@ -958,14 +997,14 @@ export default function PortalInventoryPage() {
 
                 {/* Quantity Selector */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
                     Quantity to Ship
                   </label>
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => setQuickAddQty(Math.max(1, quickAddQty - 1))}
                       disabled={quickAddQty <= 1}
-                      className="w-10 h-10 flex items-center justify-center border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-10 h-10 flex items-center justify-center border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Minus className="w-4 h-4" />
                     </button>
@@ -978,12 +1017,12 @@ export default function PortalInventoryPage() {
                         const val = parseInt(e.target.value) || 1;
                         setQuickAddQty(Math.min(Math.max(1, val), selectedItem.qty_on_hand));
                       }}
-                      className="w-24 text-center px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-24 text-center px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-cyan-500"
                     />
                     <button
                       onClick={() => setQuickAddQty(Math.min(selectedItem.qty_on_hand, quickAddQty + 1))}
                       disabled={quickAddQty >= selectedItem.qty_on_hand}
-                      className="w-10 h-10 flex items-center justify-center border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-10 h-10 flex items-center justify-center border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Plus className="w-4 h-4" />
                     </button>
@@ -997,12 +1036,12 @@ export default function PortalInventoryPage() {
               </div>
 
               {/* Modal Footer */}
-              <div className="flex flex-col gap-3 p-6 border-t border-gray-200">
+              <div className="flex flex-col gap-3 p-6 border-t border-slate-200">
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => addToCart(true)}
                     disabled={quickAddQty < 1 || quickAddQty > selectedItem.qty_on_hand}
-                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-cyan-600 text-cyan-600 rounded-lg hover:bg-cyan-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                   >
                     <Plus className="w-4 h-4" />
                     Add & Continue Shopping
@@ -1010,7 +1049,7 @@ export default function PortalInventoryPage() {
                   <button
                     onClick={() => addToCart(false)}
                     disabled={quickAddQty < 1 || quickAddQty > selectedItem.qty_on_hand}
-                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                   >
                     <Truck className="w-4 h-4" />
                     Add & Checkout
@@ -1018,7 +1057,7 @@ export default function PortalInventoryPage() {
                 </div>
                 <button
                   onClick={closeQuickAddModal}
-                  className="w-full px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors text-sm"
+                  className="w-full px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors text-sm"
                 >
                   Cancel
                 </button>
@@ -1032,24 +1071,24 @@ export default function PortalInventoryPage() {
       {showCartModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div
-            className="fixed inset-0 bg-black/50 transition-opacity"
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
             onClick={() => setShowCartModal(false)}
           />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative w-full max-w-lg bg-white rounded-xl shadow-xl">
+            <div className="relative w-full max-w-lg bg-white rounded-lg shadow-xl">
               {/* Modal Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between p-6 border-b border-slate-200">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">
+                  <h2 className="text-lg font-semibold text-slate-900">
                     Shipment Cart
                   </h2>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-slate-500">
                     {cartProductCount} {cartProductCount === 1 ? "product" : "products"}, {cartItemCount} {cartItemCount === 1 ? "unit" : "units"} total
                   </p>
                 </div>
                 <button
                   onClick={() => setShowCartModal(false)}
-                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1062,7 +1101,7 @@ export default function PortalInventoryPage() {
                     {cart.map((item) => (
                       <div
                         key={item.product_id}
-                        className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg"
+                        className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg"
                       >
                         <ProductThumbnail
                           src={item.image_url}
@@ -1070,11 +1109,11 @@ export default function PortalInventoryPage() {
                           size="md"
                         />
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-medium text-gray-900 truncate">
+                          <h4 className="font-medium text-slate-900 truncate">
                             {item.product_name}
                           </h4>
-                          <p className="text-xs text-gray-500 font-mono">{item.sku}</p>
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-slate-500 font-mono">{item.sku}</p>
+                          <p className="text-xs text-slate-400">
                             {item.qty_available.toLocaleString()} available
                           </p>
                         </div>
@@ -1082,24 +1121,24 @@ export default function PortalInventoryPage() {
                           <button
                             onClick={() => updateCartItemQty(item.product_id, item.qty_to_ship - 1)}
                             disabled={item.qty_to_ship <= 1}
-                            className="w-7 h-7 flex items-center justify-center border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50"
+                            className="w-7 h-7 flex items-center justify-center border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-50"
                           >
                             <Minus className="w-3 h-3" />
                           </button>
-                          <span className="w-10 text-center font-medium text-gray-900">
+                          <span className="w-10 text-center font-medium text-slate-900">
                             {item.qty_to_ship}
                           </span>
                           <button
                             onClick={() => updateCartItemQty(item.product_id, item.qty_to_ship + 1)}
                             disabled={item.qty_to_ship >= item.qty_available}
-                            className="w-7 h-7 flex items-center justify-center border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50"
+                            className="w-7 h-7 flex items-center justify-center border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-50"
                           >
                             <Plus className="w-3 h-3" />
                           </button>
                         </div>
                         <button
                           onClick={() => removeFromCart(item.product_id)}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -1107,8 +1146,8 @@ export default function PortalInventoryPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <ShoppingCart className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <div className="text-center py-8 text-slate-500">
+                    <ShoppingCart className="w-12 h-12 mx-auto mb-3 text-slate-300" />
                     <p className="font-medium">Your cart is empty</p>
                     <p className="text-sm mt-1">
                       Add products from your inventory to request a shipment
@@ -1118,12 +1157,12 @@ export default function PortalInventoryPage() {
               </div>
 
               {/* Modal Footer */}
-              <div className="flex flex-col gap-3 p-6 border-t border-gray-200">
+              <div className="flex flex-col gap-3 p-6 border-t border-slate-200">
                 {cart.length > 0 && (
                   <>
                     <button
                       onClick={handleCheckout}
-                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors font-medium"
                     >
                       <Truck className="w-5 h-5" />
                       Checkout ({cartProductCount} {cartProductCount === 1 ? "product" : "products"})
@@ -1131,7 +1170,7 @@ export default function PortalInventoryPage() {
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => setShowCartModal(false)}
-                        className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                        className="flex-1 px-4 py-2 text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
                       >
                         Continue Shopping
                       </button>
@@ -1147,7 +1186,7 @@ export default function PortalInventoryPage() {
                 {cart.length === 0 && (
                   <button
                     onClick={() => setShowCartModal(false)}
-                    className="w-full px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    className="w-full px-4 py-2 text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
                   >
                     Continue Browsing
                   </button>

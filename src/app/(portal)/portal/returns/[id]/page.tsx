@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import {
-  ArrowLeft,
   Clock,
   CheckCircle,
   XCircle,
   Package,
-  RotateCcw,
   FileText,
   CreditCard,
   MapPin,
@@ -19,10 +17,15 @@ import {
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import Card from "@/components/ui/Card";
+import Breadcrumbs from "@/components/ui/Breadcrumbs";
+import Table from "@/components/ui/Table";
+import FetchError from "@/components/ui/FetchError";
+import { handleApiError } from "@/lib/utils/error-handler";
 import {
   getMyReturn,
   getReturnReasons,
   PortalReturnWithItems,
+  PortalReturnItem,
   ReturnReason,
 } from "@/lib/api/portal-returns";
 
@@ -36,31 +39,33 @@ export default function PortalReturnDetailPage() {
 
   const returnId = params.id as string;
 
-  useEffect(() => {
-    const fetchReturn = async () => {
-      if (!client || !returnId) return;
+  const fetchReturn = useCallback(async () => {
+    if (!client || !returnId) return;
 
-      try {
-        // Security: getMyReturn verifies return belongs to this client
-        const data = await getMyReturn(client.id, returnId);
-        if (!data) {
-          setError("Return not found or you don't have permission to view it");
-        } else {
-          setReturnData(data);
-        }
-      } catch (err) {
-        console.error("Failed to fetch return:", err);
-        setError("Failed to load return details");
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Security: getMyReturn verifies return belongs to this client
+      const data = await getMyReturn(client.id, returnId);
+      if (!data) {
+        setError("Return not found or you don't have permission to view it");
+      } else {
+        setReturnData(data);
       }
-    };
-
-    fetchReturn();
+    } catch (err) {
+      setError(handleApiError(err));
+    } finally {
+      setLoading(false);
+    }
   }, [client, returnId]);
 
+  useEffect(() => {
+    fetchReturn();
+  }, [fetchReturn]);
+
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return "—";
+    if (!dateString) return "\u2014";
     return new Date(dateString).toLocaleDateString("en-US", {
       month: "long",
       day: "numeric",
@@ -69,7 +74,7 @@ export default function PortalReturnDetailPage() {
   };
 
   const formatCurrency = (amount: number | null) => {
-    if (amount === null) return "—";
+    if (amount === null) return "\u2014";
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
@@ -78,7 +83,7 @@ export default function PortalReturnDetailPage() {
   };
 
   const getReasonLabel = (reason: string | null) => {
-    if (!reason) return "—";
+    if (!reason) return "\u2014";
     const reasonObj = reasons.find((r) => r.value === reason);
     return reasonObj?.label || reason;
   };
@@ -122,24 +127,69 @@ export default function PortalReturnDetailPage() {
         );
       case "cancelled":
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full text-sm font-medium">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-full text-sm font-medium">
             <XCircle className="w-4 h-4" />
             Cancelled
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full text-sm font-medium capitalize">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-full text-sm font-medium capitalize">
             {status}
           </span>
         );
     }
   };
 
+  const returnItemColumns = [
+    {
+      key: "product",
+      header: "Product",
+      mobilePriority: 1 as const,
+      render: (item: PortalReturnItem) => (
+        <div>
+          <p className="font-medium text-slate-900">{item.product_sku}</p>
+          <p className="text-sm text-slate-500">{item.product_name}</p>
+        </div>
+      ),
+    },
+    {
+      key: "qty_requested",
+      header: "Qty Requested",
+      align: "right" as const,
+      mobilePriority: 3 as const,
+      render: (item: PortalReturnItem) => (
+        <span className="text-slate-900">{item.qty_requested}</span>
+      ),
+    },
+    {
+      key: "qty_received",
+      header: "Qty Received",
+      align: "right" as const,
+      mobilePriority: 3 as const,
+      render: (item: PortalReturnItem) => (
+        <span className="text-slate-600">
+          {item.qty_received !== null ? item.qty_received : "\u2014"}
+        </span>
+      ),
+    },
+    {
+      key: "condition",
+      header: "Condition",
+      align: "center" as const,
+      mobilePriority: 2 as const,
+      render: (item: PortalReturnItem) => (
+        <span className="text-slate-600 capitalize">
+          {item.condition || "\u2014"}
+        </span>
+      ),
+    },
+  ];
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+        <div className="animate-spin w-8 h-8 border-4 border-cyan-600 border-t-transparent rounded-full"></div>
       </div>
     );
   }
@@ -147,25 +197,19 @@ export default function PortalReturnDetailPage() {
   if (error || !returnData) {
     return (
       <div className="space-y-6">
-        <a
-          href="/portal/returns"
-          className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Returns
-        </a>
+        <Breadcrumbs
+          homeHref="/portal"
+          items={[
+            { label: "Returns", href: "/portal/returns" },
+            { label: "Error" },
+          ]}
+        />
 
         <Card>
-          <div className="text-center py-12 text-gray-500">
-            <RotateCcw className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-            <p className="font-medium">{error || "Return not found"}</p>
-            <a
-              href="/portal/returns"
-              className="text-blue-600 hover:underline text-sm mt-2 inline-block"
-            >
-              Return to returns list
-            </a>
-          </div>
+          <FetchError
+            message={error || "Return not found"}
+            onRetry={fetchReturn}
+          />
         </Card>
       </div>
     );
@@ -173,22 +217,22 @@ export default function PortalReturnDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Back Link */}
-      <a
-        href="/portal/returns"
-        className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Returns
-      </a>
+      {/* Breadcrumbs */}
+      <Breadcrumbs
+        homeHref="/portal"
+        items={[
+          { label: "Returns", href: "/portal/returns" },
+          { label: returnData.return_number },
+        ]}
+      />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-semibold text-slate-900">
             Return {returnData.return_number}
           </h1>
-          <p className="text-gray-500 mt-1">
+          <p className="text-slate-500 mt-1">
             Requested {formatDate(returnData.requested_at || returnData.created_at)}
           </p>
         </div>
@@ -197,7 +241,7 @@ export default function PortalReturnDetailPage() {
 
       {/* Status Timeline */}
       <Card>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">
           Return Progress
         </h2>
         <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-0">
@@ -207,22 +251,22 @@ export default function PortalReturnDetailPage() {
               className={`w-8 h-8 rounded-full flex items-center justify-center ${
                 returnData.requested_at
                   ? "bg-green-100 text-green-600"
-                  : "bg-gray-100 text-gray-400"
+                  : "bg-slate-100 text-slate-400"
               }`}
             >
               <Clock className="w-4 h-4" />
             </div>
             <div className="sm:hidden">
-              <p className="font-medium text-gray-900">Requested</p>
-              <p className="text-xs text-gray-500">
+              <p className="font-medium text-slate-900">Requested</p>
+              <p className="text-xs text-slate-500">
                 {formatDate(returnData.requested_at)}
               </p>
             </div>
           </div>
-          <div className="hidden sm:block flex-1 h-1 bg-gray-200 mx-2">
+          <div className="hidden sm:block flex-1 h-1 bg-slate-200 mx-2">
             <div
               className={`h-full ${
-                returnData.approved_at ? "bg-green-500" : "bg-gray-200"
+                returnData.approved_at ? "bg-green-500" : "bg-slate-200"
               }`}
             />
           </div>
@@ -233,22 +277,22 @@ export default function PortalReturnDetailPage() {
               className={`w-8 h-8 rounded-full flex items-center justify-center ${
                 returnData.approved_at
                   ? "bg-green-100 text-green-600"
-                  : "bg-gray-100 text-gray-400"
+                  : "bg-slate-100 text-slate-400"
               }`}
             >
               <CheckCircle className="w-4 h-4" />
             </div>
             <div className="sm:hidden">
-              <p className="font-medium text-gray-900">Approved</p>
-              <p className="text-xs text-gray-500">
+              <p className="font-medium text-slate-900">Approved</p>
+              <p className="text-xs text-slate-500">
                 {returnData.approved_at ? formatDate(returnData.approved_at) : "Pending"}
               </p>
             </div>
           </div>
-          <div className="hidden sm:block flex-1 h-1 bg-gray-200 mx-2">
+          <div className="hidden sm:block flex-1 h-1 bg-slate-200 mx-2">
             <div
               className={`h-full ${
-                returnData.received_at ? "bg-green-500" : "bg-gray-200"
+                returnData.received_at ? "bg-green-500" : "bg-slate-200"
               }`}
             />
           </div>
@@ -259,22 +303,22 @@ export default function PortalReturnDetailPage() {
               className={`w-8 h-8 rounded-full flex items-center justify-center ${
                 returnData.received_at
                   ? "bg-green-100 text-green-600"
-                  : "bg-gray-100 text-gray-400"
+                  : "bg-slate-100 text-slate-400"
               }`}
             >
               <Package className="w-4 h-4" />
             </div>
             <div className="sm:hidden">
-              <p className="font-medium text-gray-900">Received</p>
-              <p className="text-xs text-gray-500">
+              <p className="font-medium text-slate-900">Received</p>
+              <p className="text-xs text-slate-500">
                 {returnData.received_at ? formatDate(returnData.received_at) : "Pending"}
               </p>
             </div>
           </div>
-          <div className="hidden sm:block flex-1 h-1 bg-gray-200 mx-2">
+          <div className="hidden sm:block flex-1 h-1 bg-slate-200 mx-2">
             <div
               className={`h-full ${
-                returnData.processed_at ? "bg-green-500" : "bg-gray-200"
+                returnData.processed_at ? "bg-green-500" : "bg-slate-200"
               }`}
             />
           </div>
@@ -285,14 +329,14 @@ export default function PortalReturnDetailPage() {
               className={`w-8 h-8 rounded-full flex items-center justify-center ${
                 returnData.processed_at
                   ? "bg-green-100 text-green-600"
-                  : "bg-gray-100 text-gray-400"
+                  : "bg-slate-100 text-slate-400"
               }`}
             >
               <CreditCard className="w-4 h-4" />
             </div>
             <div className="sm:hidden">
-              <p className="font-medium text-gray-900">Processed</p>
-              <p className="text-xs text-gray-500">
+              <p className="font-medium text-slate-900">Processed</p>
+              <p className="text-xs text-slate-500">
                 {returnData.processed_at ? formatDate(returnData.processed_at) : "Pending"}
               </p>
             </div>
@@ -302,30 +346,30 @@ export default function PortalReturnDetailPage() {
         {/* Desktop Labels */}
         <div className="hidden sm:flex mt-2">
           <div className="flex-1 text-center">
-            <p className="text-sm font-medium text-gray-900">Requested</p>
-            <p className="text-xs text-gray-500">
+            <p className="text-sm font-medium text-slate-900">Requested</p>
+            <p className="text-xs text-slate-500">
               {formatDate(returnData.requested_at)}
             </p>
           </div>
           <div className="flex-1" />
           <div className="flex-1 text-center">
-            <p className="text-sm font-medium text-gray-900">Approved</p>
-            <p className="text-xs text-gray-500">
-              {returnData.approved_at ? formatDate(returnData.approved_at) : "—"}
+            <p className="text-sm font-medium text-slate-900">Approved</p>
+            <p className="text-xs text-slate-500">
+              {returnData.approved_at ? formatDate(returnData.approved_at) : "\u2014"}
             </p>
           </div>
           <div className="flex-1" />
           <div className="flex-1 text-center">
-            <p className="text-sm font-medium text-gray-900">Received</p>
-            <p className="text-xs text-gray-500">
-              {returnData.received_at ? formatDate(returnData.received_at) : "—"}
+            <p className="text-sm font-medium text-slate-900">Received</p>
+            <p className="text-xs text-slate-500">
+              {returnData.received_at ? formatDate(returnData.received_at) : "\u2014"}
             </p>
           </div>
           <div className="flex-1" />
           <div className="flex-1 text-center">
-            <p className="text-sm font-medium text-gray-900">Processed</p>
-            <p className="text-xs text-gray-500">
-              {returnData.processed_at ? formatDate(returnData.processed_at) : "—"}
+            <p className="text-sm font-medium text-slate-900">Processed</p>
+            <p className="text-xs text-slate-500">
+              {returnData.processed_at ? formatDate(returnData.processed_at) : "\u2014"}
             </p>
           </div>
         </div>
@@ -335,18 +379,18 @@ export default function PortalReturnDetailPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <FileText className="w-5 h-5 text-blue-600" />
+            <div className="p-2 bg-cyan-100 rounded-lg">
+              <FileText className="w-5 h-5 text-cyan-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Reason</p>
-              <p className="font-medium text-gray-900">
+              <p className="text-sm text-slate-500">Reason</p>
+              <p className="font-medium text-slate-900">
                 {getReasonLabel(returnData.reason)}
               </p>
             </div>
           </div>
           {returnData.reason_details && (
-            <p className="mt-3 text-sm text-gray-600 pl-12">
+            <p className="mt-3 text-sm text-slate-600 pl-12">
               {returnData.reason_details}
             </p>
           )}
@@ -359,10 +403,10 @@ export default function PortalReturnDetailPage() {
                 <Package className="w-5 h-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Original Order</p>
+                <p className="text-sm text-slate-500">Original Order</p>
                 <a
                   href={`/portal/orders/${returnData.original_order.id}`}
-                  className="font-medium text-blue-600 hover:text-blue-700"
+                  className="font-medium text-cyan-600 hover:text-cyan-700"
                 >
                   {returnData.original_order.order_number}
                 </a>
@@ -378,7 +422,7 @@ export default function PortalReturnDetailPage() {
                 <CreditCard className="w-5 h-5 text-green-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Credit Issued</p>
+                <p className="text-sm text-slate-500">Credit Issued</p>
                 <p className="font-medium text-green-600 text-lg">
                   {formatCurrency(returnData.credit_amount)}
                 </p>
@@ -393,15 +437,15 @@ export default function PortalReturnDetailPage() {
       {returnData.status === "approved" && (
         <div className="space-y-4">
           {/* RMA Label */}
-          <Card className="bg-blue-50 border-blue-200">
+          <Card className="bg-cyan-50 border-cyan-200">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="p-3 bg-blue-600 rounded-xl">
+                <div className="p-3 bg-cyan-600 rounded-xl">
                   <Truck className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <p className="text-sm text-blue-600 font-medium">Your RMA Number</p>
-                  <p className="text-2xl font-bold text-gray-900">
+                  <p className="text-sm text-cyan-600 font-medium">Your RMA Number</p>
+                  <p className="text-2xl font-bold text-slate-900">
                     {returnData.return_number}
                   </p>
                 </div>
@@ -411,14 +455,14 @@ export default function PortalReturnDetailPage() {
                   onClick={() => {
                     navigator.clipboard.writeText(returnData.return_number);
                   }}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 transition-colors text-sm font-medium"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-cyan-200 text-cyan-700 rounded-lg hover:bg-cyan-50 transition-colors text-sm font-medium"
                 >
                   <Copy className="w-4 h-4" />
                   Copy RMA
                 </button>
                 <button
                   onClick={() => window.print()}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors text-sm font-medium"
                 >
                   <Printer className="w-4 h-4" />
                   Print Label
@@ -429,45 +473,45 @@ export default function PortalReturnDetailPage() {
 
           {/* Shipping Instructions */}
           <Card>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-blue-600" />
+            <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-cyan-600" />
               Shipping Instructions
             </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Ship To Address */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm font-medium text-gray-500 mb-2">Ship To:</p>
-                <p className="font-semibold text-gray-900">7 Degrees Co - Returns</p>
-                <p className="text-gray-700">Attn: RMA {returnData.return_number}</p>
-                <p className="text-gray-700">1234 Warehouse Drive</p>
-                <p className="text-gray-700">Suite 100</p>
-                <p className="text-gray-700">Dallas, TX 75001</p>
+              <div className="bg-slate-50 rounded-lg p-4">
+                <p className="text-sm font-medium text-slate-500 mb-2">Ship To:</p>
+                <p className="font-semibold text-slate-900">7 Degrees Co - Returns</p>
+                <p className="text-slate-700">Attn: RMA {returnData.return_number}</p>
+                <p className="text-slate-700">1234 Warehouse Drive</p>
+                <p className="text-slate-700">Suite 100</p>
+                <p className="text-slate-700">Dallas, TX 75001</p>
               </div>
 
               {/* Important Notes */}
               <div className="space-y-3">
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-gray-700">
+                  <p className="text-sm text-slate-700">
                     Write the RMA number clearly on the outside of your package
                   </p>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-gray-700">
+                  <p className="text-sm text-slate-700">
                     Include a copy of this return inside the package
                   </p>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-gray-700">
+                  <p className="text-sm text-slate-700">
                     Pack items securely to prevent damage during transit
                   </p>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-gray-700">
+                  <p className="text-sm text-slate-700">
                     Ship within 14 days of approval to ensure credit
                   </p>
                 </div>
@@ -491,68 +535,23 @@ export default function PortalReturnDetailPage() {
 
       {/* Return Items */}
       <Card>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        <h2 className="text-lg font-semibold text-slate-900 mb-4">
           Return Items
         </h2>
 
-        {returnData.items && returnData.items.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
-                    Product
-                  </th>
-                  <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">
-                    Qty Requested
-                  </th>
-                  <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">
-                    Qty Received
-                  </th>
-                  <th className="text-center py-3 px-4 text-sm font-medium text-gray-500">
-                    Condition
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {returnData.items.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="border-b border-gray-100 last:border-0"
-                  >
-                    <td className="py-3 px-4">
-                      <p className="font-medium text-gray-900">
-                        {item.product_sku}
-                      </p>
-                      <p className="text-sm text-gray-500">{item.product_name}</p>
-                    </td>
-                    <td className="py-3 px-4 text-right text-gray-900">
-                      {item.qty_requested}
-                    </td>
-                    <td className="py-3 px-4 text-right text-gray-600">
-                      {item.qty_received !== null ? item.qty_received : "—"}
-                    </td>
-                    <td className="py-3 px-4 text-center text-gray-600 capitalize">
-                      {item.condition || "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-center py-6 text-gray-500">
-            <Package className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-            <p className="text-sm">No items in this return</p>
-          </div>
-        )}
+        <Table<PortalReturnItem>
+          columns={returnItemColumns}
+          data={returnData.items || []}
+          emptyMessage="No items in this return"
+          emptyIcon={<Package className="w-8 h-8 mx-auto mb-2 text-slate-300" />}
+        />
       </Card>
 
       {/* Notes */}
       {returnData.notes && (
         <Card>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Notes</h2>
-          <p className="text-gray-600">{returnData.notes}</p>
+          <h2 className="text-lg font-semibold text-slate-900 mb-2">Notes</h2>
+          <p className="text-slate-600">{returnData.notes}</p>
         </Card>
       )}
 
@@ -564,8 +563,8 @@ export default function PortalReturnDetailPage() {
               <Clock className="w-5 h-5 text-yellow-600" />
             </div>
             <div>
-              <h3 className="font-medium text-gray-900">Pending Review</h3>
-              <p className="text-sm text-gray-600 mt-1">
+              <h3 className="font-medium text-slate-900">Pending Review</h3>
+              <p className="text-sm text-slate-600 mt-1">
                 Your return request is being reviewed by the 7 Degrees team.
                 You&apos;ll receive an update once it&apos;s approved.
               </p>
@@ -574,7 +573,7 @@ export default function PortalReturnDetailPage() {
                 className="inline-flex items-center gap-1 mt-3 text-sm font-medium text-yellow-700 hover:text-yellow-800"
               >
                 Questions? Contact Us
-                <span aria-hidden="true">→</span>
+                <span aria-hidden="true">&rarr;</span>
               </a>
             </div>
           </div>
