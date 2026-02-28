@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, PackageOpen } from "lucide-react";
 import Link from "next/link";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
+import SearchSelect from "@/components/ui/SearchSelect";
 import Alert from "@/components/ui/Alert";
 import { getProducts, Product } from "@/lib/api/products";
 import { getClients, Client } from "@/lib/api/clients";
@@ -17,6 +18,11 @@ import {
   CreateOutboundOrderData,
   CreateOutboundItemData,
 } from "@/lib/api/outbound";
+import {
+  suggestBoxesForOrder,
+  BOX_TYPES,
+  PACKING_MATERIALS,
+} from "@/lib/api/box-usage";
 
 interface OrderItem {
   id: string;
@@ -25,27 +31,14 @@ interface OrderItem {
   unit_price: number;
 }
 
-function formatClientAddress(client: Client): string {
-  const parts: string[] = [];
-
-  if (client.address_line1) {
-    parts.push(client.address_line1);
-  }
-  if (client.address_line2) {
-    parts.push(client.address_line2);
-  }
-
-  const cityStateZip: string[] = [];
-  if (client.city) cityStateZip.push(client.city);
-  if (client.state) cityStateZip.push(client.state);
-  if (client.zip) cityStateZip.push(client.zip);
-
-  if (cityStateZip.length > 0) {
-    parts.push(cityStateZip.join(", "));
-  }
-
-  return parts.join("\n");
+interface SupplyLine {
+  id: string;
+  code: string;
+  name: string;
+  qty: number;
+  unitPrice: number;
 }
+
 
 export default function NewOutboundOrderPage() {
   const router = useRouter();
@@ -58,10 +51,19 @@ export default function NewOutboundOrderPage() {
 
   // Form state
   const [clientId, setClientId] = useState("");
+  const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0]);
+  const [recipientName, setRecipientName] = useState("");
+  const [requestor, setRequestor] = useState("");
   const [shipToAddress, setShipToAddress] = useState("");
+  const [shipToAddress2, setShipToAddress2] = useState("");
+  const [shipToCity, setShipToCity] = useState("");
+  const [shipToState, setShipToState] = useState("");
+  const [shipToZip, setShipToZip] = useState("");
+  const [shippingMethod, setShippingMethod] = useState("");
   const [notes, setNotes] = useState("");
   const [requiresRepack, setRequiresRepack] = useState(true);
   const [items, setItems] = useState<OrderItem[]>([]);
+  const [supplyLines, setSupplyLines] = useState<SupplyLine[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -84,22 +86,86 @@ export default function NewOutboundOrderPage() {
     fetchData();
   }, []);
 
-  // Populate address when client changes
+  // Populate address when client changes and clear items (products are client-specific)
   const handleClientChange = (newClientId: string) => {
     setClientId(newClientId);
+    setItems([]);
+    setSupplyLines([]);
 
     if (newClientId) {
       const selectedClient = clients.find((c) => c.id === newClientId);
       if (selectedClient) {
-        setShipToAddress(formatClientAddress(selectedClient));
+        setShipToAddress(selectedClient.address_line1 || "");
+        setShipToAddress2(selectedClient.address_line2 || "");
+        setShipToCity(selectedClient.city || "");
+        setShipToState(selectedClient.state || "");
+        setShipToZip(selectedClient.zip || "");
       }
     } else {
       setShipToAddress("");
+      setShipToAddress2("");
+      setShipToCity("");
+      setShipToState("");
+      setShipToZip("");
     }
   };
 
+  // Auto-recalculate supplies when items or repack setting changes
+  useEffect(() => {
+    if (!requiresRepack || items.length === 0 || items.every((i) => !i.product_id)) {
+      setSupplyLines([]);
+      return;
+    }
+
+    const orderItems = items
+      .filter((item) => item.product_id)
+      .map((item) => {
+        const product = products.find((p) => p.id === item.product_id);
+        return {
+          qty: item.qty_requested,
+          containerType: (product?.container_type || "bottle") as "bottle" | "can" | "keg" | "bag_in_box" | "other",
+        };
+      });
+
+    if (orderItems.length === 0) {
+      setSupplyLines([]);
+      return;
+    }
+
+    const boxResult = suggestBoxesForOrder(orderItems);
+    const newLines: SupplyLine[] = [];
+
+    for (const box of [...boxResult.bottles, ...boxResult.cans]) {
+      newLines.push({
+        id: crypto.randomUUID(),
+        code: box.code,
+        name: box.name,
+        qty: box.qty,
+        unitPrice: box.price,
+      });
+    }
+
+    // Add inserts for bottles
+    if (boxResult.totalBottles > 0) {
+      const insertMaterial = PACKING_MATERIALS.find((m) => m.code === "INSERT");
+      if (insertMaterial) {
+        newLines.push({
+          id: crypto.randomUUID(),
+          code: insertMaterial.code,
+          name: insertMaterial.name,
+          qty: boxResult.totalBottles,
+          unitPrice: insertMaterial.price,
+        });
+      }
+    }
+
+    setSupplyLines(newLines);
+  }, [items, requiresRepack, products]);
+
   const availableProducts = products.filter(
-    (p) => !items.some((item) => item.product_id === p.id)
+    (p) =>
+      !items.some((item) => item.product_id === p.id) &&
+      (!clientId || !p.client_id || p.client_id === clientId)
   );
 
   const productOptions = availableProducts.map((p) => ({
@@ -152,6 +218,43 @@ export default function NewOutboundOrderPage() {
     return products.find((p) => p.id === productId);
   };
 
+  // Supply line helpers
+  const allSupplyOptions = [
+    ...BOX_TYPES.map((b) => ({ value: b.code, label: b.name, unitPrice: b.price })),
+    ...PACKING_MATERIALS.map((m) => ({ value: m.code, label: m.name, unitPrice: m.price })),
+  ];
+
+  const addSupplyLine = () => {
+    setSupplyLines([
+      ...supplyLines,
+      { id: crypto.randomUUID(), code: "", name: "", qty: 1, unitPrice: 0 },
+    ]);
+  };
+
+  const removeSupplyLine = (id: string) => {
+    setSupplyLines(supplyLines.filter((s) => s.id !== id));
+  };
+
+  const updateSupplyLine = (id: string, field: string, value: string | number) => {
+    setSupplyLines(
+      supplyLines.map((line) => {
+        if (line.id !== id) return line;
+        if (field === "code") {
+          const option = allSupplyOptions.find((o) => o.value === value);
+          return {
+            ...line,
+            code: value as string,
+            name: option?.label || "",
+            unitPrice: option?.unitPrice || 0,
+          };
+        }
+        return { ...line, [field]: value };
+      })
+    );
+  };
+
+  const suppliesTotal = supplyLines.reduce((sum, s) => sum + s.qty * s.unitPrice, 0);
+
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
 
@@ -185,9 +288,16 @@ export default function NewOutboundOrderPage() {
     try {
       const orderData: CreateOutboundOrderData = {
         client_id: clientId || null,
+        recipient_name: recipientName.trim() || null,
+        requestor: requestor.trim() || null,
         ship_to_address: shipToAddress.trim() || null,
+        ship_to_address2: shipToAddress2.trim() || null,
+        ship_to_city: shipToCity.trim() || null,
+        ship_to_state: shipToState.trim() || null,
+        ship_to_zip: shipToZip.trim() || null,
+        preferred_carrier: shippingMethod || null,
         notes: notes.trim() || null,
-        status: "confirmed", // Skip pending since internal order
+        status: "confirmed",
         source: "internal",
         requires_repack: requiresRepack,
       };
@@ -255,32 +365,110 @@ export default function NewOutboundOrderPage() {
                 Order Details
               </h2>
               <div className="space-y-4">
-                <Select
-                  label="Client"
-                  name="client_id"
-                  options={clientOptions}
-                  value={clientId}
-                  onChange={(e) => handleClientChange(e.target.value)}
-                  placeholder="Select client"
-                  error={errors.client}
-                  required
-                />
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Ship To Address
-                  </label>
-                  <textarea
-                    name="ship_to_address"
-                    value={shipToAddress}
-                    onChange={(e) => setShipToAddress(e.target.value)}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Shipping address"
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Select
+                    label="Client"
+                    name="client_id"
+                    options={clientOptions}
+                    value={clientId}
+                    onChange={(e) => handleClientChange(e.target.value)}
+                    placeholder="Select client"
+                    error={errors.client}
+                    required
                   />
+                  <Input
+                    label="Date"
+                    name="order_date"
+                    type="date"
+                    value={orderDate}
+                    onChange={(e) => setOrderDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label="Recipient Name"
+                    name="recipient_name"
+                    value={recipientName}
+                    onChange={(e) => setRecipientName(e.target.value)}
+                    placeholder="Who is this being shipped to?"
+                  />
+                  <Input
+                    label="Requestor"
+                    name="requestor"
+                    value={requestor}
+                    onChange={(e) => setRequestor(e.target.value)}
+                    placeholder="Who requested this order?"
+                  />
+                </div>
+
+                <div className="border-t border-gray-200 pt-4">
+                  <p className="text-sm font-medium text-gray-700 mb-3">Shipping Address</p>
+                  <div className="space-y-3">
+                    <Input
+                      label="Address"
+                      name="ship_to_address"
+                      value={shipToAddress}
+                      onChange={(e) => setShipToAddress(e.target.value)}
+                      placeholder="Street address"
+                    />
+                    <Input
+                      name="ship_to_address2"
+                      value={shipToAddress2}
+                      onChange={(e) => setShipToAddress2(e.target.value)}
+                      placeholder="Apt, suite, unit, etc. (optional)"
+                    />
+                    <div className="grid grid-cols-6 gap-3">
+                      <div className="col-span-3">
+                        <Input
+                          label="City"
+                          name="ship_to_city"
+                          value={shipToCity}
+                          onChange={(e) => setShipToCity(e.target.value)}
+                          placeholder="City"
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <Input
+                          label="State"
+                          name="ship_to_state"
+                          value={shipToState}
+                          onChange={(e) => setShipToState(e.target.value)}
+                          placeholder="ST"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <Input
+                          label="Zip Code"
+                          name="ship_to_zip"
+                          value={shipToZip}
+                          onChange={(e) => setShipToZip(e.target.value)}
+                          placeholder="Zip code"
+                        />
+                      </div>
+                    </div>
+                  </div>
                   <p className="mt-1 text-xs text-gray-500">
                     Auto-populated from client. Edit if shipping to a different address.
                   </p>
+                </div>
+
+                <div className="border-t border-gray-200 pt-4">
+                  <Select
+                    label="Shipping Method"
+                    name="shipping_method"
+                    options={[
+                      { value: "ground", label: "Ground" },
+                      { value: "2day", label: "2-Day" },
+                      { value: "overnight", label: "Overnight" },
+                      { value: "freight", label: "Freight / LTL" },
+                      { value: "pickup", label: "Customer Pickup" },
+                      { value: "other", label: "Other" },
+                    ]}
+                    value={shippingMethod}
+                    onChange={(e) => setShippingMethod(e.target.value)}
+                    placeholder="Select shipping method"
+                  />
                 </div>
 
                 <div>
@@ -291,8 +479,8 @@ export default function NewOutboundOrderPage() {
                     name="notes"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    rows={2}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     placeholder="Optional notes (add 'rush' or 'urgent' for priority orders)"
                   />
                 </div>
@@ -304,7 +492,7 @@ export default function NewOutboundOrderPage() {
                       type="checkbox"
                       checked={requiresRepack}
                       onChange={(e) => setRequiresRepack(e.target.checked)}
-                      className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                     />
                     <div>
                       <span className="text-sm font-medium text-gray-900">
@@ -399,14 +587,14 @@ export default function NewOutboundOrderPage() {
                         return (
                           <tr key={item.id}>
                             <td className="px-4 py-3">
-                              <Select
+                              <SearchSelect
                                 name={`product-${item.id}`}
                                 options={itemProductOptions}
                                 value={item.product_id}
-                                onChange={(e) =>
-                                  updateItem(item.id, "product_id", e.target.value)
+                                onChange={(val) =>
+                                  updateItem(item.id, "product_id", val)
                                 }
-                                placeholder="Select product"
+                                placeholder="Type SKU or name..."
                               />
                             </td>
                             <td className="px-4 py-3">
@@ -462,6 +650,144 @@ export default function NewOutboundOrderPage() {
                 </div>
               )}
             </Card>
+
+            {/* Shipment Supplies */}
+            {requiresRepack && (
+              <Card>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <PackageOpen className="w-5 h-5 text-indigo-500" />
+                    <h2 className="text-lg font-semibold text-gray-900">
+                      Shipment Supplies
+                    </h2>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={addSupplyLine}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Supply
+                  </Button>
+                </div>
+
+                {supplyLines.length === 0 ? (
+                  <div className="border border-dashed border-gray-300 rounded-lg p-6 text-center">
+                    <p className="text-gray-500 text-sm">
+                      Add products above to auto-suggest supplies, or add manually.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Supply
+                          </th>
+                          <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                            Qty
+                          </th>
+                          <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">
+                            Unit Price
+                          </th>
+                          <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                            Total
+                          </th>
+                          <th className="px-4 py-2.5 w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {supplyLines.map((line) => {
+                          const lineTotal = line.qty * line.unitPrice;
+                          return (
+                            <tr key={line.id}>
+                              <td className="px-4 py-2.5">
+                                <select
+                                  value={line.code}
+                                  onChange={(e) =>
+                                    updateSupplyLine(line.id, "code", e.target.value)
+                                  }
+                                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                >
+                                  <option value="">Select supply</option>
+                                  <optgroup label="Boxes">
+                                    {BOX_TYPES.map((b) => (
+                                      <option key={b.code} value={b.code}>
+                                        {b.name}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                  <optgroup label="Packing Materials">
+                                    {PACKING_MATERIALS.map((m) => (
+                                      <option key={m.code} value={m.code}>
+                                        {m.name}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                </select>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={line.qty}
+                                  onChange={(e) =>
+                                    updateSupplyLine(
+                                      line.id,
+                                      "qty",
+                                      parseInt(e.target.value) || 0
+                                    )
+                                  }
+                                  className="w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                />
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <span className="text-sm text-gray-600">
+                                  ${line.unitPrice.toFixed(2)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 text-right">
+                                <span className="text-sm font-medium text-gray-900">
+                                  ${lineTotal.toFixed(2)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <button
+                                  type="button"
+                                  onClick={() => removeSupplyLine(line.id)}
+                                  className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot className="bg-gray-50">
+                        <tr>
+                          <td
+                            colSpan={3}
+                            className="px-4 py-2.5 text-sm font-medium text-gray-700 text-right"
+                          >
+                            Supplies Total
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-sm font-semibold text-gray-900">
+                            ${suppliesTotal.toFixed(2)}
+                          </td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+                <p className="text-xs text-gray-400 mt-2">
+                  Auto-suggested from products. Adjust quantities or add more as needed.
+                </p>
+              </Card>
+            )}
           </div>
 
           {/* Sidebar */}
@@ -494,6 +820,16 @@ export default function NewOutboundOrderPage() {
                     </span>
                   </div>
                 </div>
+                {supplyLines.length > 0 && (
+                  <div className="border-t border-gray-200 pt-3">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Supplies ({supplyLines.length})</span>
+                      <span className="font-medium text-gray-900">
+                        ${suppliesTotal.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
                 <div className="border-t border-gray-200 pt-3">
                   <div className="flex justify-between text-base">
                     <span className="font-medium text-gray-700">Total Value</span>

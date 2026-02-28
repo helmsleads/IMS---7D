@@ -22,7 +22,7 @@ export interface OutboundOrder {
   ship_to_address2: string | null;
   ship_to_city: string | null;
   ship_to_state: string | null;
-  ship_to_postal_code: string | null;
+  ship_to_zip: string | null;
   ship_to_country: string | null;
   notes: string | null;
   carrier: string | null;
@@ -35,6 +35,8 @@ export interface OutboundOrder {
   is_rush: boolean | null;
   preferred_carrier: string | null;
   requires_repack: boolean;
+  recipient_name: string | null;
+  requestor: string | null;
   created_at: string;
 }
 
@@ -68,7 +70,14 @@ export interface OutboundOrderWithItems extends OutboundOrderWithClient {
 
 export interface CreateOutboundOrderData {
   client_id?: string | null;
+  recipient_name?: string | null;
+  requestor?: string | null;
   ship_to_address?: string | null;
+  ship_to_address2?: string | null;
+  ship_to_city?: string | null;
+  ship_to_state?: string | null;
+  ship_to_zip?: string | null;
+  preferred_carrier?: string | null;
   notes?: string | null;
   status?: string;
   source?: OrderSource;
@@ -79,6 +88,52 @@ export interface CreateOutboundItemData {
   product_id: string;
   qty_requested: number;
   unit_price?: number;
+}
+
+export interface UpdateOutboundOrderData {
+  recipient_name?: string | null;
+  requestor?: string | null;
+  ship_to_address?: string | null;
+  ship_to_address2?: string | null;
+  ship_to_city?: string | null;
+  ship_to_state?: string | null;
+  ship_to_zip?: string | null;
+  ship_to_country?: string | null;
+  preferred_carrier?: string | null;
+  notes?: string | null;
+  requires_repack?: boolean;
+  requested_at?: string | null;
+  confirmed_at?: string | null;
+  shipped_date?: string | null;
+  delivered_date?: string | null;
+}
+
+export async function updateOutboundOrder(
+  id: string,
+  data: UpdateOutboundOrderData
+): Promise<OutboundOrder> {
+  const supabase = createClient();
+
+  const { data: updated, error } = await supabase
+    .from("outbound_orders")
+    .update(data)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  // Log activity
+  await supabase.from("activity_log").insert({
+    entity_type: "outbound_order",
+    entity_id: id,
+    action: "updated",
+    details: data,
+  });
+
+  return updated;
 }
 
 export interface UpdateOutboundStatusFields {
@@ -166,9 +221,16 @@ export async function createOutboundOrder(
     client_id: order.client_id || null,
     status,
     source,
+    recipient_name: order.recipient_name || null,
+    requestor: order.requestor || null,
     ship_to_address: order.ship_to_address || null,
+    ship_to_address2: order.ship_to_address2 || null,
+    ship_to_city: order.ship_to_city || null,
+    ship_to_state: order.ship_to_state || null,
+    ship_to_zip: order.ship_to_zip || null,
+    preferred_carrier: order.preferred_carrier || null,
     notes: order.notes || null,
-    requires_repack: order.requires_repack ?? true, // Default to true (repack needed)
+    requires_repack: order.requires_repack ?? true,
   };
 
   // If creating as confirmed, set confirmation fields
