@@ -319,7 +319,7 @@ export async function recordSupplyUsage(
       quantity,
       unit_price: unitPrice,
       total,
-      billing_method: "per_use",
+      billing_method: "separate",
       invoiced: false,
     })
     .select()

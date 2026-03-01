@@ -496,8 +496,8 @@ export async function updateOutboundOrderStatus(
       }
     })();
     // Sync fulfillment to Shopify if this order came from Shopify
-    // The function internally checks if the order is from Shopify and has valid integration
-    if (additionalFields?.tracking_number && additionalFields?.carrier) {
+    // Only runs server-side (service role key not available in browser)
+    if (additionalFields?.tracking_number && additionalFields?.carrier && typeof window === "undefined") {
       // Fetch shipped items for partial fulfillment support
       const { data: shippedItems } = await supabase
         .from("outbound_items")

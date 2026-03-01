@@ -290,6 +290,10 @@ export default function OutboundOrderDetailPage() {
 
   // Order container types (derived from products)
   const [orderContainerTypes, setOrderContainerTypes] = useState<string[]>([]);
+  // Product metadata for per-brand suggestions
+  const [productMeta, setProductMeta] = useState<Map<string, { containerType: string; productName: string }>>(new Map());
+  // Packing mode: "combined" packs all bottles together, "per_brand" splits by product
+  const [packingMode, setPackingMode] = useState<"combined" | "per_brand">("per_brand");
 
   // Inline edit mode state
   const [isEditingOrder, setIsEditingOrder] = useState(false);
@@ -355,18 +359,22 @@ export default function OutboundOrderDetailPage() {
         const productIds = orderData.items.map((item) => item.product_id);
         const { data: productData } = await supabase
           .from("products")
-          .select("id, container_type")
+          .select("id, name, container_type")
           .in("id", productIds);
 
         const containerTypes: string[] = [];
+        const meta = new Map<string, { containerType: string; productName: string }>();
         if (productData) {
           const typeSet = new Set<string>();
           for (const p of productData) {
-            typeSet.add(p.container_type || "bottle");
+            const ct = p.container_type || "bottle";
+            typeSet.add(ct);
+            meta.set(p.id, { containerType: ct, productName: p.name });
           }
           containerTypes.push(...typeSet);
         }
         setOrderContainerTypes(containerTypes);
+        setProductMeta(meta);
 
         // Fetch supplies filtered by container types (includes universal ones)
         try {
@@ -603,66 +611,105 @@ export default function OutboundOrderDetailPage() {
     other: "Other",
   };
 
+  // Helper: suggest boxes for a given count + container type
+  const suggestBoxesForCount = (
+    count: number,
+    containerType: string,
+    label: string
+  ): { supply: SupplyWithInventory; reason: string; qty: number }[] => {
+    const results: { supply: SupplyWithInventory; reason: string; qty: number }[] = [];
+    const boxes = supplies
+      .filter((s) => s.category === "boxes" && (s.container_types || []).includes(containerType))
+      .sort((a, b) => {
+        const getNum = (name: string) => parseInt(name.match(/(\d+)/)?.[1] || "0");
+        return getNum(b.name) - getNum(a.name);
+      });
+
+    let remaining = count;
+    for (const box of boxes) {
+      const capacity = parseInt(box.name.match(/(\d+)/)?.[1] || "0");
+      if (capacity > 0 && remaining >= capacity) {
+        const qty = Math.floor(remaining / capacity);
+        results.push({ supply: box, reason: `${label} (${qty * capacity})`, qty });
+        remaining -= qty * capacity;
+      }
+    }
+    if (remaining > 0 && boxes.length > 0) {
+      const smallest = boxes[boxes.length - 1];
+      results.push({ supply: smallest, reason: `${label} (${remaining} remaining)`, qty: 1 });
+    }
+    return results;
+  };
+
   // Smart suggestions based on container types and order quantities
   const getSmartSuggestions = () => {
     if (!order) return [];
     const suggestions: { supply: SupplyWithInventory; reason: string; qty: number }[] = [];
 
-    // Calculate totals by container type
-    const supabaseProducts = new Map<string, string>(); // we use orderContainerTypes already
-    const totalItems = order.items.reduce((sum, item) => sum + item.qty_requested, 0);
-
-    // For bottle orders: suggest boxes and inserts
-    if (orderContainerTypes.includes("bottle")) {
-      // Suggest the largest box that fits, using greedy approach
-      const bottleBoxes = supplies
-        .filter((s) => s.category === "boxes" && (s.container_types || []).includes("bottle"))
-        .sort((a, b) => {
-          // Sort by capacity hint from name (extract number)
-          const getNum = (name: string) => {
-            const match = name.match(/(\d+)/);
-            return match ? parseInt(match[1]) : 0;
-          };
-          return getNum(b.name) - getNum(a.name);
-        });
-
-      let remaining = totalItems;
-      for (const box of bottleBoxes) {
-        const capacity = parseInt(box.name.match(/(\d+)/)?.[1] || "0");
-        if (capacity > 0 && remaining >= capacity) {
-          const qty = Math.floor(remaining / capacity);
-          suggestions.push({ supply: box, reason: `${qty * capacity} bottles`, qty });
-          remaining -= qty * capacity;
+    if (packingMode === "per_brand") {
+      // Group items by product name (brand), then suggest boxes per group
+      const groups = new Map<string, { qty: number; containerType: string }>();
+      for (const item of order.items) {
+        const meta = productMeta.get(item.product_id);
+        const name = meta?.productName || item.product?.name || "Unknown";
+        // Extract brand prefix (first 2 words or up to first number)
+        const brandKey = name.replace(/\s+\d.*$/, "").trim();
+        const ct = meta?.containerType || "bottle";
+        const existing = groups.get(brandKey);
+        if (existing) {
+          existing.qty += item.qty_requested;
+        } else {
+          groups.set(brandKey, { qty: item.qty_requested, containerType: ct });
         }
       }
-      // Handle remaining with smallest box
-      if (remaining > 0 && bottleBoxes.length > 0) {
-        const smallest = bottleBoxes[bottleBoxes.length - 1];
-        suggestions.push({ supply: smallest, reason: `${remaining} remaining bottle(s)`, qty: 1 });
-      }
 
-      // Suggest inserts (floor(bottles/2) inserts per box)
-      const insertSupply = supplies.find((s) =>
-        s.category === "cushioning" && s.name.toLowerCase().includes("insert")
-      );
-      if (insertSupply) {
-        const totalBoxes = suggestions.reduce((sum, s) => sum + s.qty, 0);
-        const insertQty = Math.floor(totalItems / 2);
-        if (insertQty > 0) {
-          suggestions.push({ supply: insertSupply, reason: `~1 insert per 2 bottles (${totalBoxes} boxes)`, qty: insertQty });
+      let totalBottles = 0;
+      for (const [brand, { qty, containerType }] of groups) {
+        if (containerType === "bottle") {
+          const boxSuggestions = suggestBoxesForCount(qty, "bottle", brand);
+          suggestions.push(...boxSuggestions);
+          totalBottles += qty;
+        } else if (containerType === "can") {
+          const boxSuggestions = suggestBoxesForCount(qty, "can", brand);
+          suggestions.push(...boxSuggestions);
         }
       }
-    }
 
-    // For can orders: suggest can boxes
-    if (orderContainerTypes.includes("can")) {
-      const canBoxes = supplies.filter(
-        (s) => s.category === "boxes" && (s.container_types || []).includes("can")
-      );
-      for (const box of canBoxes) {
-        const capacity = parseInt(box.name.match(/(\d+)/)?.[1] || "6");
-        const qty = Math.ceil(totalItems / capacity);
-        suggestions.push({ supply: box, reason: `${totalItems} cans`, qty });
+      // Inserts for total bottles
+      if (totalBottles > 0) {
+        const insertSupply = supplies.find((s) =>
+          s.category === "cushioning" && s.name.toLowerCase().includes("insert")
+        );
+        if (insertSupply) {
+          const insertQty = Math.floor(totalBottles / 2);
+          if (insertQty > 0) {
+            suggestions.push({ supply: insertSupply, reason: `~1 per 2 bottles (${totalBottles} total)`, qty: insertQty });
+          }
+        }
+      }
+    } else {
+      // Combined mode: sum all items together by container type
+      const totalItems = order.items.reduce((sum, item) => sum + item.qty_requested, 0);
+
+      if (orderContainerTypes.includes("bottle")) {
+        const boxSuggestions = suggestBoxesForCount(totalItems, "bottle", "All bottles");
+        suggestions.push(...boxSuggestions);
+
+        const insertSupply = supplies.find((s) =>
+          s.category === "cushioning" && s.name.toLowerCase().includes("insert")
+        );
+        if (insertSupply) {
+          const totalBoxes = boxSuggestions.reduce((sum, s) => sum + s.qty, 0);
+          const insertQty = Math.floor(totalItems / 2);
+          if (insertQty > 0) {
+            suggestions.push({ supply: insertSupply, reason: `~1 per 2 bottles (${totalBoxes} boxes)`, qty: insertQty });
+          }
+        }
+      }
+
+      if (orderContainerTypes.includes("can")) {
+        const boxSuggestions = suggestBoxesForCount(totalItems, "can", "All cans");
+        suggestions.push(...boxSuggestions);
       }
     }
 
@@ -1434,12 +1481,36 @@ export default function OutboundOrderDetailPage() {
               {/* Smart Suggestions */}
               {smartSuggestions.length > 0 && orderSupplies.length === 0 && orderRequiresRepack && (
                 <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Zap className="w-4 h-4 text-blue-600" />
-                    <p className="text-sm font-semibold text-blue-800">Suggested Supplies</p>
-                    <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
-                      Based on order contents
-                    </span>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-blue-600" />
+                      <p className="text-sm font-semibold text-blue-800">Suggested Supplies</p>
+                      <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                        Based on order contents
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
+                      <button
+                        onClick={() => setPackingMode("per_brand")}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                          packingMode === "per_brand"
+                            ? "bg-indigo-100 text-indigo-700"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        Per Brand
+                      </button>
+                      <button
+                        onClick={() => setPackingMode("combined")}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                          packingMode === "combined"
+                            ? "bg-indigo-100 text-indigo-700"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        Combined
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     {smartSuggestions.map(({ supply, reason, qty }, idx) => (
