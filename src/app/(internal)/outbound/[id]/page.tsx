@@ -39,7 +39,9 @@ import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import Textarea from "@/components/ui/Textarea";
-import ShippingModal, { ShippingData } from "@/components/internal/ShippingModal";
+import ShippingModal, { ShippingData, ShipToAddress } from "@/components/internal/ShippingModal";
+import { requiresAlcoholCompliance } from "@/lib/api/workflow-profiles";
+import type { ClientIndustry } from "@/types/database";
 import Alert from "@/components/ui/Alert";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import {
@@ -295,6 +297,10 @@ export default function OutboundOrderDetailPage() {
   // Packing mode: "combined" packs all bottles together, "per_brand" splits by product
   const [packingMode, setPackingMode] = useState<"combined" | "per_brand">("per_brand");
 
+  // FedEx alcohol shipping state
+  const [isAlcoholOrder, setIsAlcoholOrder] = useState(false);
+  const [fedexConfigured, setFedexConfigured] = useState(false);
+
   // Inline edit mode state
   const [isEditingOrder, setIsEditingOrder] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
@@ -353,6 +359,18 @@ export default function OutboundOrderDetailPage() {
             console.error("Failed to fetch client settings:", err);
           }
         }
+
+        // Detect alcohol order from client industry
+        if (orderData.client?.industry) {
+          const alcoholOrder = requiresAlcoholCompliance([orderData.client.industry as ClientIndustry]);
+          setIsAlcoholOrder(alcoholOrder);
+        }
+
+        // Check if FedEx is configured (non-blocking)
+        fetch("/api/shipping/fedex")
+          .then((res) => res.json())
+          .then((data) => setFedexConfigured(!!data.configured))
+          .catch(() => setFedexConfigured(false));
 
         // Determine container types from order products and fetch filtered supplies
         const supabase = (await import("@/lib/supabase")).createClient();
@@ -513,16 +531,21 @@ export default function OutboundOrderDetailPage() {
       });
 
       // 2. Log activity with shipping details
+      const { data: { user: shipUser } } = await supabase.auth.getUser();
       await supabase.from("activity_log").insert({
         entity_type: "outbound_order",
         entity_id: order.id,
         action: "shipped",
+        user_id: shipUser?.id || null,
         details: {
           order_number: order.order_number,
           carrier: shippingData.carrier,
           tracking_number: shippingData.trackingNumber,
           ship_date: shippingData.shipDate,
           notes: shippingData.notes,
+          label_url: shippingData.labelUrl || null,
+          fedex_shipment_id: shippingData.fedexShipmentId || null,
+          shipping_method: shippingData.fedexShipmentId ? "fedex_api" : "manual",
           items_shipped: order.items.map((item) => ({
             product_id: item.product_id,
             product_name: item.product?.name,
@@ -611,7 +634,7 @@ export default function OutboundOrderDetailPage() {
     other: "Other",
   };
 
-  // Helper: suggest boxes for a given count + container type
+  // Helper: suggest boxes for a given count + container type (fewest boxes)
   const suggestBoxesForCount = (
     count: number,
     containerType: string,
@@ -622,21 +645,34 @@ export default function OutboundOrderDetailPage() {
       .filter((s) => s.category === "boxes" && (s.container_types || []).includes(containerType))
       .sort((a, b) => {
         const getNum = (name: string) => parseInt(name.match(/(\d+)/)?.[1] || "0");
-        return getNum(b.name) - getNum(a.name);
+        return getNum(a.name) - getNum(b.name); // smallest first for best-fit lookup
       });
 
+    const largestFirst = [...boxes].reverse(); // largest first for fallback
     let remaining = count;
-    for (const box of boxes) {
-      const capacity = parseInt(box.name.match(/(\d+)/)?.[1] || "0");
-      if (capacity > 0 && remaining >= capacity) {
-        const qty = Math.floor(remaining / capacity);
-        results.push({ supply: box, reason: `${label} (${qty * capacity})`, qty });
-        remaining -= qty * capacity;
+    while (remaining > 0 && boxes.length > 0) {
+      // Try to find the smallest single box that fits all remaining
+      const bestFit = boxes.find((box) => {
+        const capacity = parseInt(box.name.match(/(\d+)/)?.[1] || "0");
+        return capacity >= remaining;
+      });
+      if (bestFit) {
+        const capacity = parseInt(bestFit.name.match(/(\d+)/)?.[1] || "0");
+        const existing = results.find((r) => r.supply.id === bestFit.id);
+        if (existing) { existing.qty += 1; } else {
+          results.push({ supply: bestFit, reason: `${label} (${remaining})`, qty: 1 });
+        }
+        remaining = 0;
+      } else {
+        // No single box fits — use the largest box and repeat
+        const largest = largestFirst[0];
+        const capacity = parseInt(largest.name.match(/(\d+)/)?.[1] || "0");
+        const existing = results.find((r) => r.supply.id === largest.id);
+        if (existing) { existing.qty += 1; } else {
+          results.push({ supply: largest, reason: `${label} (${capacity})`, qty: 1 });
+        }
+        remaining -= capacity;
       }
-    }
-    if (remaining > 0 && boxes.length > 0) {
-      const smallest = boxes[boxes.length - 1];
-      results.push({ supply: smallest, reason: `${label} (${remaining} remaining)`, qty: 1 });
     }
     return results;
   };
@@ -675,15 +711,20 @@ export default function OutboundOrderDetailPage() {
         }
       }
 
-      // Inserts for total bottles
-      if (totalBottles > 0) {
+      // Inserts based on total box capacity (each insert is a 2-bottle divider filling the box)
+      const bottleBoxSuggestions = suggestions.filter((s) => s.supply.category === "boxes");
+      const totalBoxCapacity = bottleBoxSuggestions.reduce((sum, s) => {
+        const capacity = parseInt(s.supply.name.match(/(\d+)/)?.[1] || "0");
+        return sum + capacity * s.qty;
+      }, 0);
+      if (totalBoxCapacity > 0) {
         const insertSupply = supplies.find((s) =>
           s.category === "cushioning" && s.name.toLowerCase().includes("insert")
         );
         if (insertSupply) {
-          const insertQty = Math.floor(totalBottles / 2);
+          const insertQty = Math.floor(totalBoxCapacity / 2);
           if (insertQty > 0) {
-            suggestions.push({ supply: insertSupply, reason: `~1 per 2 bottles (${totalBottles} total)`, qty: insertQty });
+            suggestions.push({ supply: insertSupply, reason: `Inserts for box capacity (${totalBoxCapacity})`, qty: insertQty });
           }
         }
       }
@@ -699,10 +740,13 @@ export default function OutboundOrderDetailPage() {
           s.category === "cushioning" && s.name.toLowerCase().includes("insert")
         );
         if (insertSupply) {
-          const totalBoxes = boxSuggestions.reduce((sum, s) => sum + s.qty, 0);
-          const insertQty = Math.floor(totalItems / 2);
+          const totalBoxCapacity = boxSuggestions.reduce((sum, s) => {
+            const capacity = parseInt(s.supply.name.match(/(\d+)/)?.[1] || "0");
+            return sum + capacity * s.qty;
+          }, 0);
+          const insertQty = Math.floor(totalBoxCapacity / 2);
           if (insertQty > 0) {
-            suggestions.push({ supply: insertSupply, reason: `~1 per 2 bottles (${totalBoxes} boxes)`, qty: insertQty });
+            suggestions.push({ supply: insertSupply, reason: `Inserts for box capacity (${totalBoxCapacity})`, qty: insertQty });
           }
         }
       }
@@ -2055,6 +2099,19 @@ export default function OutboundOrderDetailPage() {
                   </p>
                 </div>
 
+                {/* Created By */}
+                {(order as any).created_by_user && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Created By</p>
+                    <div className="flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-gray-400" />
+                      <p className="font-medium text-gray-900">
+                        {(order as any).created_by_user.full_name || (order as any).created_by_user.email}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Confirmed Date */}
                 {order.confirmed_at && (
                   <div>
@@ -2455,6 +2512,20 @@ export default function OutboundOrderDetailPage() {
         orderNumber={order?.order_number}
         initialCarrier={order?.carrier || ""}
         initialTrackingNumber={order?.tracking_number || ""}
+        isAlcoholOrder={isAlcoholOrder}
+        fedexConfigured={fedexConfigured}
+        orderId={order?.id}
+        shipToAddress={order ? {
+          name: order.ship_to_name || undefined,
+          company: order.ship_to_company || undefined,
+          address: order.ship_to_address || undefined,
+          address2: order.ship_to_address2 || undefined,
+          city: order.ship_to_city || undefined,
+          state: order.ship_to_state || undefined,
+          zip: order.ship_to_zip || undefined,
+          country: order.ship_to_country || undefined,
+          phone: order.ship_to_phone || undefined,
+        } : undefined}
       />
 
       {/* Confirm Order Modal with Inventory Check */}

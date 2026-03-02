@@ -673,6 +673,9 @@ export default function SystemSettingsPage() {
       {/* Daily Tasks Section */}
       <DailyTasksSection />
 
+      {/* FedEx Shipping Section */}
+      <FedExShippingSection />
+
       {/* Brand Aliases Section */}
       <BrandAliasesSection />
 
@@ -1412,6 +1415,348 @@ function DailyTasksSection() {
               <>
                 <Play className="w-4 h-4" />
                 Run Now
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+interface FedExFormState {
+  client_id: string;
+  client_secret: string;
+  account_number: string;
+  environment: "sandbox" | "production";
+  shipper_company: string;
+  shipper_street: string;
+  shipper_city: string;
+  shipper_state: string;
+  shipper_zip: string;
+  shipper_country: string;
+  shipper_phone: string;
+}
+
+const FEDEX_INITIAL: FedExFormState = {
+  client_id: "",
+  client_secret: "",
+  account_number: "",
+  environment: "sandbox",
+  shipper_company: "",
+  shipper_street: "",
+  shipper_city: "",
+  shipper_state: "",
+  shipper_zip: "",
+  shipper_country: "US",
+  shipper_phone: "",
+};
+
+function FedExShippingSection() {
+  const [form, setForm] = useState<FedExFormState>(FEDEX_INITIAL);
+  const [configured, setConfigured] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  useEffect(() => {
+    loadCredentials();
+  }, []);
+
+  const loadCredentials = async () => {
+    try {
+      const res = await fetch("/api/shipping/fedex/settings");
+      const data = await res.json();
+      if (data.configured && data.credentials) {
+        setConfigured(true);
+        setForm({
+          client_id: data.credentials.client_id || "",
+          client_secret: data.credentials.client_secret || "",
+          account_number: data.credentials.account_number || "",
+          environment: data.credentials.environment || "sandbox",
+          shipper_company: data.credentials.shipper_company || "",
+          shipper_street: data.credentials.shipper_street || "",
+          shipper_city: data.credentials.shipper_city || "",
+          shipper_state: data.credentials.shipper_state || "",
+          shipper_zip: data.credentials.shipper_zip || "",
+          shipper_country: data.credentials.shipper_country || "US",
+          shipper_phone: data.credentials.shipper_phone || "",
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load FedEx settings:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTest = async () => {
+    if (!form.client_id || !form.client_secret || form.client_secret === "****" || !form.account_number) {
+      setResult({ type: "error", message: "Fill in API Key, API Secret, and Account Number to test." });
+      return;
+    }
+    setTesting(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/shipping/fedex/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResult({ type: "success", message: data.message || "Connected successfully!" });
+      } else {
+        setResult({ type: "error", message: data.error || "Connection failed" });
+      }
+    } catch {
+      setResult({ type: "error", message: "Network error — could not reach test endpoint" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!form.client_id || !form.account_number) {
+      setResult({ type: "error", message: "API Key and Account Number are required." });
+      return;
+    }
+    setSaving(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/shipping/fedex/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResult({ type: "success", message: "FedEx credentials saved." });
+        setConfigured(true);
+      } else {
+        setResult({ type: "error", message: data.error || "Failed to save" });
+      }
+    } catch {
+      setResult({ type: "error", message: "Network error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const update = (key: keyof FedExFormState, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  if (loading) {
+    return (
+      <Card padding="none" className="mb-6">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3">
+          <div className="p-2 bg-purple-100 rounded-lg">
+            <Truck className="w-5 h-5 text-purple-600" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">FedEx Alcohol Shipping</h2>
+            <p className="text-sm text-gray-500">Loading...</p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card padding="none" className="mb-6">
+      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-purple-100 rounded-lg">
+            <Truck className="w-5 h-5 text-purple-600" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">FedEx Alcohol Shipping</h2>
+            <p className="text-sm text-gray-500">
+              API credentials for the FedEx alcohol-licensed shipping account
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {configured ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+              <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+              Connected
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+              <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+              Not Configured
+            </span>
+          )}
+        </div>
+      </div>
+
+      {result && (
+        <div
+          className={`mx-6 mt-4 p-3 rounded-lg flex items-center gap-2 text-sm ${
+            result.type === "success"
+              ? "bg-green-50 text-green-700 border border-green-200"
+              : "bg-red-50 text-red-700 border border-red-200"
+          }`}
+        >
+          {result.type === "success" ? (
+            <Check className="w-4 h-4 flex-shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          )}
+          {result.message}
+        </div>
+      )}
+
+      <div className="p-6 space-y-6">
+        {/* Environment Toggle */}
+        <div className="flex items-center gap-4">
+          <label className="text-sm font-medium text-gray-700 w-32">Environment</label>
+          <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => update("environment", "sandbox")}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                form.environment === "sandbox"
+                  ? "bg-amber-100 text-amber-800"
+                  : "bg-white text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              Sandbox
+            </button>
+            <button
+              type="button"
+              onClick={() => update("environment", "production")}
+              className={`px-4 py-2 text-sm font-medium border-l border-gray-300 transition-colors ${
+                form.environment === "production"
+                  ? "bg-green-100 text-green-800"
+                  : "bg-white text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              Production
+            </button>
+          </div>
+        </div>
+
+        {/* API Credentials */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <Input
+              label="API Key (Client ID)"
+              value={form.client_id}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => update("client_id", e.target.value)}
+              placeholder="l7xxxxxxxxxxxx..."
+            />
+          </div>
+          <div>
+            <Input
+              label="API Secret"
+              type="password"
+              value={form.client_secret}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => update("client_secret", e.target.value)}
+              placeholder={configured ? "****" : "Enter secret"}
+            />
+          </div>
+          <div>
+            <Input
+              label="Account Number"
+              value={form.account_number}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => update("account_number", e.target.value)}
+              placeholder="123456789"
+            />
+          </div>
+        </div>
+
+        {/* Shipper Address */}
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">
+            Shipper Address (Warehouse Origin)
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input
+              label="Company Name"
+              value={form.shipper_company}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => update("shipper_company", e.target.value)}
+              placeholder="7 Degrees Co"
+            />
+            <Input
+              label="Phone"
+              value={form.shipper_phone}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => update("shipper_phone", e.target.value)}
+              placeholder="555-123-4567"
+            />
+            <div className="md:col-span-2">
+              <Input
+                label="Street Address"
+                value={form.shipper_street}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => update("shipper_street", e.target.value)}
+                placeholder="123 Warehouse Dr"
+              />
+            </div>
+            <Input
+              label="City"
+              value={form.shipper_city}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => update("shipper_city", e.target.value)}
+              placeholder="City"
+            />
+            <div className="grid grid-cols-3 gap-3">
+              <Input
+                label="State"
+                value={form.shipper_state}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => update("shipper_state", e.target.value)}
+                placeholder="NY"
+              />
+              <Input
+                label="ZIP"
+                value={form.shipper_zip}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => update("shipper_zip", e.target.value)}
+                placeholder="10001"
+              />
+              <Input
+                label="Country"
+                value={form.shipper_country}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => update("shipper_country", e.target.value)}
+                placeholder="US"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-3 pt-2 border-t border-gray-200">
+          <button
+            onClick={handleTest}
+            disabled={testing || saving}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            {testing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Testing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4" />
+                Test Connection
+              </>
+            )}
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || testing}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                Save Credentials
               </>
             )}
           </button>

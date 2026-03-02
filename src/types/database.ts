@@ -827,6 +827,7 @@ export interface InboundOrder {
   received_date: string | null
   received_by: string | null
   notes: string | null
+  created_by: string | null
   created_at: string
   // Shopify incoming inventory sync tracking
   shopify_incoming_synced: boolean
@@ -879,7 +880,30 @@ export interface OutboundOrder {
   is_rush: boolean | null
   preferred_carrier: string | null
   requires_repack: boolean
+  is_multi_client: boolean
+  created_by: string | null
   created_at: string
+
+  // FedEx shipping integration
+  fedex_shipment_id: string | null
+  label_url: string | null
+  shipping_method: 'manual' | 'fedex_api'
+}
+
+// FedEx Credentials stored in system_settings
+export interface FedExCredentials {
+  client_id: string
+  client_secret: string // encrypted via encryptToken()
+  account_number: string
+  environment: 'sandbox' | 'production'
+  // Shipper (warehouse) address
+  shipper_company: string
+  shipper_street: string
+  shipper_city: string
+  shipper_state: string
+  shipper_zip: string
+  shipper_country: string
+  shipper_phone: string
 }
 
 export interface OutboundItem {

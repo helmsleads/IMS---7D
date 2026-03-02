@@ -18,12 +18,16 @@ export interface OutboundOrder {
   client_id: string | null;
   status: string;
   source: OrderSource;
+  ship_to_name: string | null;
+  ship_to_company: string | null;
   ship_to_address: string | null;
   ship_to_address2: string | null;
   ship_to_city: string | null;
   ship_to_state: string | null;
   ship_to_zip: string | null;
   ship_to_country: string | null;
+  ship_to_phone: string | null;
+  ship_to_email: string | null;
   notes: string | null;
   carrier: string | null;
   tracking_number: string | null;
@@ -35,9 +39,15 @@ export interface OutboundOrder {
   is_rush: boolean | null;
   preferred_carrier: string | null;
   requires_repack: boolean;
+  is_multi_client: boolean;
   recipient_name: string | null;
   requestor: string | null;
+  created_by: string | null;
   created_at: string;
+  // FedEx shipping integration
+  fedex_shipment_id: string | null;
+  label_url: string | null;
+  shipping_method: string | null;
 }
 
 export interface OutboundItem {
@@ -54,6 +64,7 @@ export interface OutboundItemWithProduct extends OutboundItem {
     id: string;
     sku: string;
     name: string;
+    client_id?: string | null;
   };
 }
 
@@ -61,11 +72,13 @@ export interface OutboundOrderWithClient extends OutboundOrder {
   client?: {
     id: string;
     company_name: string;
+    industry?: string;
   } | null;
 }
 
 export interface OutboundOrderWithItems extends OutboundOrderWithClient {
   items: OutboundItemWithProduct[];
+  created_by_user?: { full_name: string | null; email: string } | null;
 }
 
 export interface CreateOutboundOrderData {
@@ -82,6 +95,7 @@ export interface CreateOutboundOrderData {
   status?: string;
   source?: OrderSource;
   requires_repack?: boolean;
+  is_multi_client?: boolean;
 }
 
 export interface CreateOutboundItemData {
@@ -108,11 +122,40 @@ export interface UpdateOutboundOrderData {
   delivered_date?: string | null;
 }
 
+export interface ClientSplit {
+  clientId: string;
+  fraction: number;
+  itemCount: number;
+}
+
+/**
+ * Compute proportional client splits from order items.
+ * Used to split shared costs (supplies, boxes) across clients in multi-client orders.
+ */
+export function computeClientSplits(
+  items: { clientId: string; qty: number }[]
+): ClientSplit[] {
+  const totalQty = items.reduce((sum, i) => sum + i.qty, 0);
+  if (totalQty === 0) return [];
+
+  const byClient = new Map<string, number>();
+  for (const item of items) {
+    byClient.set(item.clientId, (byClient.get(item.clientId) || 0) + item.qty);
+  }
+
+  return Array.from(byClient.entries()).map(([clientId, qty]) => ({
+    clientId,
+    fraction: qty / totalQty,
+    itemCount: qty,
+  }));
+}
+
 export async function updateOutboundOrder(
   id: string,
   data: UpdateOutboundOrderData
 ): Promise<OutboundOrder> {
   const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
   const { data: updated, error } = await supabase
     .from("outbound_orders")
@@ -130,6 +173,7 @@ export async function updateOutboundOrder(
     entity_type: "outbound_order",
     entity_id: id,
     action: "updated",
+    user_id: user?.id || null,
     details: data,
   });
 
@@ -175,7 +219,8 @@ export async function getOutboundOrder(id: string): Promise<OutboundOrderWithIte
       *,
       client:clients (
         id,
-        company_name
+        company_name,
+        industry
       ),
       items:outbound_items (
         id,
@@ -187,7 +232,8 @@ export async function getOutboundOrder(id: string): Promise<OutboundOrderWithIte
         product:products (
           id,
           sku,
-          name
+          name,
+          client_id
         )
       )
     `)
@@ -201,7 +247,20 @@ export async function getOutboundOrder(id: string): Promise<OutboundOrderWithIte
     throw new Error(error.message);
   }
 
-  return data;
+  // Fetch created_by user profile if present
+  let created_by_user: { full_name: string | null; email: string } | null = null;
+  if (data.created_by) {
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("full_name, email")
+      .eq("id", data.created_by)
+      .single();
+    if (profile) {
+      created_by_user = profile;
+    }
+  }
+
+  return { ...data, created_by_user };
 }
 
 export async function createOutboundOrder(
@@ -216,6 +275,7 @@ export async function createOutboundOrder(
   // Determine status and confirmation fields
   const status = order.status || "pending";
   const source = order.source || "internal";
+  const { data: { user } } = await supabase.auth.getUser();
   const insertData: Record<string, unknown> = {
     order_number: orderNumber,
     client_id: order.client_id || null,
@@ -231,11 +291,12 @@ export async function createOutboundOrder(
     preferred_carrier: order.preferred_carrier || null,
     notes: order.notes || null,
     requires_repack: order.requires_repack ?? true,
+    is_multi_client: order.is_multi_client ?? false,
+    created_by: user?.id || null,
   };
 
   // If creating as confirmed, set confirmation fields
   if (status === "confirmed") {
-    const { data: { user } } = await supabase.auth.getUser();
     insertData.confirmed_at = new Date().toISOString();
     insertData.confirmed_by = user?.id || null;
     insertData.requested_at = new Date().toISOString();
@@ -278,6 +339,7 @@ export async function createOutboundOrder(
     entity_type: "outbound_order",
     entity_id: outboundOrder.id,
     action: "created",
+    user_id: user?.id || null,
     details: {
       order_number: orderNumber,
       client_id: order.client_id,
@@ -433,6 +495,7 @@ export async function updateOutboundOrderStatus(
     entity_type: "outbound_order",
     entity_id: id,
     action: "status_changed",
+    user_id: user?.id || null,
     details: {
       new_status: status,
       previous_status: currentOrder.status,
@@ -526,12 +589,36 @@ export async function updateOutboundOrderStatus(
     );
   }
 
-  // Send portal notification to client for all status changes
-  if (data.client_id) {
-    const trackingDetails = (status === "shipped" && additionalFields?.tracking_number)
-      ? `Tracking: ${additionalFields.carrier || ""} ${additionalFields.tracking_number}`
-      : undefined;
+  // Send portal notification to all involved clients for status changes
+  const trackingDetails = (status === "shipped" && additionalFields?.tracking_number)
+    ? `Tracking: ${additionalFields.carrier || ""} ${additionalFields.tracking_number}`
+    : undefined;
 
+  if (data.is_multi_client) {
+    // For multi-client orders, derive all client IDs from items and notify each
+    const { data: orderItems } = await supabase
+      .from("outbound_items")
+      .select("product:products (client_id)")
+      .eq("order_id", id);
+
+    const clientIdsToNotify = new Set<string>();
+    if (data.client_id) clientIdsToNotify.add(data.client_id);
+    for (const item of (orderItems || []) as any[]) {
+      const product = Array.isArray(item.product) ? item.product[0] : item.product;
+      if (product?.client_id) clientIdsToNotify.add(product.client_id);
+    }
+
+    for (const notifyClientId of clientIdsToNotify) {
+      sendPortalOrderNotification({
+        clientId: notifyClientId,
+        orderNumber: data.order_number,
+        status,
+        details: trackingDetails,
+      }).catch((err) =>
+        console.error(`Failed to send portal notification to client ${notifyClientId}:`, err)
+      );
+    }
+  } else if (data.client_id) {
     sendPortalOrderNotification({
       clientId: data.client_id,
       orderNumber: data.order_number,
@@ -639,6 +726,7 @@ export async function shipOutboundItem(
       entity_type: "outbound_item",
       entity_id: itemId,
       action: "shipped",
+      user_id: performedBy || null,
       details: {
         product_id: item.product_id,
         qty_shipped: qtyShipped,
@@ -738,14 +826,14 @@ export interface OutboundWithUsage extends OutboundOrderWithItems {
 export async function recordOutboundUsage(orderId: string): Promise<void> {
   const supabase = createClient();
 
-  // Get the order with items
+  // Get the order with items and product client_id for multi-client splitting
   const { data: order, error: orderError } = await supabase
     .from("outbound_orders")
     .select(`
       *,
       items:outbound_items (
         qty_shipped,
-        product:products (id, sku, name)
+        product:products (id, sku, name, client_id)
       )
     `)
     .eq("id", orderId)
@@ -755,74 +843,75 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
     throw new Error(orderError.message);
   }
 
-  if (!order.client_id) {
-    return; // No client, no usage to record
+  // Group shipped items by owning client
+  const clientShipped = new Map<string, number>();
+  for (const item of (order.items || []) as any[]) {
+    const qty = item.qty_shipped || 0;
+    if (qty === 0) continue;
+    const product = Array.isArray(item.product) ? item.product[0] : item.product;
+    const ownerClientId = product?.client_id || order.client_id;
+    if (!ownerClientId) continue;
+    clientShipped.set(ownerClientId, (clientShipped.get(ownerClientId) || 0) + qty);
   }
 
-  // Calculate total items shipped
-  const totalItemsShipped = (order.items || []).reduce(
-    (sum: number, item: any) => sum + (item.qty_shipped || 0),
-    0
-  );
-
-  if (totalItemsShipped === 0) {
+  if (clientShipped.size === 0) {
     return; // No items shipped, no usage to record
   }
 
   const usageDate = new Date().toISOString().split("T")[0];
 
-  // Record billable events using rate cards
-  // 7 Degrees pricing: $1.00/unit for outgoing handling (cases/bottles)
-  try {
-    await supabase.rpc("record_billable_event", {
-      p_client_id: order.client_id,
-      p_rate_code: "PICK_UNIT",
-      p_quantity: totalItemsShipped,
-      p_reference_type: "outbound_order",
-      p_reference_id: orderId,
-      p_usage_date: usageDate,
-      p_notes: `Order ${order.order_number} - Outgoing handling: ${totalItemsShipped} cases/bottles`,
-    });
-  } catch (billingError) {
-    // Log error but don't fail the operation
-    console.error("Failed to record billable events:", billingError);
-  }
-
-  // Also record to legacy fulfillment service if configured
-  const { data: clientService } = await supabase
-    .from("client_services")
-    .select(`
-      id,
-      service_id,
-      custom_price,
-      service:services (id, name, base_price, price_unit)
-    `)
-    .eq("client_id", order.client_id)
-    .eq("is_active", true)
-    .single();
-
-  if (clientService) {
-    const service = clientService.service as any;
-    const unitPrice = clientService.custom_price ?? service?.base_price ?? 0;
-
-    const { error: usageError } = await supabase
-      .from("usage_records")
-      .insert({
-        client_id: order.client_id,
-        service_id: clientService.service_id,
-        usage_type: "fulfillment",
-        quantity: totalItemsShipped,
-        unit_price: unitPrice,
-        total: totalItemsShipped * unitPrice,
-        reference_type: "outbound_order",
-        reference_id: orderId,
-        usage_date: usageDate,
-        invoiced: false,
-        notes: `Order ${order.order_number} - ${totalItemsShipped} items`,
+  // Record billable events per client
+  for (const [billingClientId, qty] of clientShipped) {
+    try {
+      await supabase.rpc("record_billable_event", {
+        p_client_id: billingClientId,
+        p_rate_code: "PICK_UNIT",
+        p_quantity: qty,
+        p_reference_type: "outbound_order",
+        p_reference_id: orderId,
+        p_usage_date: usageDate,
+        p_notes: `Order ${order.order_number} - Outgoing handling: ${qty} cases/bottles`,
       });
+    } catch (billingError) {
+      console.error(`Failed to record billable events for client ${billingClientId}:`, billingError);
+    }
 
-    if (usageError) {
-      console.error("Failed to record fulfillment usage:", usageError.message);
+    // Also record to legacy fulfillment service if configured
+    const { data: clientService } = await supabase
+      .from("client_services")
+      .select(`
+        id,
+        service_id,
+        custom_price,
+        service:services (id, name, base_price, price_unit)
+      `)
+      .eq("client_id", billingClientId)
+      .eq("is_active", true)
+      .single();
+
+    if (clientService) {
+      const service = clientService.service as any;
+      const unitPrice = clientService.custom_price ?? service?.base_price ?? 0;
+
+      const { error: usageError } = await supabase
+        .from("usage_records")
+        .insert({
+          client_id: billingClientId,
+          service_id: clientService.service_id,
+          usage_type: "fulfillment",
+          quantity: qty,
+          unit_price: unitPrice,
+          total: qty * unitPrice,
+          reference_type: "outbound_order",
+          reference_id: orderId,
+          usage_date: usageDate,
+          invoiced: false,
+          notes: `Order ${order.order_number} - ${qty} items`,
+        });
+
+      if (usageError) {
+        console.error("Failed to record fulfillment usage:", usageError.message);
+      }
     }
   }
 }
