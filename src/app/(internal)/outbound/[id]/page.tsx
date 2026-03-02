@@ -71,6 +71,8 @@ import {
   getSuppliesForContainerTypes,
   getOrderSupplies,
   recordSupplyUsage,
+  updateSupplyUsage,
+  deleteSupplyUsage,
   SupplyWithInventory,
   SupplyUsageWithDetails,
 } from "@/lib/api/supplies";
@@ -328,6 +330,8 @@ export default function OutboundOrderDetailPage() {
   const [selectedSupplyId, setSelectedSupplyId] = useState("");
   const [supplyQty, setSupplyQty] = useState(1);
   const [addingSupply, setAddingSupply] = useState(false);
+  const [editingSupplyId, setEditingSupplyId] = useState<string | null>(null);
+  const [editSupplyQty, setEditSupplyQty] = useState(1);
 
   // Client settings state
   const [clientSettings, setClientSettings] = useState<ClientSetting[]>([]);
@@ -688,6 +692,28 @@ export default function OutboundOrderDetailPage() {
       console.error("Failed to add supply:", err);
     } finally {
       setAddingSupply(false);
+    }
+  };
+
+  const handleUpdateSupply = async (usageId: string) => {
+    if (editSupplyQty <= 0) return;
+    try {
+      await updateSupplyUsage(usageId, editSupplyQty);
+      const updatedSupplies = await getOrderSupplies(orderId);
+      setOrderSupplies(updatedSupplies);
+      setEditingSupplyId(null);
+    } catch (err) {
+      console.error("Failed to update supply:", err);
+    }
+  };
+
+  const handleDeleteSupply = async (usageId: string) => {
+    try {
+      await deleteSupplyUsage(usageId);
+      const updatedSupplies = await getOrderSupplies(orderId);
+      setOrderSupplies(updatedSupplies);
+    } catch (err) {
+      console.error("Failed to delete supply:", err);
     }
   };
 
@@ -2307,6 +2333,8 @@ export default function OutboundOrderDetailPage() {
                           <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
                             Total
                           </th>
+                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
@@ -2319,20 +2347,77 @@ export default function OutboundOrderDetailPage() {
                               <p className="text-xs text-gray-500">{usage.supply.sku}</p>
                             </td>
                             <td className="px-4 py-2 text-right text-sm">
-                              {usage.quantity} {usage.supply.unit}
+                              {editingSupplyId === usage.id ? (
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={editSupplyQty}
+                                  onChange={(e) => setEditSupplyQty(Number(e.target.value))}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleUpdateSupply(usage.id);
+                                    if (e.key === "Escape") setEditingSupplyId(null);
+                                  }}
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded text-right text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  autoFocus
+                                />
+                              ) : (
+                                <>{usage.quantity} {usage.supply.unit}</>
+                              )}
                             </td>
                             <td className="px-4 py-2 text-right text-sm text-gray-600">
                               ${usage.unit_price.toFixed(2)}
                             </td>
                             <td className="px-4 py-2 text-right text-sm font-medium">
-                              ${usage.total.toFixed(2)}
+                              ${editingSupplyId === usage.id
+                                ? (editSupplyQty * usage.unit_price).toFixed(2)
+                                : usage.total.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              {editingSupplyId === usage.id ? (
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    onClick={() => handleUpdateSupply(usage.id)}
+                                    className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                    title="Save"
+                                  >
+                                    <Check className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingSupplyId(null)}
+                                    className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-end gap-1">
+                                  <button
+                                    onClick={() => {
+                                      setEditingSupplyId(usage.id);
+                                      setEditSupplyQty(usage.quantity);
+                                    }}
+                                    className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                    title="Edit quantity"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteSupply(usage.id)}
+                                    className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                    title="Remove"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot className="bg-gray-50">
                         <tr>
-                          <td colSpan={3} className="px-4 py-2 text-sm font-medium text-gray-900 text-right">
+                          <td colSpan={4} className="px-4 py-2 text-sm font-medium text-gray-900 text-right">
                             Total Packing Cost:
                           </td>
                           <td className="px-4 py-2 text-right text-sm font-bold text-indigo-700">

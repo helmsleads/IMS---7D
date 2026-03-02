@@ -372,6 +372,52 @@ export async function recordSupplyUsage(
   return data;
 }
 
+export async function updateSupplyUsage(
+  usageId: string,
+  quantity: number
+): Promise<SupplyUsage> {
+  const supabase = createClient();
+
+  // Get current record to recalculate total
+  const { data: current, error: fetchError } = await supabase
+    .from("supply_usage")
+    .select("unit_price")
+    .eq("id", usageId)
+    .single();
+
+  if (fetchError) {
+    throw new Error(fetchError.message);
+  }
+
+  const total = quantity * (current.unit_price || 0);
+
+  const { data, error } = await supabase
+    .from("supply_usage")
+    .update({ quantity, total })
+    .eq("id", usageId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+export async function deleteSupplyUsage(usageId: string): Promise<void> {
+  const supabase = createClient();
+
+  const { error } = await supabase
+    .from("supply_usage")
+    .delete()
+    .eq("id", usageId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 export async function getOrderSupplies(orderId: string): Promise<SupplyUsageWithDetails[]> {
   const supabase = createClient();
 
