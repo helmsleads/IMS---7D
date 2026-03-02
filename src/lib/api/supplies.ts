@@ -278,11 +278,21 @@ export async function getSupplyUsage(filters?: SupplyUsageFilters): Promise<Supp
   return data || [];
 }
 
+export interface SupplyClientSplit {
+  clientId: string;
+  fraction: number;
+}
+
+/**
+ * Record supply usage for an order. When clientSplits are provided (multi-client orders),
+ * one supply_usage row is inserted per client with qty * fraction.
+ */
 export async function recordSupplyUsage(
   orderId: string,
   supplyId: string,
-  quantity: number
-): Promise<SupplyUsage> {
+  quantity: number,
+  clientSplits?: SupplyClientSplit[]
+): Promise<SupplyUsage | SupplyUsage[]> {
   const supabase = createClient();
 
   // Get supply details for pricing
@@ -296,7 +306,37 @@ export async function recordSupplyUsage(
     throw new Error(supplyError.message);
   }
 
-  // Get order for client_id
+  const unitPrice = supply.base_price || 0;
+
+  // Multi-client split path
+  if (clientSplits && clientSplits.length > 1) {
+    const rows = clientSplits.map((split) => {
+      const splitQty = Math.round(quantity * split.fraction * 100) / 100;
+      return {
+        supply_id: supplyId,
+        client_id: split.clientId,
+        order_id: orderId,
+        quantity: splitQty,
+        unit_price: unitPrice,
+        total: splitQty * unitPrice,
+        billing_method: "separate",
+        invoiced: false,
+      };
+    });
+
+    const { data, error } = await supabase
+      .from("supply_usage")
+      .insert(rows)
+      .select();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  }
+
+  // Single client path (original behavior)
   const { data: order, error: orderError } = await supabase
     .from("outbound_orders")
     .select("client_id")
@@ -307,14 +347,14 @@ export async function recordSupplyUsage(
     throw new Error(orderError.message);
   }
 
-  const unitPrice = supply.base_price || 0;
+  const clientId = clientSplits?.[0]?.clientId || order.client_id;
   const total = quantity * unitPrice;
 
   const { data, error } = await supabase
     .from("supply_usage")
     .insert({
       supply_id: supplyId,
-      client_id: order.client_id,
+      client_id: clientId,
       order_id: orderId,
       quantity,
       unit_price: unitPrice,

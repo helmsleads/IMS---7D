@@ -95,6 +95,7 @@ export async function createTransfer(
     entity_type: "stock_transfer",
     entity_id: transfer.id,
     action: "created",
+    user_id: user?.id || null,
     details: {
       transfer_number: transferNumber,
       from_location_id: fromLocationId,
@@ -260,6 +261,7 @@ export async function completeTransfer(transferId: string): Promise<StockTransfe
     entity_type: "stock_transfer",
     entity_id: transferId,
     action: "completed",
+    user_id: user?.id || null,
     details: {
       transfer_number: transfer.transfer_number,
       from_location: transfer.from_location.name,
@@ -302,10 +304,12 @@ export async function cancelTransfer(transferId: string): Promise<StockTransfer>
   }
 
   // Log activity
+  const { data: { user: cancelUser } } = await supabase.auth.getUser();
   await supabase.from("activity_log").insert({
     entity_type: "stock_transfer",
     entity_id: transferId,
     action: "cancelled",
+    user_id: cancelUser?.id || null,
     details: {
       transfer_number: transfer.transfer_number,
     },

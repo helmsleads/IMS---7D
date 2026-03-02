@@ -38,11 +38,17 @@ export async function getClientDashboardStats(
   );
 
   // Fetch active outbound orders count (pending, confirmed, processing, packed, shipped)
-  const { count: activeOrdersCount } = await supabase
-    .from("outbound_orders")
-    .select("id", { count: "exact", head: true })
-    .eq("client_id", clientId)
-    .in("status", ["pending", "confirmed", "processing", "packed", "shipped"]);
+  // Uses RPC to include multi-client orders where client has items via product ownership
+  const { data: orderIds } = await supabase
+    .rpc("get_client_order_ids", { p_client_id: clientId });
+
+  const { count: activeOrdersCount } = orderIds && orderIds.length > 0
+    ? await supabase
+        .from("outbound_orders")
+        .select("id", { count: "exact", head: true })
+        .in("id", orderIds)
+        .in("status", ["pending", "confirmed", "processing", "packed", "shipped"])
+    : { count: 0 };
 
   // Fetch recent arrivals count (inbound orders received in last 30 days)
   const thirtyDaysAgo = new Date();
@@ -77,6 +83,14 @@ export async function getClientRecentOrders(
 ) {
   const supabase = createClient();
 
+  // Use RPC to include multi-client orders
+  const { data: orderIds } = await supabase
+    .rpc("get_client_order_ids", { p_client_id: clientId });
+
+  if (!orderIds || orderIds.length === 0) {
+    return [];
+  }
+
   const { data } = await supabase
     .from("outbound_orders")
     .select(`
@@ -86,7 +100,7 @@ export async function getClientRecentOrders(
       created_at,
       items:outbound_items(count)
     `)
-    .eq("client_id", clientId)
+    .in("id", orderIds)
     .order("created_at", { ascending: false })
     .limit(limit);
 

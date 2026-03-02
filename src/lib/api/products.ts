@@ -15,6 +15,8 @@ export interface Product {
   reorder_point: number;
   barcode: string | null;
   image_url: string | null;
+  container_type: string | null;
+  units_per_case: number | null;
   active: boolean;
   created_at: string;
   workflow_profile_id: string | null; // Product-level workflow override

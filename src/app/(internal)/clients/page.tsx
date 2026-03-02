@@ -77,7 +77,6 @@ export default function ClientsPage() {
         active: data.active,
         industries: data.industries,
         workflow_profile_id: data.workflow_profile_id || null,
-        service_tier_id: data.service_tier_id || null,
       });
     } else {
       // Create new client
@@ -91,7 +90,6 @@ export default function ClientsPage() {
         active: data.active,
         industries: data.industries,
         workflow_profile_id: data.workflow_profile_id || null,
-        service_tier_id: data.service_tier_id || null,
         allow_product_workflow_override: false, // Disabled by default
       });
     }

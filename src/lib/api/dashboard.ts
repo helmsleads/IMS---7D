@@ -1,10 +1,11 @@
 import { createClient } from "@/lib/supabase";
+import { getUnitLabel } from "@/lib/labels";
 
 export interface DashboardStats {
   totalProducts: number;
   totalClients: number;
   totalInventoryValue: number;
-  totalUnitsInStock: number;
+  stockBreakdown: string;
   lowStockCount: number;
   pendingInbound: number;
   pendingOutbound: number;
@@ -21,11 +22,52 @@ export interface RecentActivity {
   created_at: string;
   user_id: string | null;
   user_email: string | null;
+  user_name: string | null;
 }
 
 export interface DashboardData {
   stats: DashboardStats;
   recentActivity: RecentActivity[];
+}
+
+async function enrichActivityWithProfiles(
+  supabase: ReturnType<typeof createClient>,
+  activities: Record<string, unknown>[]
+): Promise<RecentActivity[]> {
+  // Collect unique non-null user_ids
+  const userIds = [
+    ...new Set(
+      activities
+        .map((a) => a.user_id as string | null)
+        .filter((id): id is string => !!id)
+    ),
+  ];
+
+  // Batch-fetch user profiles
+  let profileMap: Record<string, { email: string | null; full_name: string | null }> = {};
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from("user_profiles")
+      .select("id, email, full_name")
+      .in("id", userIds);
+    if (profiles) {
+      for (const p of profiles) {
+        profileMap[p.id] = { email: p.email, full_name: p.full_name };
+      }
+    }
+  }
+
+  return activities.map((activity) => {
+    const userId = activity.user_id as string | null;
+    const details = activity.details as { user_email?: string } | null;
+    const profile = userId ? profileMap[userId] : undefined;
+
+    return {
+      ...activity,
+      user_name: profile?.full_name || null,
+      user_email: profile?.email || details?.user_email || null,
+    } as RecentActivity;
+  });
 }
 
 export async function getDashboardStats(): Promise<DashboardData> {
@@ -62,7 +104,8 @@ export async function getDashboardStats(): Promise<DashboardData> {
       .select(`
         qty_on_hand,
         product:products (
-          unit_cost
+          unit_cost,
+          container_type
         )
       `),
 
@@ -113,10 +156,17 @@ export async function getDashboardStats(): Promise<DashboardData> {
 
   // Calculate inventory totals
   const inventoryData = inventoryResult.data || [];
-  const totalUnitsInStock = inventoryData.reduce(
-    (sum, item) => sum + (item.qty_on_hand || 0),
-    0
-  );
+  const grouped: Record<string, number> = {};
+  for (const item of inventoryData) {
+    const qty = item.qty_on_hand || 0;
+    if (qty <= 0) continue;
+    const product = item.product as unknown as { unit_cost: number; container_type?: string | null } | null;
+    const label = getUnitLabel(product?.container_type);
+    grouped[label] = (grouped[label] || 0) + qty;
+  }
+  const stockBreakdown = Object.entries(grouped)
+    .map(([label, qty]) => `${qty.toLocaleString()} ${label}`)
+    .join(", ") || "0";
   const totalInventoryValue = inventoryData.reduce(
     (sum, item) => {
       const product = item.product as unknown as { unit_cost: number } | null;
@@ -139,17 +189,14 @@ export async function getDashboardStats(): Promise<DashboardData> {
       totalProducts: productsResult.count || 0,
       totalClients: clientsResult.count || 0,
       totalInventoryValue,
-      totalUnitsInStock,
+      stockBreakdown,
       lowStockCount,
       pendingInbound: pendingInboundResult.count || 0,
       pendingOutbound: pendingOutboundResult.count || 0,
       ordersToShipToday: shipTodayResult.count || 0,
       ordersToReceiveToday: receiveTodayResult.count || 0,
     },
-    recentActivity: (activityResult.data || []).map((activity) => ({
-      ...activity,
-      user_email: (activity.details as { user_email?: string })?.user_email || null,
-    })) as RecentActivity[],
+    recentActivity: await enrichActivityWithProfiles(supabase, activityResult.data || []),
   };
 }
 
@@ -1235,6 +1282,105 @@ export async function getDaysOfSupply(): Promise<DaysOfSupplyItem[]> {
     .filter((r) => r.avgDailyUsage > 0)
     .sort((a, b) => a.daysOfSupply - b.daysOfSupply)
     .slice(0, 10);
+}
+
+// ============================================
+// Inventory Health
+// ============================================
+
+export interface InventoryHealthItem {
+  productName: string;
+  sku: string;
+  qtyOnHand: number;
+  reorderPoint: number;
+  avgDailyUsage: number;
+  monthsOfSupply: number;
+  status: "critical" | "low" | "healthy" | "overstock" | "no-movement";
+}
+
+export async function getInventoryHealth(): Promise<InventoryHealthItem[]> {
+  const supabase = createClient();
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const [inventoryResult, usageResult] = await Promise.all([
+    supabase
+      .from("inventory")
+      .select(`
+        qty_on_hand,
+        product:products (name, sku, reorder_point)
+      `)
+      .gt("qty_on_hand", 0),
+    supabase
+      .from("outbound_items")
+      .select(`
+        qty_shipped,
+        product:products (sku),
+        order:outbound_orders!inner (shipped_date)
+      `)
+      .gt("qty_shipped", 0)
+      .gte("order.shipped_date", thirtyDaysAgo.toISOString()),
+  ]);
+
+  // Sum qty on hand per SKU
+  const stockMap = new Map<
+    string,
+    { name: string; qty: number; reorderPoint: number }
+  >();
+  for (const row of inventoryResult.data || []) {
+    const product = Array.isArray(row.product) ? row.product[0] : row.product;
+    const sku = (product as { sku: string })?.sku || "unknown";
+    const name = (product as { name: string })?.name || "Unknown";
+    const rp = (product as { reorder_point: number })?.reorder_point || 0;
+    const entry = stockMap.get(sku) || { name, qty: 0, reorderPoint: rp };
+    entry.qty += row.qty_on_hand;
+    stockMap.set(sku, entry);
+  }
+
+  // Sum shipped in last 30 days per SKU
+  const usageMap = new Map<string, number>();
+  for (const row of usageResult.data || []) {
+    const product = Array.isArray(row.product) ? row.product[0] : row.product;
+    const sku = (product as { sku: string })?.sku || "unknown";
+    usageMap.set(sku, (usageMap.get(sku) || 0) + (row.qty_shipped || 0));
+  }
+
+  const results: InventoryHealthItem[] = [];
+  for (const [sku, stock] of stockMap) {
+    const totalShipped = usageMap.get(sku) || 0;
+    const avgDaily = totalShipped / 30;
+    const mos = avgDaily > 0 ? stock.qty / (avgDaily * 30) : -1;
+
+    let status: InventoryHealthItem["status"];
+    if (avgDaily === 0) {
+      status = "no-movement";
+    } else if (mos < 1) {
+      status = "critical";
+    } else if (mos < 2) {
+      status = "low";
+    } else if (mos <= 6) {
+      status = "healthy";
+    } else {
+      status = "overstock";
+    }
+
+    results.push({
+      productName: stock.name,
+      sku,
+      qtyOnHand: stock.qty,
+      reorderPoint: stock.reorderPoint,
+      avgDailyUsage: Math.round(avgDaily * 10) / 10,
+      monthsOfSupply: mos > 0 ? Math.round(mos * 10) / 10 : 0,
+      status,
+    });
+  }
+
+  // Sort: critical first (lowest MOS), no-movement last
+  return results.sort((a, b) => {
+    if (a.status === "no-movement" && b.status !== "no-movement") return 1;
+    if (b.status === "no-movement" && a.status !== "no-movement") return -1;
+    return a.monthsOfSupply - b.monthsOfSupply;
+  });
 }
 
 // ============================================

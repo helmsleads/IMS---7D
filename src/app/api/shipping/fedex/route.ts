@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { createServiceClient } from '@/lib/supabase-service'
 import { getFedExCredentials, createShipment } from '@/lib/api/fedex'
+import { getQBCredentials, syncShippingExpense } from '@/lib/api/quickbooks'
 
 /**
  * GET /api/shipping/fedex — Check if FedEx is configured
@@ -134,20 +135,35 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update order with FedEx data
+    // Update order with FedEx data + shipping costs
+    const orderUpdate: Record<string, unknown> = {
+      fedex_shipment_id: result.shipmentId,
+      label_url: labelUrl,
+      shipping_method: 'fedex_api',
+    }
+    if (result.actualCost != null) orderUpdate.shipping_cost = result.actualCost
+    if (result.listCost != null) orderUpdate.client_shipping_cost = result.listCost
+
     await serviceSupabase
       .from('outbound_orders')
-      .update({
-        fedex_shipment_id: result.shipmentId,
-        label_url: labelUrl,
-        shipping_method: 'fedex_api',
-      })
+      .update(orderUpdate)
       .eq('id', orderId)
+
+    // Fire-and-forget: sync shipping cost to QuickBooks if connected
+    if (result.actualCost != null && result.actualCost > 0) {
+      getQBCredentials()
+        .then((creds) => {
+          if (creds) return syncShippingExpense(orderId)
+        })
+        .catch((err) => console.warn('QB shipping expense sync failed (non-blocking):', err))
+    }
 
     return NextResponse.json({
       trackingNumber: result.trackingNumber,
       labelUrl,
       shipmentId: result.shipmentId,
+      actualCost: result.actualCost ?? null,
+      listCost: result.listCost ?? null,
     })
   } catch (err) {
     console.error('FedEx shipment creation error:', err)

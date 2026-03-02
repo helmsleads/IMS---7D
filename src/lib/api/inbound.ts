@@ -14,6 +14,7 @@ export interface InboundOrder {
   received_date: string | null;
   received_by: string | null;
   notes: string | null;
+  created_by: string | null;
   created_at: string;
 }
 
@@ -127,6 +128,7 @@ export async function createInboundOrder(
 
   // Generate reference number (ASN = Advance Shipment Notice)
   const poNumber = `ASN-${Date.now().toString(36).toUpperCase()}`;
+  const { data: { user } } = await supabase.auth.getUser();
 
   // Create the order
   const { data: inboundOrder, error: orderError } = await supabase
@@ -138,6 +140,7 @@ export async function createInboundOrder(
       status: "ordered",
       expected_date: order.expected_date || null,
       notes: order.notes || null,
+      created_by: user?.id || null,
     })
     .select()
     .single();
@@ -171,6 +174,7 @@ export async function createInboundOrder(
     entity_type: "inbound_order",
     entity_id: inboundOrder.id,
     action: "created",
+    user_id: user?.id || null,
     details: {
       po_number: poNumber,
       supplier: order.supplier,
@@ -186,12 +190,12 @@ export async function updateInboundOrderStatus(
   status: string
 ): Promise<InboundOrder> {
   const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
   const updateData: Record<string, unknown> = { status };
 
   // If marking as received, add timestamp and user
   if (status === "received") {
-    const { data: { user } } = await supabase.auth.getUser();
     updateData.received_date = new Date().toISOString();
     updateData.received_by = user?.id || null;
   }
@@ -212,6 +216,7 @@ export async function updateInboundOrderStatus(
     entity_type: "inbound_order",
     entity_id: id,
     action: "status_changed",
+    user_id: user?.id || null,
     details: { new_status: status },
   });
 
@@ -313,10 +318,12 @@ export async function receiveInboundItem(
     }
 
     // Log activity
+    const { data: { user: receivingUser } } = await supabase.auth.getUser();
     await supabase.from("activity_log").insert({
       entity_type: "inbound_item",
       entity_id: itemId,
       action: "received",
+      user_id: receivingUser?.id || null,
       details: {
         product_id: item.product_id,
         qty_received: qtyReceived,
@@ -465,10 +472,12 @@ export async function rejectInboundItem(
   }
 
   // Log activity
+  const { data: { user: rejectUser } } = await supabase.auth.getUser();
   await supabase.from("activity_log").insert({
     entity_type: "inbound_item",
     entity_id: itemId,
     action: "rejected",
+    user_id: rejectUser?.id || null,
     details: {
       product_id: item.product_id,
       qty_rejected: qtyRejected,
@@ -653,10 +662,12 @@ export async function receiveWithLot(
   }
 
   // Log activity
+  const { data: { user: lotReceiveUser } } = await supabase.auth.getUser();
   await supabase.from("activity_log").insert({
     entity_type: "inbound_item",
     entity_id: itemId,
     action: "received_with_lot",
+    user_id: lotReceiveUser?.id || null,
     details: {
       product_id: item.product_id,
       qty_received: qtyReceived,
@@ -784,6 +795,7 @@ export async function reportReceivingDamage(
     entity_type: "damage_report",
     entity_id: report.id,
     action: "created",
+    user_id: user?.id || null,
     details: {
       reference_type: "inbound_order",
       reference_id: inboundId,
@@ -891,10 +903,12 @@ export async function receiveInboundItemToPallet(params: {
   }
 
   // 4. Log activity
+  const { data: { user: palletReceiveUser } } = await supabase.auth.getUser();
   await supabase.from("activity_log").insert({
     entity_type: "inbound_item",
     entity_id: params.itemId,
     action: "received_to_pallet",
+    user_id: palletReceiveUser?.id || null,
     details: {
       product_id: item.product_id,
       qty_received: params.qtyReceived,
@@ -1110,11 +1124,13 @@ export async function placeOnInspectionHold(
   reason?: string
 ): Promise<void> {
   const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
   await supabase.from("activity_log").insert({
     entity_type: "inbound_item",
     entity_id: itemId,
     action: "inspection_hold",
+    user_id: user?.id || null,
     details: {
       order_id: orderId,
       reason: reason || "Required by workflow rules",
@@ -1172,6 +1188,7 @@ export async function releaseFromInspectionHold(
     entity_type: "inbound_item",
     entity_id: itemId,
     action: "inspection_approved",
+    user_id: approvedBy || null,
     details: {
       order_id: orderId,
       approved_by: approvedBy,

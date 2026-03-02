@@ -11,6 +11,8 @@ import {
   ArrowRight,
   RotateCcw,
   Loader2,
+  PackageCheck,
+  Info,
 } from "lucide-react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
@@ -105,6 +107,8 @@ interface ShippingModalProps {
   fedexConfigured?: boolean;
   orderId?: string;
   shipToAddress?: ShipToAddress;
+  // Pickup support
+  preferredCarrier?: string;
 }
 
 export interface ShippingData {
@@ -115,6 +119,11 @@ export interface ShippingData {
   // Extended fields from FedEx API flow
   labelUrl?: string;
   fedexShipmentId?: string;
+  // Shipping method override (pickup, manual, fedex_api)
+  shippingMethod?: string;
+  // Shipping costs
+  shippingCost?: number;
+  clientShippingCost?: number;
 }
 
 type FedExFlowState = "idle" | "creating" | "success" | "error";
@@ -130,10 +139,12 @@ export default function ShippingModal({
   fedexConfigured,
   orderId,
   shipToAddress,
+  preferredCarrier,
 }: ShippingModalProps) {
-  // Mode: "fedex" (API) or "manual"
-  const defaultMode = isAlcoholOrder && fedexConfigured ? "fedex" : "manual";
-  const [mode, setMode] = useState<"fedex" | "manual">(defaultMode);
+  // Mode: "fedex" (API), "manual", or "pickup"
+  const isPickupOrder = preferredCarrier?.toLowerCase() === "pickup" || preferredCarrier?.toLowerCase() === "customer pickup";
+  const defaultMode = isAlcoholOrder && fedexConfigured ? "fedex" : isPickupOrder ? "pickup" : "manual";
+  const [mode, setMode] = useState<"fedex" | "manual" | "pickup">(defaultMode);
 
   // Manual mode state
   const [carrier, setCarrier] = useState(initialCarrier);
@@ -155,8 +166,11 @@ export default function ShippingModal({
     trackingNumber: string;
     labelUrl: string | null;
     shipmentId: string;
+    actualCost: number | null;
+    listCost: number | null;
   } | null>(null);
   const [fedexError, setFedexError] = useState("");
+  const [manualShippingCost, setManualShippingCost] = useState<number | "">("");
 
   // Tracking URL and validation (manual mode)
   const finalCarrier = carrier === "Other" ? customCarrier : carrier;
@@ -192,10 +206,41 @@ export default function ShippingModal({
         trackingNumber: trackingNumber.trim(),
         shipDate,
         notes: notes.trim() || undefined,
+        clientShippingCost: manualShippingCost !== "" ? manualShippingCost : undefined,
       });
       resetForm();
     } catch (error) {
       console.error("Failed to submit shipping info:", error);
+      setErrors({ submit: error instanceof Error ? error.message : "Failed to ship order. Please try again." });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ── Pickup submit ──────────────────────────────
+  const handlePickupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const newErrors: Record<string, string> = {};
+    if (!shipDate) newErrors.shipDate = "Pickup date is required";
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        carrier: "Pickup",
+        trackingNumber: "N/A",
+        shipDate,
+        notes: notes.trim() || undefined,
+        shippingMethod: "pickup",
+      });
+      resetForm();
+    } catch (error) {
+      console.error("Failed to mark as picked up:", error);
     } finally {
       setSubmitting(false);
     }
@@ -232,7 +277,11 @@ export default function ShippingModal({
         return;
       }
 
-      setFedexResult(data);
+      setFedexResult({
+        ...data,
+        actualCost: data.actualCost ?? null,
+        listCost: data.listCost ?? null,
+      });
       setFedexFlowState("success");
     } catch (err) {
       setFedexFlowState("error");
@@ -253,6 +302,8 @@ export default function ShippingModal({
         notes: notes.trim() || undefined,
         labelUrl: fedexResult.labelUrl || undefined,
         fedexShipmentId: fedexResult.shipmentId,
+        shippingCost: fedexResult.actualCost ?? undefined,
+        clientShippingCost: fedexResult.listCost ?? undefined,
       });
       resetForm();
     } catch (error) {
@@ -282,6 +333,7 @@ export default function ShippingModal({
     setPackageLength("");
     setPackageWidth("");
     setPackageHeight("");
+    setManualShippingCost("");
   };
 
   const handleClose = () => {
@@ -304,6 +356,49 @@ export default function ShippingModal({
           <div className="bg-gray-50 rounded-lg p-3">
             <p className="text-sm text-gray-500">Order</p>
             <p className="font-semibold text-gray-900">{orderNumber}</p>
+          </div>
+        )}
+
+        {/* Mode switcher — shown when multiple modes are available */}
+        {(isPickupOrder || (isAlcoholOrder && fedexConfigured)) && (
+          <div className="flex rounded-lg bg-slate-100 p-1 gap-1">
+            {isAlcoholOrder && fedexConfigured && (
+              <button
+                type="button"
+                onClick={() => setMode("fedex")}
+                className={`flex-1 text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${
+                  mode === "fedex"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                FedEx API
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setMode("manual")}
+              className={`flex-1 text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${
+                mode === "manual"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Manual Entry
+            </button>
+            {isPickupOrder && (
+              <button
+                type="button"
+                onClick={() => setMode("pickup")}
+                className={`flex-1 text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${
+                  mode === "pickup"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Pickup
+              </button>
+            )}
           </div>
         )}
 
@@ -448,15 +543,18 @@ export default function ShippingModal({
                   </Button>
                 </div>
 
-                <div className="text-center">
-                  <button
-                    type="button"
-                    onClick={() => setMode("manual")}
-                    className="text-xs text-gray-500 hover:text-gray-700 underline"
-                  >
-                    Switch to Manual Entry
-                  </button>
-                </div>
+                {/* Fallback switch link when mode switcher is not shown */}
+                {!(isPickupOrder || (isAlcoholOrder && fedexConfigured)) && (
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => setMode("manual")}
+                      className="text-xs text-gray-500 hover:text-gray-700 underline"
+                    >
+                      Switch to Manual Entry
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -485,6 +583,22 @@ export default function ShippingModal({
                       <p className="font-mono text-gray-700 text-xs">{fedexResult.shipmentId}</p>
                     </div>
                   </div>
+                  {(fedexResult.actualCost != null || fedexResult.listCost != null) && (
+                    <div className="grid grid-cols-2 gap-3 text-sm mt-3 pt-3 border-t border-green-200">
+                      {fedexResult.actualCost != null && (
+                        <div>
+                          <p className="text-gray-500">Our Cost</p>
+                          <p className="font-medium text-gray-900">${fedexResult.actualCost.toFixed(2)}</p>
+                        </div>
+                      )}
+                      {fedexResult.listCost != null && (
+                        <div>
+                          <p className="text-gray-500">Client Rate</p>
+                          <p className="font-medium text-gray-900">${fedexResult.listCost.toFixed(2)}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {fedexResult.labelUrl && (
@@ -644,18 +758,30 @@ export default function ShippingModal({
               </div>
             )}
 
-            <Input
-              label="Ship Date"
-              name="shipDate"
-              type="date"
-              value={shipDate}
-              onChange={(e) => {
-                setShipDate(e.target.value);
-                setErrors({ ...errors, shipDate: "" });
-              }}
-              error={errors.shipDate}
-              required
-            />
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Ship Date"
+                name="shipDate"
+                type="date"
+                value={shipDate}
+                onChange={(e) => {
+                  setShipDate(e.target.value);
+                  setErrors({ ...errors, shipDate: "" });
+                }}
+                error={errors.shipDate}
+                required
+              />
+              <Input
+                label="Shipping Cost (to client)"
+                name="manualShippingCost"
+                type="number"
+                step="0.01"
+                min="0"
+                value={manualShippingCost}
+                onChange={(e) => setManualShippingCost(e.target.value ? parseFloat(e.target.value) : "")}
+                placeholder="0.00"
+              />
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -670,6 +796,13 @@ export default function ShippingModal({
                 placeholder="Any additional shipping notes..."
               />
             </div>
+
+            {errors.submit && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-red-700">{errors.submit}</p>
+              </div>
+            )}
 
             <div className="flex gap-3 pt-4 border-t border-gray-200">
               <Button
@@ -692,18 +825,69 @@ export default function ShippingModal({
               </Button>
             </div>
 
-            {/* Switch back to FedEx if available */}
-            {isAlcoholOrder && fedexConfigured && (
-              <div className="text-center">
-                <button
-                  type="button"
-                  onClick={() => setMode("fedex")}
-                  className="text-xs text-gray-500 hover:text-gray-700 underline"
-                >
-                  Switch to FedEx API
-                </button>
+          </form>
+        )}
+
+        {/* ── Pickup Mode ─────────────────────── */}
+        {mode === "pickup" && (
+          <form onSubmit={handlePickupSubmit} className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2.5">
+              <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium text-blue-800">Customer Pickup</p>
+                <p className="text-blue-600 mt-0.5">
+                  Customer will pick up this order at the warehouse. No carrier or tracking needed.
+                </p>
               </div>
-            )}
+            </div>
+
+            <Input
+              label="Pickup Date"
+              name="shipDate"
+              type="date"
+              value={shipDate}
+              onChange={(e) => {
+                setShipDate(e.target.value);
+                setErrors({ ...errors, shipDate: "" });
+              }}
+              error={errors.shipDate}
+              required
+            />
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Notes <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <textarea
+                name="notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Who picked up, ID checked, etc."
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t border-gray-200">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleClose}
+                disabled={submitting}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                loading={submitting}
+                disabled={submitting}
+                className="flex-1"
+              >
+                <PackageCheck className="w-4 h-4 mr-2" />
+                Mark as Picked Up
+              </Button>
+            </div>
           </form>
         )}
       </div>

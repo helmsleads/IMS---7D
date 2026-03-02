@@ -277,10 +277,12 @@ export default function PickingScanner({
     }
 
     // Log activity
+    const { data: { user: pickUser } } = await supabase.auth.getUser();
     await supabase.from("activity_log").insert({
       entity_type: "outbound_item",
       entity_id: scannedItem.id,
       action: "picked",
+      user_id: pickUser?.id || null,
       details: {
         product_id: scannedItem.product_id,
         qty_picked: pendingQty,
@@ -374,10 +376,12 @@ export default function PickingScanner({
       }
 
       // Log activity
+      const { data: { user: completeUser } } = await supabase.auth.getUser();
       await supabase.from("activity_log").insert({
         entity_type: "outbound_order",
         entity_id: outboundOrderId,
         action: "status_changed",
+        user_id: completeUser?.id || null,
         details: {
           new_status: "packed",
           picked_items: items.length,

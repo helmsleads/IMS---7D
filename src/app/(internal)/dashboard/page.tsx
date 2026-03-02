@@ -35,6 +35,7 @@ import {
   getSupplierLeadTimes,
   getReturnRateByProduct,
   getDaysOfSupply,
+  getInventoryHealth,
   getRevenueByClient,
   getDailyThroughputTimeline,
   getOrderCycleTime,
@@ -64,6 +65,7 @@ import {
   SupplierLeadTime,
   ProductReturnRate,
   DaysOfSupplyItem,
+  InventoryHealthItem,
   ClientRevenue,
   DailyThroughput,
   CycleTimeBucket,
@@ -130,6 +132,7 @@ export default function DashboardPage() {
   const [supplierLeadTimes, setSupplierLeadTimes] = useState<SupplierLeadTime[]>([]);
   const [returnRates, setReturnRates] = useState<ProductReturnRate[]>([]);
   const [daysOfSupply, setDaysOfSupply] = useState<DaysOfSupplyItem[]>([]);
+  const [inventoryHealth, setInventoryHealth] = useState<InventoryHealthItem[]>([]);
   const [clientRevenue, setClientRevenue] = useState<ClientRevenue[]>([]);
   const [dailyThroughput, setDailyThroughput] = useState<DailyThroughput[]>([]);
   const [cycleTimeData, setCycleTimeData] = useState<CycleTimeBucket[]>([]);
@@ -179,6 +182,7 @@ export default function DashboardPage() {
         throughput, cycleTime, abc, turnover, heatmap,
         proximity, accuracy, waterfall, monthlyRev,
         recvAccuracy, calendar, reasons, damage, expTimeline,
+        health,
       ] = await Promise.all([
         getDashboardStats(),
         getLowStockItems(),
@@ -213,6 +217,7 @@ export default function DashboardPage() {
         getReturnsByReason(),
         getDamageRateTrend(),
         getExpirationTimeline(),
+        getInventoryHealth(),
       ]);
       setStats(dashboardData.stats);
       setRecentActivity(dashboardData.recentActivity);
@@ -248,6 +253,7 @@ export default function DashboardPage() {
       setReturnReasons(reasons);
       setDamageData(damage);
       setExpirationTimeline(expTimeline);
+      setInventoryHealth(health);
 
       const { count } = await supabase
         .from("messages")
@@ -289,7 +295,7 @@ export default function DashboardPage() {
     "expected-arrivals": { expectedArrivals },
     "orders-to-ship": { ordersToShip },
     "orders-summary": { stats },
-    "inventory-overview": { stats },
+    "inventory-overview": { items: inventoryHealth, loading },
     "pending-returns": { count: pendingReturns.length, loading },
     "unread-messages": { count: unreadMessagesCount, loading },
     "expiring-lots": { expiringLots, loading },

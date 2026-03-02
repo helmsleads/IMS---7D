@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import {
   CreditCard,
   FileText,
-  Check,
   Download,
   Eye,
   Clock,
@@ -167,63 +166,6 @@ export default function PortalPlanPage() {
       {/* My Plan Tab */}
       {activeTab === "plan" && (
         <div className="space-y-6">
-          {/* Current Tier */}
-          <Card>
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Current Plan
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Your active service tier
-                </p>
-              </div>
-              {myPlan?.tier && (
-                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
-                  {myPlan.tier.name}
-                </span>
-              )}
-            </div>
-
-            {myPlan?.tier ? (
-              <>
-                {myPlan.tier.description && (
-                  <p className="text-gray-600 mb-4">{myPlan.tier.description}</p>
-                )}
-
-                {myPlan.tier.features && myPlan.tier.features.length > 0 && (
-                  <div className="mb-4">
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">
-                      Plan Features
-                    </h3>
-                    <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {myPlan.tier.features.map((feature, index) => (
-                        <li
-                          key={index}
-                          className="flex items-center gap-2 text-sm text-gray-600"
-                        >
-                          <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
-                          {feature}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-center py-6 text-gray-500">
-                <CreditCard className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-                <p>No service tier assigned</p>
-                <a
-                  href="/portal/services"
-                  className="text-blue-600 hover:underline text-sm mt-1 inline-block"
-                >
-                  View available service tiers
-                </a>
-              </div>
-            )}
-          </Card>
-
           {/* Services Included */}
           <Card>
             <div className="flex items-start justify-between mb-4">

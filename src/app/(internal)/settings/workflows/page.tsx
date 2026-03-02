@@ -85,7 +85,7 @@ export default function WorkflowsPage() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCode, setNewCode] = useState("");
-  const [newIndustry, setNewIndustry] = useState<ClientIndustry>("general_merchandise");
+  const [newIndustries, setNewIndustries] = useState<ClientIndustry[]>(["general_merchandise"]);
   const [createError, setCreateError] = useState("");
 
   // Duplicate modal state
@@ -128,7 +128,7 @@ export default function WorkflowsPage() {
       profile.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       profile.code.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesIndustry = !industryFilter || profile.industry === industryFilter;
+    const matchesIndustry = !industryFilter || profile.industries.includes(industryFilter as ClientIndustry);
 
     return matchesSearch && matchesIndustry;
   });
@@ -147,7 +147,7 @@ export default function WorkflowsPage() {
         ...DEFAULT_WORKFLOW_PROFILE,
         name: newName.trim(),
         code: newCode.trim().toUpperCase(),
-        industry: newIndustry,
+        industries: newIndustries,
       });
 
       router.push(`/settings/workflows/${profile.id}`);
@@ -282,7 +282,7 @@ export default function WorkflowsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredProfiles.map((profile) => {
-            const IndustryIcon = INDUSTRY_ICONS[profile.industry] || Box;
+            const IndustryIcon = INDUSTRY_ICONS[profile.industries[0]] || Box;
             const clientCount = clientCounts[profile.id] || 0;
 
             return (
@@ -315,9 +315,11 @@ export default function WorkflowsPage() {
                 )}
 
                 <div className="flex flex-wrap gap-1.5 mb-4">
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
-                    {getIndustryDisplayName(profile.industry)}
-                  </span>
+                  {profile.industries.map((ind) => (
+                    <span key={ind} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                      {getIndustryDisplayName(ind)}
+                    </span>
+                  ))}
                   {profile.requires_lot_tracking && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700">
                       Lot Tracking
@@ -412,6 +414,7 @@ export default function WorkflowsPage() {
           setShowCreateModal(false);
           setNewName("");
           setNewCode("");
+          setNewIndustries(["general_merchandise"]);
           setCreateError("");
         }}
         title="Create Workflow Profile"
@@ -437,14 +440,50 @@ export default function WorkflowsPage() {
             hint="Unique identifier for this workflow"
             required
           />
-          <Select
-            label="Industry"
-            name="industry"
-            value={newIndustry}
-            onChange={(e) => setNewIndustry(e.target.value as ClientIndustry)}
-            options={industries.map((i) => ({ value: i.value, label: i.label }))}
-            required
-          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Industries <span className="text-red-500">*</span>
+            </label>
+            <div className="space-y-3 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-3">
+              {(() => {
+                const grouped = industries.reduce((acc, ind) => {
+                  if (!acc[ind.category]) acc[ind.category] = [];
+                  acc[ind.category].push(ind);
+                  return acc;
+                }, {} as Record<string, typeof industries>);
+                return Object.entries(grouped).map(([category, items]) => (
+                  <div key={category}>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{category}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {items.map((ind) => {
+                        const isSelected = newIndustries.includes(ind.value);
+                        return (
+                          <button
+                            key={ind.value}
+                            type="button"
+                            onClick={() =>
+                              setNewIndustries((prev) =>
+                                isSelected
+                                  ? prev.filter((i) => i !== ind.value)
+                                  : [...prev, ind.value]
+                              )
+                            }
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                              isSelected
+                                ? "bg-blue-600 text-white"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            }`}
+                          >
+                            {ind.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
 
           {createError && (
             <p className="text-sm text-red-600">{createError}</p>

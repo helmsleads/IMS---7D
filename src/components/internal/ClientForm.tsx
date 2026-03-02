@@ -5,9 +5,8 @@ import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import { Client } from "@/lib/api/clients";
-import { getServiceTiers } from "@/lib/api/services";
 import { getWorkflowProfiles, getAllIndustries } from "@/lib/api/workflow-profiles";
-import { ServiceTier, WorkflowProfile, ClientIndustry } from "@/types/database";
+import { WorkflowProfile, ClientIndustry } from "@/types/database";
 
 export interface ClientFormData {
   company_name: string;
@@ -17,7 +16,6 @@ export interface ClientFormData {
   state: string;
   zip: string;
   active: boolean;
-  service_tier_id: string;
   industries: ClientIndustry[];
   workflow_profile_id: string;
 }
@@ -44,15 +42,12 @@ export default function ClientForm({
     state: initialData?.state || "",
     zip: initialData?.zip || "",
     active: initialData?.active ?? true,
-    service_tier_id: initialData?.service_tier_id || "",
     industries: initialData?.industries || [],
     workflow_profile_id: initialData?.workflow_profile_id || "",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [serviceTiers, setServiceTiers] = useState<ServiceTier[]>([]);
-  const [tiersLoading, setTiersLoading] = useState(true);
   const [workflowProfiles, setWorkflowProfiles] = useState<WorkflowProfile[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(true);
 
@@ -69,22 +64,17 @@ export default function ClientForm({
 
   // Filter profiles by selected industries (show profiles that match ANY selected industry)
   const filteredProfiles = workflowProfiles.filter(
-    (p) => formData.industries.length === 0 || formData.industries.includes(p.industry as ClientIndustry)
+    (p) => formData.industries.length === 0 || p.industries.some((ind: ClientIndustry) => formData.industries.includes(ind))
   );
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [tiers, profiles] = await Promise.all([
-          getServiceTiers(),
-          getWorkflowProfiles(),
-        ]);
-        setServiceTiers(tiers.filter((t) => t.status === "active"));
+        const profiles = await getWorkflowProfiles();
         setWorkflowProfiles(profiles);
       } catch (error) {
         console.error("Failed to fetch form data:", error);
       } finally {
-        setTiersLoading(false);
         setProfilesLoading(false);
       }
     };
@@ -97,10 +87,10 @@ export default function ClientForm({
       const currentProfile = workflowProfiles.find(
         (p) => p.id === formData.workflow_profile_id
       );
-      if (currentProfile && !formData.industries.includes(currentProfile.industry as ClientIndustry)) {
+      if (currentProfile && !currentProfile.industries.some((ind: ClientIndustry) => formData.industries.includes(ind))) {
         // Find a default profile for the selected industries
         const defaultProfile = workflowProfiles.find(
-          (p) => formData.industries.includes(p.industry as ClientIndustry)
+          (p) => p.industries.some((ind: ClientIndustry) => formData.industries.includes(ind))
         );
         setFormData((prev) => ({
           ...prev,
@@ -342,29 +332,6 @@ export default function ClientForm({
           Settings
         </h2>
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Service Tier
-            </label>
-            <select
-              value={formData.service_tier_id}
-              onChange={(e) => handleChange("service_tier_id", e.target.value)}
-              disabled={tiersLoading}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500"
-            >
-              <option value="">No tier selected</option>
-              {serviceTiers.map((tier) => (
-                <option key={tier.id} value={tier.id}>
-                  {tier.name}
-                  {tier.description ? ` - ${tier.description}` : ""}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-sm text-gray-500">
-              Assign a service tier to set default pricing for this client
-            </p>
-          </div>
-
           <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"

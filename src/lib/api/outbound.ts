@@ -47,7 +47,10 @@ export interface OutboundOrder {
   // FedEx shipping integration
   fedex_shipment_id: string | null;
   label_url: string | null;
-  shipping_method: string | null;
+  shipping_method: 'manual' | 'fedex_api' | 'pickup' | null;
+  // Shipping cost tracking
+  shipping_cost: number | null;
+  client_shipping_cost: number | null;
 }
 
 export interface OutboundItem {
@@ -65,6 +68,7 @@ export interface OutboundItemWithProduct extends OutboundItem {
     sku: string;
     name: string;
     client_id?: string | null;
+    container_type?: string | null;
   };
 }
 
@@ -183,6 +187,9 @@ export async function updateOutboundOrder(
 export interface UpdateOutboundStatusFields {
   carrier?: string;
   tracking_number?: string;
+  shipping_method?: 'manual' | 'fedex_api' | 'pickup';
+  shipping_cost?: number;
+  client_shipping_cost?: number;
 }
 
 export async function getOutboundOrders(): Promise<(OutboundOrderWithClient & { item_count: number })[]> {
@@ -233,7 +240,8 @@ export async function getOutboundOrder(id: string): Promise<OutboundOrderWithIte
           id,
           sku,
           name,
-          client_id
+          client_id,
+          container_type
         )
       )
     `)
@@ -463,6 +471,15 @@ export async function updateOutboundOrderStatus(
     }
     if (additionalFields?.tracking_number) {
       updateData.tracking_number = additionalFields.tracking_number;
+    }
+    if (additionalFields?.shipping_method) {
+      updateData.shipping_method = additionalFields.shipping_method;
+    }
+    if (additionalFields?.shipping_cost != null) {
+      updateData.shipping_cost = additionalFields.shipping_cost;
+    }
+    if (additionalFields?.client_shipping_cost != null) {
+      updateData.client_shipping_cost = additionalFields.client_shipping_cost;
     }
   }
 
@@ -964,4 +981,141 @@ export async function getOutboundWithUsage(id: string): Promise<OutboundWithUsag
     usage_records: usageRecords || [],
     supply_usage: transformedSupplyUsage,
   };
+}
+
+export async function updateOutboundItem(
+  itemId: string,
+  data: { qty_requested?: number; unit_price?: number }
+): Promise<OutboundItemWithProduct> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Fetch current item
+  const { data: item, error: itemError } = await supabase
+    .from("outbound_items")
+    .select("*, product:products (id, sku, name)")
+    .eq("id", itemId)
+    .single();
+
+  if (itemError) throw new Error(itemError.message);
+
+  // Validate qty_requested >= qty_shipped
+  if (data.qty_requested !== undefined && data.qty_requested < item.qty_shipped) {
+    throw new Error(
+      `Cannot reduce quantity below shipped amount (${item.qty_shipped})`
+    );
+  }
+
+  const updatePayload: Record<string, unknown> = {};
+  if (data.qty_requested !== undefined) updatePayload.qty_requested = data.qty_requested;
+  if (data.unit_price !== undefined) updatePayload.unit_price = data.unit_price;
+
+  const { data: updated, error: updateError } = await supabase
+    .from("outbound_items")
+    .update(updatePayload)
+    .eq("id", itemId)
+    .select("*, product:products (id, sku, name, client_id, container_type)")
+    .single();
+
+  if (updateError) throw new Error(updateError.message);
+
+  await supabase.from("activity_log").insert({
+    entity_type: "outbound_item",
+    entity_id: itemId,
+    action: "updated",
+    user_id: user?.id || null,
+    details: {
+      order_id: item.order_id,
+      product_id: item.product_id,
+      changes: data,
+      previous: { qty_requested: item.qty_requested, unit_price: item.unit_price },
+    },
+  });
+
+  return updated;
+}
+
+export async function addOutboundItem(
+  orderId: string,
+  data: CreateOutboundItemData
+): Promise<OutboundItemWithProduct> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Check for duplicate product
+  const { data: existing } = await supabase
+    .from("outbound_items")
+    .select("id")
+    .eq("order_id", orderId)
+    .eq("product_id", data.product_id)
+    .maybeSingle();
+
+  if (existing) {
+    throw new Error("This product is already on the order. Edit the existing line instead.");
+  }
+
+  const { data: inserted, error } = await supabase
+    .from("outbound_items")
+    .insert({
+      order_id: orderId,
+      product_id: data.product_id,
+      qty_requested: data.qty_requested,
+      qty_shipped: 0,
+      unit_price: data.unit_price || 0,
+    })
+    .select("*, product:products (id, sku, name, client_id, container_type)")
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  await supabase.from("activity_log").insert({
+    entity_type: "outbound_item",
+    entity_id: inserted.id,
+    action: "added",
+    user_id: user?.id || null,
+    details: {
+      order_id: orderId,
+      product_id: data.product_id,
+      qty_requested: data.qty_requested,
+    },
+  });
+
+  return inserted;
+}
+
+export async function deleteOutboundItem(itemId: string): Promise<void> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Fetch current item to check shipped qty
+  const { data: item, error: itemError } = await supabase
+    .from("outbound_items")
+    .select("*")
+    .eq("id", itemId)
+    .single();
+
+  if (itemError) throw new Error(itemError.message);
+
+  if (item.qty_shipped > 0) {
+    throw new Error("Cannot delete an item that has already been shipped");
+  }
+
+  const { error } = await supabase
+    .from("outbound_items")
+    .delete()
+    .eq("id", itemId);
+
+  if (error) throw new Error(error.message);
+
+  await supabase.from("activity_log").insert({
+    entity_type: "outbound_item",
+    entity_id: itemId,
+    action: "deleted",
+    user_id: user?.id || null,
+    details: {
+      order_id: item.order_id,
+      product_id: item.product_id,
+      qty_requested: item.qty_requested,
+    },
+  });
 }

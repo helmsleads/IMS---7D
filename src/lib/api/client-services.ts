@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase";
 import { ClientService, ClientAddon } from "@/types/database";
 
-export interface ClientServiceWithDetails extends Omit<ClientService, 'service' | 'tier'> {
+export interface ClientServiceWithDetails extends Omit<ClientService, 'service'> {
   service: {
     id: string;
     name: string;
@@ -10,11 +10,6 @@ export interface ClientServiceWithDetails extends Omit<ClientService, 'service' 
     base_price: number | null;
     price_unit: string | null;
   };
-  tier: {
-    id: string;
-    name: string;
-    slug: string;
-  } | null;
 }
 
 export async function getClientServices(clientId: string): Promise<ClientServiceWithDetails[]> {
@@ -24,8 +19,7 @@ export async function getClientServices(clientId: string): Promise<ClientService
     .from("client_services")
     .select(`
       *,
-      service:services (id, name, slug, description, base_price, price_unit),
-      tier:service_tiers (id, name, slug)
+      service:services (id, name, slug, description, base_price, price_unit)
     `)
     .eq("client_id", clientId)
     .order("created_at");
@@ -40,7 +34,6 @@ export async function getClientServices(clientId: string): Promise<ClientService
 export async function assignClientService(
   clientId: string,
   serviceId: string,
-  tierId: string | null,
   customPrice?: number | null,
   customPriceUnit?: string | null
 ): Promise<ClientService> {
@@ -51,7 +44,6 @@ export async function assignClientService(
     .insert({
       client_id: clientId,
       service_id: serviceId,
-      tier_id: tierId,
       custom_price: customPrice ?? null,
       custom_price_unit: customPriceUnit ?? null,
       is_active: true,

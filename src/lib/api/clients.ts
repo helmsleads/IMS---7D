@@ -14,8 +14,8 @@ export interface Client {
   created_at: string;
   industries: ClientIndustry[];  // Multiple industries supported
   workflow_profile_id: string | null;
-  service_tier_id: string | null;
   allow_product_workflow_override: boolean;  // Allow products to have their own workflow profiles
+  qb_customer_id: string | null;
 }
 
 export interface ClientWithSummary extends Client {
@@ -187,7 +187,7 @@ export async function getClient(id: string): Promise<ClientWithSummary | null> {
 }
 
 export async function createClientRecord(
-  client: Omit<Client, "id" | "auth_id" | "created_at">
+  client: Omit<Client, "id" | "auth_id" | "created_at" | "qb_customer_id">
 ): Promise<Client> {
   const supabase = createClient();
 

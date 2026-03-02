@@ -51,7 +51,7 @@ export const DEFAULT_PORTAL_FEATURES: PortalFeatures = {
  * Default workflow profile values - used when creating new profiles
  * All features default to disabled/off so admin must explicitly enable
  */
-export const DEFAULT_WORKFLOW_PROFILE: Omit<WorkflowProfile, 'id' | 'code' | 'name' | 'industry' | 'created_at' | 'updated_at'> = {
+export const DEFAULT_WORKFLOW_PROFILE: Omit<WorkflowProfile, 'id' | 'code' | 'name' | 'industries' | 'created_at' | 'updated_at'> = {
   description: null,
   icon: null,
   color: null,
@@ -140,7 +140,7 @@ export async function getWorkflowProfiles(): Promise<WorkflowProfile[]> {
     .from("workflow_profiles")
     .select("*")
     .eq("is_active", true)
-    .order("industry")
+    .order("industries")
     .order("name");
 
   if (error) {
@@ -161,7 +161,7 @@ export async function getWorkflowProfilesByIndustry(
   const { data, error } = await supabase
     .from("workflow_profiles")
     .select("*")
-    .eq("industry", industry)
+    .contains("industries", [industry])
     .eq("is_active", true)
     .order("name");
 
@@ -1233,7 +1233,7 @@ export async function getAllWorkflowProfiles(includeInactive = false): Promise<W
     .from("workflow_profiles")
     .select("*")
     .order("sort_order")
-    .order("industry")
+    .order("industries")
     .order("name");
 
   if (!includeInactive) {

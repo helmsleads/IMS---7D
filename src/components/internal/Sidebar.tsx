@@ -122,15 +122,7 @@ const navGroups: NavGroup[] = [
           { label: "Portal Users", path: "/clients/users", icon: UserCog },
         ],
       },
-      {
-        label: "Services",
-        icon: Briefcase,
-        path: "/services",
-        children: [
-          { label: "All Services", path: "/services", icon: Briefcase },
-          { label: "Service Tiers", path: "/services/tiers", icon: Layers },
-        ],
-      },
+      { label: "Services", icon: Briefcase, path: "/services" },
       { label: "Billing", icon: CreditCard, path: "/billing" },
       { label: "Supplies", icon: Box, path: "/supplies" },
     ],

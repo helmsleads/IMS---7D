@@ -30,13 +30,20 @@ export interface BoxUsageRecord {
   created_at: string;
 }
 
+export interface BoxClientSplit {
+  clientId: string;
+  fraction: number;
+}
+
 /**
- * Record box usage for an outbound order and create billing entry
+ * Record box usage for an outbound order and create billing entry.
+ * When clientSplits are provided (multi-client orders), billing is split proportionally.
  */
 export async function recordBoxUsage(
   orderId: string,
   boxCode: string,
-  quantity: number
+  quantity: number,
+  clientSplits?: BoxClientSplit[]
 ): Promise<BoxUsageRecord | null> {
   const supabase = createClient();
 
@@ -57,12 +64,45 @@ export async function recordBoxUsage(
     throw new Error("Invalid box type");
   }
 
-  // Record billable event if client exists
-  if (order.client_id) {
-    const usageDate = new Date().toISOString().split("T")[0];
+  const usageDate = new Date().toISOString().split("T")[0];
 
+  // Multi-client split path
+  if (clientSplits && clientSplits.length > 1) {
+    for (const split of clientSplits) {
+      const splitQty = Math.round(quantity * split.fraction * 100) / 100;
+      if (splitQty <= 0) continue;
+
+      const { error: billingError } = await supabase.rpc("record_billable_event", {
+        p_client_id: split.clientId,
+        p_rate_code: boxCode,
+        p_quantity: splitQty,
+        p_reference_type: "outbound_order",
+        p_reference_id: orderId,
+        p_usage_date: usageDate,
+        p_notes: `Order ${order.order_number} - ${splitQty}x ${boxType.name} (split)`,
+      });
+
+      if (billingError) {
+        console.error(`Failed to record box billing for client ${split.clientId}:`, billingError);
+      }
+    }
+
+    return {
+      id: crypto.randomUUID(),
+      box_code: boxCode,
+      box_name: boxType.name,
+      quantity,
+      unit_price: boxType.price,
+      total: quantity * boxType.price,
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  // Single client path
+  const billingClientId = clientSplits?.[0]?.clientId || order.client_id;
+  if (billingClientId) {
     const { data: usageRecord, error: billingError } = await supabase.rpc("record_billable_event", {
-      p_client_id: order.client_id,
+      p_client_id: billingClientId,
       p_rate_code: boxCode,
       p_quantity: quantity,
       p_reference_type: "outbound_order",
@@ -73,10 +113,8 @@ export async function recordBoxUsage(
 
     if (billingError) {
       console.error("Failed to record box billing:", billingError);
-      // Don't throw - still return the box info
     }
 
-    // Return a synthetic record for display
     return {
       id: usageRecord || crypto.randomUUID(),
       box_code: boxCode,
@@ -110,7 +148,8 @@ export interface PackingMaterialRecord {
 export async function recordPackingMaterialUsage(
   orderId: string,
   materialCode: string,
-  quantity: number
+  quantity: number,
+  clientSplits?: BoxClientSplit[]
 ): Promise<PackingMaterialRecord | null> {
   const supabase = createClient();
 
@@ -131,12 +170,45 @@ export async function recordPackingMaterialUsage(
     throw new Error("Invalid packing material type");
   }
 
-  // Record billable event if client exists
-  if (order.client_id) {
-    const usageDate = new Date().toISOString().split("T")[0];
+  const usageDate = new Date().toISOString().split("T")[0];
 
+  // Multi-client split path
+  if (clientSplits && clientSplits.length > 1) {
+    for (const split of clientSplits) {
+      const splitQty = Math.round(quantity * split.fraction * 100) / 100;
+      if (splitQty <= 0) continue;
+
+      const { error: billingError } = await supabase.rpc("record_billable_event", {
+        p_client_id: split.clientId,
+        p_rate_code: materialCode,
+        p_quantity: splitQty,
+        p_reference_type: "outbound_order",
+        p_reference_id: orderId,
+        p_usage_date: usageDate,
+        p_notes: `Order ${order.order_number} - ${splitQty}x ${material.name} (split)`,
+      });
+
+      if (billingError) {
+        console.error(`Failed to record packing material billing for client ${split.clientId}:`, billingError);
+      }
+    }
+
+    return {
+      id: crypto.randomUUID(),
+      material_code: materialCode,
+      material_name: material.name,
+      quantity,
+      unit_price: material.price,
+      total: quantity * material.price,
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  // Single client path
+  const billingClientId = clientSplits?.[0]?.clientId || order.client_id;
+  if (billingClientId) {
     const { data: usageRecord, error: billingError } = await supabase.rpc("record_billable_event", {
-      p_client_id: order.client_id,
+      p_client_id: billingClientId,
       p_rate_code: materialCode,
       p_quantity: quantity,
       p_reference_type: "outbound_order",
@@ -147,10 +219,8 @@ export async function recordPackingMaterialUsage(
 
     if (billingError) {
       console.error("Failed to record packing material billing:", billingError);
-      // Don't throw - still return the material info
     }
 
-    // Return a synthetic record for display
     return {
       id: usageRecord || crypto.randomUUID(),
       material_code: materialCode,
@@ -233,25 +303,28 @@ export function suggestBoxes(bottleCount: number, isCans: boolean = false): { co
   let remaining = bottleCount;
 
   // Filter boxes by type (cans vs bottles)
-  const availableBoxes = BOX_TYPES
+  const smallestFirst = BOX_TYPES
     .filter((b) => isCans ? b.isCan : !b.isCan)
-    .sort((a, b) => b.bottles - a.bottles); // Largest first
+    .sort((a, b) => a.bottles - b.bottles); // Smallest first for best-fit
+  const largestFirst = [...smallestFirst].reverse();
 
-  // Greedy algorithm: use largest boxes first
-  for (const box of availableBoxes) {
-    if (remaining >= box.bottles) {
-      const qty = Math.floor(remaining / box.bottles);
-      if (qty > 0) {
-        suggestions.push({ code: box.code, name: box.name, qty, price: box.price });
-        remaining -= qty * box.bottles;
+  // Fewest-boxes: pick smallest box that fits, else use largest and repeat
+  while (remaining > 0 && smallestFirst.length > 0) {
+    const bestFit = smallestFirst.find((b) => b.bottles >= remaining);
+    if (bestFit) {
+      const existing = suggestions.find((s) => s.code === bestFit.code);
+      if (existing) { existing.qty += 1; } else {
+        suggestions.push({ code: bestFit.code, name: bestFit.name, qty: 1, price: bestFit.price });
       }
+      remaining = 0;
+    } else {
+      const largest = largestFirst[0];
+      const existing = suggestions.find((s) => s.code === largest.code);
+      if (existing) { existing.qty += 1; } else {
+        suggestions.push({ code: largest.code, name: largest.name, qty: 1, price: largest.price });
+      }
+      remaining -= largest.bottles;
     }
-  }
-
-  // Handle remaining bottles with smallest box
-  if (remaining > 0 && availableBoxes.length > 0) {
-    const smallestBox = availableBoxes[availableBoxes.length - 1];
-    suggestions.push({ code: smallestBox.code, name: smallestBox.name, qty: 1, price: smallestBox.price });
   }
 
   return suggestions;
@@ -410,20 +483,23 @@ export async function autoAssignBoxesForOrder(orderId: string): Promise<{
       return { success: false, boxesAssigned: [], totalCost: 0, error: "Order has no client" };
     }
 
-    // 2. Get container types for all products in this order
+    // 2. Get container types and client_id for all products in this order
     const productIds = order.items.map((item: any) => item.product_id);
     const { data: products, error: productsError } = await supabase
       .from("products")
-      .select("id, container_type")
+      .select("id, container_type, client_id")
       .in("id", productIds);
 
     if (productsError) {
       return { success: false, boxesAssigned: [], totalCost: 0, error: "Failed to fetch products" };
     }
 
-    // 3. Map product IDs to container types
+    // 3. Map product IDs to container types and client ownership
     const containerTypeMap = new Map<string, string>(
       (products || []).map((p) => [p.id, p.container_type || "bottle"])
+    );
+    const productClientMap = new Map<string, string>(
+      (products || []).filter((p) => p.client_id).map((p) => [p.id, p.client_id])
     );
 
     // 4. Calculate totals by container type
@@ -467,26 +543,66 @@ export async function autoAssignBoxesForOrder(orderId: string): Promise<{
       return { success: false, boxesAssigned: [], totalCost: 0, error: "Boxes already assigned to this order" };
     }
 
-    // 7. Record each box type as a billable event
+    // 7. Derive client splits from item ownership for multi-client billing
+    const clientQtyMap = new Map<string, number>();
+    let totalQtyForSplits = 0;
+    for (const item of order.items) {
+      const qty = (item as any).qty_shipped > 0 ? (item as any).qty_shipped : (item as any).qty_requested;
+      const ownerClientId = productClientMap.get((item as any).product_id) || order.client_id;
+      clientQtyMap.set(ownerClientId, (clientQtyMap.get(ownerClientId) || 0) + qty);
+      totalQtyForSplits += qty;
+    }
+
+    const clientSplits: BoxClientSplit[] = totalQtyForSplits > 0
+      ? Array.from(clientQtyMap.entries()).map(([clientId, qty]) => ({
+          clientId,
+          fraction: qty / totalQtyForSplits,
+        }))
+      : [{ clientId: order.client_id, fraction: 1 }];
+
+    const isMultiClient = clientSplits.length > 1;
+
+    // 8. Record each box type as a billable event
     const boxesAssigned: { code: string; name: string; qty: number; total: number }[] = [];
     let totalCost = 0;
 
     for (const suggestion of allSuggestions) {
       const usageDate = new Date().toISOString().split("T")[0];
 
-      const { error: billingError } = await supabase.rpc("record_billable_event", {
-        p_client_id: order.client_id,
-        p_rate_code: suggestion.code,
-        p_quantity: suggestion.qty,
-        p_reference_type: "outbound_order",
-        p_reference_id: orderId,
-        p_usage_date: usageDate,
-        p_notes: `Order ${order.order_number} - Auto-assigned: ${suggestion.qty}x ${suggestion.name}`,
-      });
+      if (isMultiClient) {
+        // Split billing across clients
+        for (const split of clientSplits) {
+          const splitQty = Math.round(suggestion.qty * split.fraction * 100) / 100;
+          if (splitQty <= 0) continue;
 
-      if (billingError) {
-        console.error("Failed to record box billing:", billingError);
-        // Continue with other boxes even if one fails
+          const { error: billingError } = await supabase.rpc("record_billable_event", {
+            p_client_id: split.clientId,
+            p_rate_code: suggestion.code,
+            p_quantity: splitQty,
+            p_reference_type: "outbound_order",
+            p_reference_id: orderId,
+            p_usage_date: usageDate,
+            p_notes: `Order ${order.order_number} - Auto-assigned: ${splitQty}x ${suggestion.name} (split)`,
+          });
+
+          if (billingError) {
+            console.error(`Failed to record box billing for client ${split.clientId}:`, billingError);
+          }
+        }
+      } else {
+        const { error: billingError } = await supabase.rpc("record_billable_event", {
+          p_client_id: order.client_id,
+          p_rate_code: suggestion.code,
+          p_quantity: suggestion.qty,
+          p_reference_type: "outbound_order",
+          p_reference_id: orderId,
+          p_usage_date: usageDate,
+          p_notes: `Order ${order.order_number} - Auto-assigned: ${suggestion.qty}x ${suggestion.name}`,
+        });
+
+        if (billingError) {
+          console.error("Failed to record box billing:", billingError);
+        }
       }
 
       const boxTotal = suggestion.qty * suggestion.price;
@@ -500,10 +616,12 @@ export async function autoAssignBoxesForOrder(orderId: string): Promise<{
     }
 
     // 8. Log activity
+    const { data: { user: boxUser } } = await supabase.auth.getUser();
     await supabase.from("activity_log").insert({
       entity_type: "outbound_order",
       entity_id: orderId,
       action: "boxes_auto_assigned",
+      user_id: boxUser?.id || null,
       details: {
         total_bottles: totalBottles,
         total_cans: totalCans,

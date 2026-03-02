@@ -21,32 +21,11 @@ export interface PortalService {
   }[];
 }
 
-export interface PortalServiceTier {
-  id: string;
-  name: string;
-  slug: string;
-  description: string | null;
-  min_volume: number | null;
-  max_volume: number | null;
-  features: string[];
-  is_popular: boolean;
-  sort_order: number;
-  pricing: {
-    service_id: string;
-    service_name: string;
-    price: number | null;
-    price_unit: string | null;
-    is_custom: boolean;
-  }[];
-}
-
 export interface MyService {
   id: string;
   service_id: string;
   service_name: string;
   service_description: string | null;
-  tier_id: string | null;
-  tier_name: string | null;
   custom_price: number | null;
   custom_price_unit: string | null;
   effective_price: number | null;
@@ -64,12 +43,6 @@ export interface MyService {
 }
 
 export interface MyPlan {
-  tier: {
-    id: string;
-    name: string;
-    description: string | null;
-    features: string[];
-  } | null;
   services: MyService[];
   totalMonthlyEstimate: number;
 }
@@ -113,63 +86,6 @@ export async function getPortalServices(): Promise<PortalService[]> {
   }));
 }
 
-export async function getPortalServiceTiers(): Promise<PortalServiceTier[]> {
-  const supabase = createClient();
-
-  const { data: tiers, error: tiersError } = await supabase
-    .from("service_tiers")
-    .select(`
-      id,
-      name,
-      slug,
-      description,
-      min_volume,
-      max_volume,
-      features,
-      is_popular,
-      sort_order
-    `)
-    .eq("status", "active")
-    .order("sort_order");
-
-  if (tiersError) {
-    throw new Error(tiersError.message);
-  }
-
-  // Get pricing for each tier
-  const { data: pricing, error: pricingError } = await supabase
-    .from("service_tier_pricing")
-    .select(`
-      tier_id,
-      service_id,
-      price,
-      price_unit,
-      is_custom,
-      service:services (id, name)
-    `);
-
-  if (pricingError) {
-    throw new Error(pricingError.message);
-  }
-
-  // Map pricing to tiers
-  return (tiers || []).map((tier) => ({
-    ...tier,
-    pricing: (pricing || [])
-      .filter((p) => p.tier_id === tier.id)
-      .map((p) => {
-        const service = Array.isArray(p.service) ? p.service[0] : p.service;
-        return {
-          service_id: p.service_id,
-          service_name: service?.name || "Unknown",
-          price: p.price,
-          price_unit: p.price_unit,
-          is_custom: p.is_custom,
-        };
-      }),
-  }));
-}
-
 export async function getMyServices(clientId: string): Promise<MyService[]> {
   const supabase = createClient();
 
@@ -179,13 +95,11 @@ export async function getMyServices(clientId: string): Promise<MyService[]> {
     .select(`
       id,
       service_id,
-      tier_id,
       custom_price,
       custom_price_unit,
       is_active,
       started_at,
-      service:services (id, name, description, base_price, price_unit),
-      tier:service_tiers (id, name)
+      service:services (id, name, description, base_price, price_unit)
     `)
     .eq("client_id", clientId);
 
@@ -209,35 +123,12 @@ export async function getMyServices(clientId: string): Promise<MyService[]> {
     throw new Error(addonsError.message);
   }
 
-  // Get tier pricing for services
-  const { data: tierPricing } = await supabase
-    .from("service_tier_pricing")
-    .select("service_id, tier_id, price, price_unit");
-
-  const tierPricingMap = new Map(
-    (tierPricing || []).map((p) => [`${p.service_id}-${p.tier_id}`, p])
-  );
-
   return (clientServices || []).map((cs) => {
     const service = Array.isArray(cs.service) ? cs.service[0] : cs.service;
-    const tier = Array.isArray(cs.tier) ? cs.tier[0] : cs.tier;
 
-    // Determine effective price
-    let effectivePrice = cs.custom_price;
-    let effectivePriceUnit = cs.custom_price_unit;
-
-    if (effectivePrice === null && cs.tier_id) {
-      const tierPrice = tierPricingMap.get(`${cs.service_id}-${cs.tier_id}`);
-      if (tierPrice) {
-        effectivePrice = tierPrice.price;
-        effectivePriceUnit = tierPrice.price_unit;
-      }
-    }
-
-    if (effectivePrice === null) {
-      effectivePrice = service?.base_price ?? null;
-      effectivePriceUnit = service?.price_unit ?? null;
-    }
+    // Determine effective price: custom price > base price
+    const effectivePrice = cs.custom_price ?? service?.base_price ?? null;
+    const effectivePriceUnit = cs.custom_price_unit ?? service?.price_unit ?? null;
 
     // Get addons for this service
     const serviceAddons = (clientAddons || [])
@@ -262,8 +153,6 @@ export async function getMyServices(clientId: string): Promise<MyService[]> {
       service_id: cs.service_id,
       service_name: service?.name || "Unknown",
       service_description: service?.description || null,
-      tier_id: cs.tier_id,
-      tier_name: tier?.name || null,
       custom_price: cs.custom_price,
       custom_price_unit: cs.custom_price_unit,
       effective_price: effectivePrice,
@@ -276,33 +165,6 @@ export async function getMyServices(clientId: string): Promise<MyService[]> {
 }
 
 export async function getMyPlan(clientId: string): Promise<MyPlan> {
-  const supabase = createClient();
-
-  // Get client's tier
-  const { data: client, error: clientError } = await supabase
-    .from("clients")
-    .select("service_tier_id")
-    .eq("id", clientId)
-    .single();
-
-  if (clientError) {
-    throw new Error(clientError.message);
-  }
-
-  let tier: MyPlan["tier"] = null;
-
-  if (client.service_tier_id) {
-    const { data: tierData } = await supabase
-      .from("service_tiers")
-      .select("id, name, description, features")
-      .eq("id", client.service_tier_id)
-      .single();
-
-    if (tierData) {
-      tier = tierData;
-    }
-  }
-
   // Get services
   const services = await getMyServices(clientId);
 
@@ -323,7 +185,6 @@ export async function getMyPlan(clientId: string): Promise<MyPlan> {
     }, 0);
 
   return {
-    tier,
     services,
     totalMonthlyEstimate,
   };

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
+import { getContainerBadge, getUnitLabel } from "@/lib/labels";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FetchError from "@/components/ui/FetchError";
 import { handleApiError } from "@/lib/utils/error-handler";
@@ -27,6 +28,7 @@ interface OrderItem {
   product_id: string;
   product_name: string;
   sku: string;
+  container_type: string | null;
   qty_requested: number;
   qty_picked: number;
   qty_shipped: number;
@@ -52,6 +54,7 @@ interface OrderDetail {
   tracking_number: string | null;
   shipped_at: string | null;
   delivered_at: string | null;
+  client_shipping_cost: number | null;
   items: OrderItem[];
 }
 
@@ -213,7 +216,9 @@ export default function OrderDetailPage() {
           tracking_number,
           shipped_at,
           delivered_at,
+          client_shipping_cost,
           client_id,
+          is_multi_client,
           items:outbound_items (
             id,
             qty_requested,
@@ -224,7 +229,9 @@ export default function OrderDetailPage() {
               id,
               name,
               sku,
-              image_url
+              image_url,
+              client_id,
+              container_type
             )
           )
         `)
@@ -237,12 +244,27 @@ export default function OrderDetailPage() {
         return;
       }
 
-      // Validate client ownership
-      if (data.client_id !== client.id) {
+      // Validate client access: primary client OR has items via product ownership
+      const isPrimaryClient = data.client_id === client.id;
+      const hasOwnedItems = (data.items || []).some((item: any) => {
+        const product = Array.isArray(item.product) ? item.product[0] : item.product;
+        return product?.client_id === client.id;
+      });
+
+      if (!isPrimaryClient && !hasOwnedItems) {
         setError("You don't have permission to view this order");
         setLoading(false);
         return;
       }
+
+      // Filter items to only show this client's products for multi-client orders
+      const allItems = data.items || [];
+      const visibleItems = data.is_multi_client
+        ? allItems.filter((item: any) => {
+            const product = Array.isArray(item.product) ? item.product[0] : item.product;
+            return product?.client_id === client.id;
+          })
+        : allItems;
 
       // Transform data
       const orderDetail: OrderDetail = {
@@ -263,13 +285,14 @@ export default function OrderDetailPage() {
         tracking_number: data.tracking_number,
         shipped_at: data.shipped_at,
         delivered_at: data.delivered_at,
-        items: (data.items || []).map((item: {
+        client_shipping_cost: data.client_shipping_cost ?? null,
+        items: visibleItems.map((item: {
           id: string;
           qty_requested: number;
           qty_picked: number;
           qty_shipped: number;
           status: string;
-          product: { id: string; name: string; sku: string; image_url: string | null } | { id: string; name: string; sku: string; image_url: string | null }[];
+          product: { id: string; name: string; sku: string; image_url: string | null; client_id?: string | null; container_type?: string | null } | { id: string; name: string; sku: string; image_url: string | null; client_id?: string | null; container_type?: string | null }[];
         }) => {
           const product = Array.isArray(item.product) ? item.product[0] : item.product;
           return {
@@ -277,6 +300,7 @@ export default function OrderDetailPage() {
             product_id: product?.id || "",
             product_name: product?.name || "Unknown",
             sku: product?.sku || "",
+            container_type: product?.container_type || null,
             qty_requested: item.qty_requested,
             qty_picked: item.qty_picked || 0,
             qty_shipped: item.qty_shipped || 0,
@@ -326,7 +350,17 @@ export default function OrderDetailPage() {
     return TIMELINE_STEPS.findIndex((step) => step.status === order.status);
   };
 
-  const totalUnits = order?.items.reduce((sum, item) => sum + item.qty_requested, 0) || 0;
+  const unitBreakdown = (() => {
+    if (!order) return "";
+    const grouped: Record<string, number> = {};
+    for (const item of order.items) {
+      const label = getUnitLabel(item.container_type);
+      grouped[label] = (grouped[label] || 0) + item.qty_requested;
+    }
+    return Object.entries(grouped)
+      .map(([label, qty]) => `${qty.toLocaleString()} ${label}`)
+      .join(", ");
+  })();
 
   if (loading) {
     return (
@@ -552,6 +586,12 @@ export default function OrderDetailPage() {
                         Delivered: <span className="font-medium text-cyan-900">{formatDateTime(order.delivered_at)}</span>
                       </p>
                     )}
+                    {order.client_shipping_cost != null && (
+                      <div className="flex items-center gap-2 pt-2 mt-2 border-t border-cyan-200">
+                        <span className="text-sm text-cyan-700">Shipping Cost:</span>
+                        <span className="font-semibold text-cyan-900">${order.client_shipping_cost.toFixed(2)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -587,7 +627,7 @@ export default function OrderDetailPage() {
                 <h2 className="font-semibold text-slate-900">Order Items</h2>
               </div>
               <span className="text-sm text-slate-500">
-                {order.items.length} item{order.items.length !== 1 ? "s" : ""} | {totalUnits.toLocaleString()} units
+                {order.items.length} item{order.items.length !== 1 ? "s" : ""} | {unitBreakdown}
               </span>
             </div>
           </div>
@@ -616,7 +656,12 @@ export default function OrderDetailPage() {
                   {/* Product Info */}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-slate-900 truncate">{item.product_name}</p>
-                    <p className="text-sm text-slate-500 font-mono">{item.sku}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm text-slate-500 font-mono">{item.sku}</p>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getContainerBadge(item.container_type).color}`}>
+                        {getContainerBadge(item.container_type).label}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Quantities */}
@@ -625,7 +670,9 @@ export default function OrderDetailPage() {
                       {/* Qty Requested */}
                       <div>
                         <p className="text-xs text-slate-500 uppercase tracking-wide">Requested</p>
-                        <p className="font-semibold text-slate-900">{item.qty_requested.toLocaleString()}</p>
+                        <p className="font-semibold text-slate-900">
+                          {item.qty_requested.toLocaleString()} <span className="text-xs font-normal text-slate-500">{getUnitLabel(item.container_type)}</span>
+                        </p>
                       </div>
 
                       {/* Qty Shipped (if applicable) */}
@@ -633,7 +680,9 @@ export default function OrderDetailPage() {
                         <div className="pl-3 border-l border-slate-200">
                           <p className="text-xs text-slate-500 uppercase tracking-wide">Shipped</p>
                           <p className={`font-semibold ${isPartiallyShipped ? "text-yellow-600" : isFullyShipped ? "text-green-600" : "text-slate-400"}`}>
-                            {item.qty_shipped > 0 ? item.qty_shipped.toLocaleString() : "\u2014"}
+                            {item.qty_shipped > 0 ? (
+                              <>{item.qty_shipped.toLocaleString()} <span className="text-xs font-normal">{getUnitLabel(item.container_type)}</span></>
+                            ) : "\u2014"}
                           </p>
                         </div>
                       )}

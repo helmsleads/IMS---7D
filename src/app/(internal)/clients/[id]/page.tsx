@@ -150,6 +150,34 @@ export default function ClientDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [updatingWorkflowOverride, setUpdatingWorkflowOverride] = useState(false);
 
+  // QuickBooks sync
+  const [qbConnected, setQbConnected] = useState(false);
+  const [qbSyncing, setQbSyncing] = useState(false);
+
+  const handleSyncToQB = async () => {
+    if (!client) return;
+    setQbSyncing(true);
+    try {
+      const res = await fetch("/api/integrations/quickbooks/sync/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Refresh client data to get the new qb_customer_id
+        const updatedClient = await getClient(client.id);
+        if (updatedClient) setClient(updatedClient);
+      } else {
+        alert(data.error || "QB sync failed");
+      }
+    } catch {
+      alert("Failed to sync to QuickBooks");
+    } finally {
+      setQbSyncing(false);
+    }
+  };
+
   const handleToggleProductWorkflowOverride = async () => {
     if (!client) return;
     setUpdatingWorkflowOverride(true);
@@ -199,6 +227,14 @@ export default function ClientDetailPage() {
       fetchClient();
     }
   }, [params.id]);
+
+  // Check if QuickBooks is connected
+  useEffect(() => {
+    fetch("/api/integrations/quickbooks/settings")
+      .then((res) => res.json())
+      .then((data) => setQbConnected(!!data.connected))
+      .catch(() => {});
+  }, []);
 
   // Fetch inventory when tab changes to inventory
   useEffect(() => {
@@ -735,6 +771,21 @@ export default function ClientDetailPage() {
                 >
                   {client.active ? "Active" : "Inactive"}
                 </span>
+                {qbConnected && (
+                  client.qb_customer_id ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-green-50 text-green-700 rounded-full border border-green-200">
+                      QB Synced
+                    </span>
+                  ) : (
+                    <button
+                      onClick={handleSyncToQB}
+                      disabled={qbSyncing}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-blue-50 text-blue-700 rounded-full border border-blue-200 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                    >
+                      {qbSyncing ? "Syncing..." : "Sync to QB"}
+                    </button>
+                  )
+                )}
 {clientUsers.find(u => u.is_primary)?.user_id ? (
                   <a
                     href={`/portal/dashboard?view_user=${clientUsers.find(u => u.is_primary)?.user_id}&view_client=${client.id}`}
@@ -1376,15 +1427,6 @@ export default function ClientDetailPage() {
                             </p>
                           )}
                         </div>
-                      ),
-                    },
-                    {
-                      key: "tier",
-                      header: "Tier",
-                      render: (item: ClientServiceWithDetails) => (
-                        <span className="text-gray-600">
-                          {item.tier?.name || "No tier"}
-                        </span>
                       ),
                     },
                     {

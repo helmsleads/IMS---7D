@@ -42,7 +42,8 @@ export type OrderStatus =
   | "cancelled";
 
 /**
- * Fetches orders for a specific client with optional status filter
+ * Fetches orders for a specific client with optional status filter.
+ * Uses RPC to include multi-client orders where the client has items via product ownership.
  * @param clientId - The client's UUID
  * @param status - Optional status to filter by
  * @returns Array of client orders
@@ -52,6 +53,15 @@ export async function getClientOrders(
   status?: OrderStatus
 ): Promise<ClientOrder[]> {
   const supabase = createClient();
+
+  // Get all order IDs this client has access to (primary client OR product owner)
+  const { data: orderIds, error: rpcError } = await supabase
+    .rpc("get_client_order_ids", { p_client_id: clientId });
+
+  if (rpcError || !orderIds || orderIds.length === 0) {
+    if (rpcError) console.error("Error fetching client order IDs:", rpcError);
+    return [];
+  }
 
   let query = supabase
     .from("outbound_orders")
@@ -75,7 +85,7 @@ export async function getClientOrders(
         qty_requested
       )
     `)
-    .eq("client_id", clientId)
+    .in("id", orderIds)
     .order("created_at", { ascending: false });
 
   if (status) {
@@ -114,7 +124,9 @@ export async function getClientOrders(
 }
 
 /**
- * Fetches a single order with full details, validating client ownership
+ * Fetches a single order with full details, validating client access.
+ * Access is granted if the client is the primary client OR has items via product ownership.
+ * Items are filtered to only show the portal user's client's products.
  * @param orderId - The order's UUID
  * @param clientId - The client's UUID (for validation)
  * @returns Order details or null if not found/unauthorized
@@ -144,6 +156,7 @@ export async function getClientOrder(
       preferred_carrier,
       tracking_number,
       client_id,
+      is_multi_client,
       items:outbound_items (
         id,
         qty_requested,
@@ -152,7 +165,8 @@ export async function getClientOrder(
         product:products (
           id,
           name,
-          sku
+          sku,
+          client_id
         )
       )
     `)
@@ -164,19 +178,34 @@ export async function getClientOrder(
     return null;
   }
 
-  // Validate client ownership
-  if (data.client_id !== clientId) {
-    console.error("Unauthorized: Order does not belong to client");
+  // Validate client access: primary client OR has items via product ownership
+  const isPrimaryClient = data.client_id === clientId;
+  const hasOwnedItems = (data.items || []).some((item: any) => {
+    const product = Array.isArray(item.product) ? item.product[0] : item.product;
+    return product?.client_id === clientId;
+  });
+
+  if (!isPrimaryClient && !hasOwnedItems) {
+    console.error("Unauthorized: Client has no access to this order");
     return null;
   }
 
+  // Filter items to only show this client's products (for multi-client orders)
+  const allItems = data.items || [];
+  const visibleItems = data.is_multi_client
+    ? allItems.filter((item: any) => {
+        const product = Array.isArray(item.product) ? item.product[0] : item.product;
+        return product?.client_id === clientId;
+      })
+    : allItems;
+
   // Transform the data
-  const items = (data.items || []).map((item: {
+  const items = visibleItems.map((item: {
     id: string;
     qty_requested: number;
     qty_picked: number;
     status: string;
-    product: { id: string; name: string; sku: string } | { id: string; name: string; sku: string }[];
+    product: { id: string; name: string; sku: string; client_id?: string | null } | { id: string; name: string; sku: string; client_id?: string | null }[];
   }) => {
     const product = Array.isArray(item.product) ? item.product[0] : item.product;
     return {
@@ -213,7 +242,8 @@ export async function getClientOrder(
 }
 
 /**
- * Gets order status counts for a client (for dashboard/filters)
+ * Gets order status counts for a client (for dashboard/filters).
+ * Uses RPC to include multi-client orders.
  * @param clientId - The client's UUID
  * @returns Object with status counts
  */
@@ -222,10 +252,19 @@ export async function getClientOrderStatusCounts(
 ): Promise<Record<string, number>> {
   const supabase = createClient();
 
+  // Get all order IDs this client has access to
+  const { data: orderIds, error: rpcError } = await supabase
+    .rpc("get_client_order_ids", { p_client_id: clientId });
+
+  if (rpcError || !orderIds || orderIds.length === 0) {
+    if (rpcError) console.error("Error fetching client order IDs:", rpcError);
+    return {};
+  }
+
   const { data, error } = await supabase
     .from("outbound_orders")
     .select("status")
-    .eq("client_id", clientId);
+    .in("id", orderIds);
 
   if (error) {
     console.error("Error fetching order status counts:", error);
@@ -241,7 +280,8 @@ export async function getClientOrderStatusCounts(
 }
 
 /**
- * Gets active orders count for a client (pending, confirmed, processing, packed, shipped)
+ * Gets active orders count for a client (pending, confirmed, processing, packed, shipped).
+ * Uses RPC to include multi-client orders.
  * @param clientId - The client's UUID
  * @returns Count of active orders
  */
@@ -250,10 +290,19 @@ export async function getClientActiveOrdersCount(
 ): Promise<number> {
   const supabase = createClient();
 
+  // Get all order IDs this client has access to
+  const { data: orderIds, error: rpcError } = await supabase
+    .rpc("get_client_order_ids", { p_client_id: clientId });
+
+  if (rpcError || !orderIds || orderIds.length === 0) {
+    if (rpcError) console.error("Error fetching client order IDs:", rpcError);
+    return 0;
+  }
+
   const { count, error } = await supabase
     .from("outbound_orders")
     .select("id", { count: "exact", head: true })
-    .eq("client_id", clientId)
+    .in("id", orderIds)
     .in("status", ["pending", "confirmed", "processing", "packed", "shipped"]);
 
   if (error) {

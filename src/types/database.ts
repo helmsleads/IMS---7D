@@ -35,38 +35,11 @@ export interface ServiceAddon {
   updated_at: string
 }
 
-export interface ServiceTier {
-  id: string
-  name: string
-  slug: string
-  description: string | null
-  min_volume: number | null
-  max_volume: number | null
-  features: string[]
-  is_popular: boolean
-  status: ServiceStatus
-  sort_order: number
-  created_at: string
-  updated_at: string
-}
-
-export interface ServiceTierPricing {
-  id: string
-  service_id: string
-  tier_id: string
-  price: number | null
-  price_unit: string | null
-  is_custom: boolean
-  created_at: string
-  updated_at: string
-}
-
 // V2.2.1.2 Client Service Types
 export interface ClientService {
   id: string
   client_id: string
   service_id: string
-  tier_id: string | null
   custom_price: number | null
   custom_price_unit: string | null
   is_active: boolean
@@ -77,7 +50,6 @@ export interface ClientService {
   updated_at: string
   // Optional expanded references
   service?: Service
-  tier?: ServiceTier
 }
 
 export interface ClientAddon {
@@ -115,6 +87,10 @@ export interface Invoice {
   notes: string | null
   created_at: string
   updated_at: string
+  // QuickBooks sync
+  qb_invoice_id: string | null
+  qb_payment_id: string | null
+  qb_synced_at: string | null
   // Optional expanded references
   client?: Client
   items?: InvoiceItem[]
@@ -535,7 +511,7 @@ export interface WorkflowProfile {
   code: string
   name: string
   description: string | null
-  industry: ClientIndustry
+  industries: ClientIndustry[]
 
   // UI Settings
   icon: string | null
@@ -758,13 +734,13 @@ export interface Client {
   zip: string | null
   active: boolean
   created_at: string
-  // V2.2.1.12 additions
-  service_tier_id: string | null
   // Industry and workflow profile
   industry: ClientIndustry
   workflow_profile_id: string | null
   // Allow products to have their own workflow overrides
   allow_product_workflow_override: boolean
+  // QuickBooks sync
+  qb_customer_id: string | null
 }
 
 // Client user roles for portal access
@@ -887,7 +863,10 @@ export interface OutboundOrder {
   // FedEx shipping integration
   fedex_shipment_id: string | null
   label_url: string | null
-  shipping_method: 'manual' | 'fedex_api'
+  shipping_method: 'manual' | 'fedex_api' | 'pickup'
+  // Shipping cost tracking
+  shipping_cost: number | null
+  client_shipping_cost: number | null
 }
 
 // FedEx Credentials stored in system_settings
@@ -904,6 +883,41 @@ export interface FedExCredentials {
   shipper_zip: string
   shipper_country: string
   shipper_phone: string
+}
+
+// QuickBooks Online Integration Types
+
+/** App credentials (client_id/secret) — entered in Settings UI, encrypted in system_settings */
+export interface QuickBooksAppCredentials {
+  client_id: string                   // From Intuit Developer portal
+  client_secret: string               // Encrypted
+  webhook_verifier: string            // Encrypted — from Intuit webhook settings
+  environment: 'sandbox' | 'production'
+}
+
+/** OAuth tokens — set during OAuth callback, encrypted in system_settings */
+export interface QuickBooksCredentials {
+  realm_id: string                    // QB Company ID
+  access_token: string                // Encrypted
+  refresh_token: string               // Encrypted
+  token_expires_at: string            // ISO timestamp
+  refresh_token_expires_at: string    // ISO timestamp (100 days)
+  environment: 'sandbox' | 'production'
+  connected_at: string
+  connected_by: string
+}
+
+export interface QBEntityMap {
+  id: string
+  entity_type: 'customer' | 'invoice' | 'item' | 'payment' | 'expense'
+  ims_entity_id: string
+  qb_entity_id: string
+  qb_sync_token: string | null
+  last_synced_at: string
+  sync_status: 'synced' | 'pending' | 'error'
+  sync_error: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface OutboundItem {
@@ -1251,7 +1265,7 @@ export interface ProductSubcategory {
 
 // ===== SHOPIFY INTEGRATION TYPES =====
 
-export type IntegrationPlatform = 'shopify' | 'tiktok' | 'amazon' | 'ebay' | 'woocommerce'
+export type IntegrationPlatform = 'shopify' | 'tiktok' | 'amazon' | 'ebay' | 'woocommerce' | 'quickbooks'
 export type IntegrationStatus = 'pending' | 'active' | 'paused' | 'error' | 'disconnected'
 export type WebhookStatus = 'received' | 'processing' | 'processed' | 'failed' | 'skipped'
 

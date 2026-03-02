@@ -22,11 +22,14 @@ import {
   Plus,
   Zap,
   AlertCircle,
+  AlertTriangle,
   Calendar,
   Globe,
   Building2,
   Save,
   X,
+  Trash2,
+  Check,
 } from "lucide-react";
 import Link from "next/link";
 import AppShell from "@/components/internal/AppShell";
@@ -39,6 +42,7 @@ import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import Textarea from "@/components/ui/Textarea";
+import SearchSelect from "@/components/ui/SearchSelect";
 import ShippingModal, { ShippingData, ShipToAddress } from "@/components/internal/ShippingModal";
 import { requiresAlcoholCompliance } from "@/lib/api/workflow-profiles";
 import type { ClientIndustry } from "@/types/database";
@@ -50,11 +54,16 @@ import {
   updateOutboundOrderStatus,
   shipOutboundItem,
   deleteOutboundOrder,
+  updateOutboundItem,
+  addOutboundItem,
+  deleteOutboundItem,
   OutboundOrderWithItems,
   OutboundItemWithProduct,
   UpdateOutboundOrderData,
 } from "@/lib/api/outbound";
+import { getProducts, ProductWithCategory } from "@/lib/api/products";
 import { createClient } from "@/lib/supabase";
+import { getContainerBadge, getUnitLabel } from "@/lib/labels";
 import { getLocations, Location } from "@/lib/api/locations";
 import { getInventory, InventoryWithDetails } from "@/lib/api/inventory";
 import {
@@ -69,6 +78,8 @@ import { getClientSettings, ClientSetting } from "@/lib/api/settings";
 import PickingScanner from "@/components/internal/PickingScanner";
 import PickScanner from "@/components/internal/PickScanner";
 import { getWarehouseTasks, getPickListItems, WarehouseTaskWithRelations, PickListItemWithRelations } from "@/lib/api/warehouse-tasks";
+import { getDamageReports, createDamageReport, DamageReportWithProduct } from "@/lib/api/damage-reports";
+import type { DamageResolution } from "@/types/database";
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: Clock },
@@ -78,6 +89,37 @@ const STATUS_STEPS = [
   { key: "shipped", label: "Shipped", icon: Truck },
   { key: "delivered", label: "Delivered", icon: CheckCircle2 },
 ];
+
+const damageTypeOptions = [
+  { value: "crushed", label: "Crushed/Dented" },
+  { value: "water_damage", label: "Water Damage" },
+  { value: "torn_packaging", label: "Torn Packaging" },
+  { value: "broken", label: "Broken/Shattered" },
+  { value: "missing_parts", label: "Missing Parts" },
+  { value: "contamination", label: "Contamination" },
+  { value: "expired", label: "Expired" },
+  { value: "manufacturing_defect", label: "Manufacturing Defect" },
+  { value: "other", label: "Other" },
+];
+
+function getDamageResolutionBadge(resolution: DamageResolution): { label: string; variant: "default" | "warning" | "info" | "success" | "error" } {
+  switch (resolution) {
+    case "pending":
+      return { label: "Pending", variant: "warning" };
+    case "credit_requested":
+      return { label: "Credit Requested", variant: "info" };
+    case "credit_received":
+      return { label: "Credit Received", variant: "success" };
+    case "replaced":
+      return { label: "Replaced", variant: "success" };
+    case "written_off":
+      return { label: "Written Off", variant: "default" };
+    case "restocked":
+      return { label: "Restocked", variant: "success" };
+    default:
+      return { label: resolution, variant: "default" };
+  }
+}
 
 function getStatusIndex(status: string): number {
   return STATUS_STEPS.findIndex((s) => s.key === status);
@@ -322,6 +364,25 @@ export default function OutboundOrderDetailPage() {
     delivered_date: "",
   });
 
+  // Line item editing state
+  const [editingItems, setEditingItems] = useState<Record<string, number>>({});
+  const [addingItem, setAddingItem] = useState(false);
+  const [savingItems, setSavingItems] = useState(false);
+  const [newItemProductId, setNewItemProductId] = useState("");
+  const [newItemQty, setNewItemQty] = useState(1);
+  const [newItemPrice, setNewItemPrice] = useState(0);
+  const [availableProducts, setAvailableProducts] = useState<ProductWithCategory[]>([]);
+  const [itemError, setItemError] = useState("");
+
+  // Damage report state
+  const [damageReports, setDamageReports] = useState<DamageReportWithProduct[]>([]);
+  const [showDamageModal, setShowDamageModal] = useState(false);
+  const [submittingDamage, setSubmittingDamage] = useState(false);
+  const [damageError, setDamageError] = useState("");
+  const [damageSuccess, setDamageSuccess] = useState("");
+  const [damageItems, setDamageItems] = useState<Record<string, { checked: boolean; quantity: number; damageType: string; description: string }>>({});
+  const [damageGeneralNotes, setDamageGeneralNotes] = useState("");
+
   // Helper to get client setting value
   const getClientSettingValue = (category: string, key: string): unknown => {
     const setting = clientSettings.find(
@@ -420,6 +481,14 @@ export default function OutboundOrderDetailPage() {
           }
         } catch (err) {
           console.error("Failed to fetch pick task:", err);
+        }
+
+        // Fetch damage reports for this order (non-blocking)
+        try {
+          const reports = await getDamageReports({ referenceType: "outbound_order", referenceId: orderId });
+          setDamageReports(reports);
+        } catch (err) {
+          console.error("Failed to fetch damage reports:", err);
         }
       }
     } catch (err) {
@@ -525,9 +594,13 @@ export default function OutboundOrderDetailPage() {
 
     try {
       // 1. Update order status to "shipped" with carrier and tracking info
+      const shippingMethod = (shippingData.shippingMethod || (shippingData.fedexShipmentId ? "fedex_api" : "manual")) as 'manual' | 'fedex_api' | 'pickup';
       await updateOutboundOrderStatus(order.id, "shipped", {
         carrier: shippingData.carrier,
         tracking_number: shippingData.trackingNumber,
+        shipping_method: shippingMethod,
+        shipping_cost: shippingData.shippingCost,
+        client_shipping_cost: shippingData.clientShippingCost,
       });
 
       // 2. Log activity with shipping details
@@ -545,7 +618,7 @@ export default function OutboundOrderDetailPage() {
           notes: shippingData.notes,
           label_url: shippingData.labelUrl || null,
           fedex_shipment_id: shippingData.fedexShipmentId || null,
-          shipping_method: shippingData.fedexShipmentId ? "fedex_api" : "manual",
+          shipping_method: shippingData.shippingMethod || (shippingData.fedexShipmentId ? "fedex_api" : "manual"),
           items_shipped: order.items.map((item) => ({
             product_id: item.product_id,
             product_name: item.product?.name,
@@ -567,7 +640,9 @@ export default function OutboundOrderDetailPage() {
 
       // 4. Show success message
       setShipSuccess(
-        `Order ${order.order_number} shipped via ${shippingData.carrier}. Tracking: ${shippingData.trackingNumber}`
+        shippingData.shippingMethod === "pickup"
+          ? `Order ${order.order_number} marked as picked up.`
+          : `Order ${order.order_number} shipped via ${shippingData.carrier}. Tracking: ${shippingData.trackingNumber}`
       );
 
       // 5. Close modal and refresh page
@@ -613,6 +688,112 @@ export default function OutboundOrderDetailPage() {
       console.error("Failed to add supply:", err);
     } finally {
       setAddingSupply(false);
+    }
+  };
+
+  // Damage report handlers
+  const openDamageModal = () => {
+    if (!order) return;
+    const items: Record<string, { checked: boolean; quantity: number; damageType: string; description: string }> = {};
+    for (const item of order.items) {
+      items[item.product_id] = {
+        checked: false,
+        quantity: 1,
+        damageType: "",
+        description: "",
+      };
+    }
+    setDamageItems(items);
+    setDamageGeneralNotes("");
+    setDamageError("");
+    setShowDamageModal(true);
+  };
+
+  const closeDamageModal = () => {
+    setShowDamageModal(false);
+    setDamageItems({});
+    setDamageGeneralNotes("");
+    setDamageError("");
+  };
+
+  const handleSubmitDamageReports = async () => {
+    if (!order) return;
+
+    const checkedItems = Object.entries(damageItems).filter(([, v]) => v.checked);
+
+    if (checkedItems.length === 0) {
+      setDamageError("Select at least one item to report damage for.");
+      return;
+    }
+
+    // Validate each checked item
+    for (const [productId, item] of checkedItems) {
+      const orderItem = order.items.find((i) => i.product_id === productId);
+      if (!orderItem) continue;
+      const maxQty = orderItem.qty_shipped > 0 ? orderItem.qty_shipped : orderItem.qty_requested;
+      if (item.quantity < 1 || item.quantity > maxQty) {
+        setDamageError(`Quantity for ${orderItem.product?.name || "item"} must be between 1 and ${maxQty}.`);
+        return;
+      }
+      if (!item.damageType) {
+        setDamageError(`Select a damage type for ${orderItem.product?.name || "item"}.`);
+        return;
+      }
+    }
+
+    setSubmittingDamage(true);
+    setDamageError("");
+
+    try {
+      const supabase = createClient();
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+
+      for (const [productId, item] of checkedItems) {
+        const description = [item.description, damageGeneralNotes].filter(Boolean).join(" | ");
+        await createDamageReport({
+          reference_type: "outbound_order",
+          reference_id: order.id,
+          product_id: productId,
+          quantity: item.quantity,
+          damage_type: item.damageType,
+          description: description || null,
+          reported_by: currentUser?.id || null,
+        });
+      }
+
+      // Log to activity_log
+      await supabase.from("activity_log").insert({
+        entity_type: "outbound_order",
+        entity_id: order.id,
+        action: "damage_reported",
+        user_id: currentUser?.id || null,
+        details: {
+          order_number: order.order_number,
+          items: checkedItems.map(([productId, item]) => {
+            const orderItem = order.items.find((i) => i.product_id === productId);
+            return {
+              product_id: productId,
+              product_name: orderItem?.product?.name,
+              quantity: item.quantity,
+              damage_type: item.damageType,
+            };
+          }),
+          general_notes: damageGeneralNotes || null,
+        },
+      });
+
+      // Refresh damage reports
+      const reports = await getDamageReports({ referenceType: "outbound_order", referenceId: orderId });
+      setDamageReports(reports);
+
+      closeDamageModal();
+      setDamageSuccess(`Damage report${checkedItems.length > 1 ? "s" : ""} created for ${checkedItems.length} item${checkedItems.length > 1 ? "s" : ""}.`);
+      setTimeout(() => setDamageSuccess(""), 5000);
+    } catch (err) {
+      console.error("Failed to submit damage reports:", err);
+      setDamageError(err instanceof Error ? err.message : "Failed to create damage reports.");
+    } finally {
+      setSubmittingDamage(false);
     }
   };
 
@@ -874,6 +1055,13 @@ export default function OutboundOrderDetailPage() {
       disabled: !order.client,
     },
     {
+      label: "Report Damage",
+      icon: <AlertTriangle className="w-4 h-4" />,
+      onClick: openDamageModal,
+      disabled: order.status !== "shipped" && order.status !== "delivered",
+      divider: true,
+    },
+    {
       label: "Cancel Order",
       icon: <XCircle className="w-4 h-4" />,
       onClick: () => setShowCancelModal(true),
@@ -931,8 +1119,93 @@ export default function OutboundOrderDetailPage() {
   const warehouseTimezone = locations[0]?.timezone || "America/New_York";
   const totalRequested = order.items.reduce((sum, item) => sum + item.qty_requested, 0);
   const totalShipped = order.items.reduce((sum, item) => sum + item.qty_shipped, 0);
+  const itemsComplete = order.items.filter((item) => item.qty_shipped >= item.qty_requested).length;
+
+  const buildUnitBreakdown = (getQty: (item: typeof order.items[0]) => number) => {
+    const grouped: Record<string, number> = {};
+    for (const item of order.items) {
+      const qty = getQty(item);
+      if (qty <= 0) continue;
+      const label = getUnitLabel(item.product?.container_type);
+      grouped[label] = (grouped[label] || 0) + qty;
+    }
+    return Object.entries(grouped)
+      .map(([label, qty]) => `${qty.toLocaleString()} ${label}`)
+      .join(", ");
+  };
+  const requestedBreakdown = buildUnitBreakdown((item) => item.qty_requested);
+  const shippedBreakdown = buildUnitBreakdown((item) => item.qty_shipped);
   const allItemsShipped = order.items.every((item) => item.qty_shipped >= item.qty_requested);
   const canPick = order.status === "confirmed" || order.status === "processing";
+  const canEdit = ["pending", "confirmed", "processing", "packed"].includes(order.status);
+
+  const handleStartAddItem = async () => {
+    setAddingItem(true);
+    setItemError("");
+    if (availableProducts.length === 0) {
+      try {
+        const products = await getProducts(order.client_id || undefined);
+        setAvailableProducts(products.filter((p) => p.active));
+      } catch {
+        setItemError("Failed to load products");
+      }
+    }
+  };
+
+  const handleSaveItemQty = async (itemId: string) => {
+    const newQty = editingItems[itemId];
+    if (newQty === undefined) return;
+    setSavingItems(true);
+    setItemError("");
+    try {
+      await updateOutboundItem(itemId, { qty_requested: newQty });
+      await fetchOrder();
+      setEditingItems((prev) => {
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
+    } catch (err) {
+      setItemError(err instanceof Error ? err.message : "Failed to update item");
+    } finally {
+      setSavingItems(false);
+    }
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    setSavingItems(true);
+    setItemError("");
+    try {
+      await deleteOutboundItem(itemId);
+      await fetchOrder();
+    } catch (err) {
+      setItemError(err instanceof Error ? err.message : "Failed to delete item");
+    } finally {
+      setSavingItems(false);
+    }
+  };
+
+  const handleAddItem = async () => {
+    if (!newItemProductId || newItemQty < 1) return;
+    setSavingItems(true);
+    setItemError("");
+    try {
+      await addOutboundItem(order.id, {
+        product_id: newItemProductId,
+        qty_requested: newItemQty,
+        unit_price: newItemPrice,
+      });
+      await fetchOrder();
+      setNewItemProductId("");
+      setNewItemQty(1);
+      setNewItemPrice(0);
+      setAddingItem(false);
+    } catch (err) {
+      setItemError(err instanceof Error ? err.message : "Failed to add item");
+    } finally {
+      setSavingItems(false);
+    }
+  };
 
   // Client service options
   const rushProcessingEnabled = getClientSettingValue("fulfillment", "rush_processing_enabled") === true;
@@ -987,6 +1260,17 @@ export default function OutboundOrderDetailPage() {
             type="success"
             message={shipSuccess}
             onClose={() => setShipSuccess("")}
+          />
+        </div>
+      )}
+
+      {/* Damage Success Alert */}
+      {damageSuccess && (
+        <div className="mb-6">
+          <Alert
+            type="success"
+            message={damageSuccess}
+            onClose={() => setDamageSuccess("")}
           />
         </div>
       )}
@@ -1173,27 +1457,48 @@ export default function OutboundOrderDetailPage() {
               )}
 
               {order.status === "shipped" && (
-                <Button
-                  onClick={() => handleStatusUpdate("delivered")}
-                  loading={updating}
-                  disabled={updating}
-                >
-                  <CheckCircle2 className="w-4 h-4 mr-2" />
-                  Mark Delivered
-                </Button>
+                <div className="flex gap-3">
+                  <Button
+                    onClick={() => handleStatusUpdate("delivered")}
+                    loading={updating}
+                    disabled={updating}
+                  >
+                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                    Mark Delivered
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={openDamageModal}
+                    className="text-red-600 border-red-200 hover:bg-red-50"
+                  >
+                    <AlertTriangle className="w-4 h-4 mr-2" />
+                    Report Damage
+                  </Button>
+                </div>
               )}
 
               {order.status === "delivered" && (
-                <div className="flex items-center gap-2 text-green-600">
-                  <CheckCircle2 className="w-5 h-5" />
-                  <span className="font-medium">Order Delivered</span>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-green-600">
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span className="font-medium">Order Delivered</span>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={openDamageModal}
+                    className="text-red-600 border-red-200 hover:bg-red-50"
+                  >
+                    <AlertTriangle className="w-4 h-4 mr-2" />
+                    Report Damage
+                  </Button>
                 </div>
               )}
             </div>
           </Card>
 
           {/* Pick List - Show enhanced version during processing */}
-          {order.status === "processing" ? (
+          {order.status === "processing" && (
             <Card>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-gray-900">
@@ -1245,14 +1550,21 @@ export default function OutboundOrderDetailPage() {
                             <p className="font-medium text-gray-900">
                               {item.product?.name || "Unknown Product"}
                             </p>
-                            <p className="text-sm text-gray-500">
-                              SKU: {item.product?.sku || "—"}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm text-gray-500">
+                                SKU: {item.product?.sku || "—"}
+                              </p>
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getContainerBadge(item.product?.container_type).color}`}>
+                                {getContainerBadge(item.product?.container_type).label}
+                              </span>
+                            </div>
                           </div>
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-gray-500">Requested</p>
-                          <p className="text-xl font-bold text-gray-900">{item.qty_requested}</p>
+                          <p className="text-xl font-bold text-gray-900">
+                            {item.qty_requested} <span className="text-sm font-normal text-gray-500">{getUnitLabel(item.product?.container_type)}</span>
+                          </p>
                         </div>
                       </div>
 
@@ -1381,116 +1693,368 @@ export default function OutboundOrderDetailPage() {
                 })}
               </div>
             </Card>
-          ) : (
-            /* Standard Line Items Table - For non-processing states */
-            <Card>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Line Items
-                </h2>
-              </div>
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Product
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Requested
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Picked
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Shipped
-                      </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {order.items.map((item) => {
-                      const remaining = item.qty_requested - item.qty_shipped;
-                      const isComplete = remaining <= 0;
-                      const isPartial = item.qty_shipped > 0 && remaining > 0;
-                      const isPending = item.qty_shipped === 0;
-                      const isShipped = order.status === "shipped" || order.status === "delivered";
+          )}
 
-                      return (
-                        <tr key={item.id} className={isComplete ? "bg-green-50/50" : ""}>
-                          <td className="px-4 py-3">
-                            <div>
-                              <p className="font-medium text-gray-900">
-                                {item.product?.name || "Unknown Product"}
-                              </p>
+          {/* Line Items Table */}
+          <Card>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Line Items
+              </h2>
+              {canEdit && (
+                <button
+                  onClick={handleStartAddItem}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Item
+                </button>
+              )}
+            </div>
+
+            {itemError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                {itemError}
+                <button onClick={() => setItemError("")} className="ml-auto text-red-500 hover:text-red-700">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Product
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Requested
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Picked
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Shipped
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    {canEdit && (
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {order.items.map((item) => {
+                    const remaining = item.qty_requested - item.qty_shipped;
+                    const isComplete = remaining <= 0;
+                    const isPartial = item.qty_shipped > 0 && remaining > 0;
+                    const isShipped = order.status === "shipped" || order.status === "delivered";
+                    const isEditing = editingItems[item.id] !== undefined;
+                    const minQty = Math.max(item.qty_shipped, 1);
+
+                    return (
+                      <tr key={item.id} className={isComplete ? "bg-green-50/50" : ""}>
+                        <td className="px-4 py-3">
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              {item.product?.name || "Unknown Product"}
+                            </p>
+                            <div className="flex items-center gap-2">
                               <p className="text-sm text-gray-500">
                                 SKU: {item.product?.sku || "—"}
                               </p>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <span className="text-gray-900 font-medium">{item.qty_requested}</span>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <span
-                              className={
-                                isComplete
-                                  ? "text-green-600 font-medium"
-                                  : isPartial
-                                  ? "text-yellow-600 font-medium"
-                                  : "text-gray-400"
-                              }
-                            >
-                              {item.qty_shipped}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            {isShipped ? (
-                              <span className="text-green-600 font-medium">
-                                {item.qty_shipped}
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getContainerBadge(item.product?.container_type).color}`}>
+                                {getContainerBadge(item.product?.container_type).label}
                               </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {isEditing ? (
+                            <div className="inline-flex items-center gap-1">
+                              <input
+                                type="number"
+                                min={minQty}
+                                value={editingItems[item.id]}
+                                onChange={(e) =>
+                                  setEditingItems((prev) => ({
+                                    ...prev,
+                                    [item.id]: parseInt(e.target.value) || minQty,
+                                  }))
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleSaveItemQty(item.id);
+                                  if (e.key === "Escape") setEditingItems((prev) => {
+                                    const next = { ...prev };
+                                    delete next[item.id];
+                                    return next;
+                                  });
+                                }}
+                                className="w-20 px-2 py-1 text-right text-sm border border-indigo-300 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                autoFocus
+                                disabled={savingItems}
+                              />
+                              <button
+                                onClick={() => handleSaveItemQty(item.id)}
+                                disabled={savingItems}
+                                className="p-1 text-green-600 hover:text-green-700 disabled:opacity-50"
+                                title="Save"
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => setEditingItems((prev) => {
+                                  const next = { ...prev };
+                                  delete next[item.id];
+                                  return next;
+                                })}
+                                className="p-1 text-gray-400 hover:text-gray-600"
+                                title="Cancel"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span
+                              className={`text-gray-900 font-medium ${canEdit ? "cursor-pointer hover:text-indigo-600" : ""}`}
+                              onClick={() => {
+                                if (canEdit) {
+                                  setEditingItems((prev) => ({
+                                    ...prev,
+                                    [item.id]: item.qty_requested,
+                                  }));
+                                }
+                              }}
+                              title={canEdit ? "Click to edit" : undefined}
+                            >
+                              {item.qty_requested}
+                              <span className="text-gray-500 text-xs ml-1">{getUnitLabel(item.product?.container_type)}</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span
+                            className={
+                              isComplete
+                                ? "text-green-600 font-medium"
+                                : isPartial
+                                ? "text-yellow-600 font-medium"
+                                : "text-gray-400"
+                            }
+                          >
+                            {item.qty_shipped}
+                          </span>
+                          {item.qty_shipped > 0 && <span className="text-gray-500 text-xs ml-1">{getUnitLabel(item.product?.container_type)}</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {isShipped ? (
+                            <span className="text-green-600 font-medium">
+                              {item.qty_shipped}
+                              <span className="text-green-500 text-xs ml-1">{getUnitLabel(item.product?.container_type)}</span>
+                            </span>
                           ) : (
                             <span className="text-gray-400">—</span>
                           )}
                         </td>
+                        <td className="px-4 py-3 text-center">
+                          {isShipped && isComplete ? (
+                            <Badge variant="success">Shipped</Badge>
+                          ) : isComplete ? (
+                            <Badge variant="success">Picked</Badge>
+                          ) : isPartial ? (
+                            <Badge variant="warning">Partial</Badge>
+                          ) : (
+                            <Badge variant="default">Pending</Badge>
+                          )}
+                        </td>
+                        {canEdit && (
                           <td className="px-4 py-3 text-center">
-                            {isShipped && isComplete ? (
-                              <Badge variant="success">Shipped</Badge>
-                            ) : isComplete ? (
-                              <Badge variant="success">Picked</Badge>
-                            ) : isPartial ? (
-                              <Badge variant="warning">Partial</Badge>
-                            ) : (
-                              <Badge variant="default">Pending</Badge>
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                onClick={() =>
+                                  setEditingItems((prev) => ({
+                                    ...prev,
+                                    [item.id]: item.qty_requested,
+                                  }))
+                                }
+                                className="p-1.5 text-gray-400 hover:text-indigo-600 rounded transition-colors"
+                                title="Edit quantity"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteItem(item.id)}
+                                disabled={item.qty_shipped > 0 || savingItems}
+                                className="p-1.5 text-gray-400 hover:text-red-600 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                title={item.qty_shipped > 0 ? "Cannot delete shipped items" : "Delete item"}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+
+                  {/* Add item row */}
+                  {addingItem && (
+                    <tr className="bg-indigo-50/50">
+                      <td className="px-4 py-3">
+                        <SearchSelect
+                          options={availableProducts
+                            .filter((p) => !order.items.some((i) => i.product_id === p.id))
+                            .map((p) => ({
+                              value: p.id,
+                              label: `${p.sku} — ${p.name}`,
+                            }))}
+                          value={newItemProductId}
+                          onChange={setNewItemProductId}
+                          placeholder="Search products..."
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <input
+                          type="number"
+                          min={1}
+                          value={newItemQty}
+                          onChange={(e) => setNewItemQty(parseInt(e.target.value) || 1)}
+                          className="w-20 px-2 py-1 text-right text-sm border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        />
+                      </td>
+                      <td className="px-4 py-3" />
+                      <td className="px-4 py-3" />
+                      <td className="px-4 py-3" />
+                      {canEdit && (
+                        <td className="px-4 py-3 text-center">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              onClick={handleAddItem}
+                              disabled={!newItemProductId || savingItems}
+                              className="p-1.5 text-green-600 hover:text-green-700 rounded transition-colors disabled:opacity-30"
+                              title="Add"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setAddingItem(false);
+                                setNewItemProductId("");
+                                setNewItemQty(1);
+                                setNewItemPrice(0);
+                              }}
+                              className="p-1.5 text-gray-400 hover:text-gray-600 rounded transition-colors"
+                              title="Cancel"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot className="bg-gray-50">
+                  <tr>
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                      {order.items.length} items
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm text-gray-600">
+                      {requestedBreakdown}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm text-gray-600">
+                      {shippedBreakdown || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm text-gray-600">
+                      {(order.status === "shipped" || order.status === "delivered") ? (shippedBreakdown || "—") : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="text-sm text-gray-500">
+                        {itemsComplete} / {order.items.length} picked
+                      </span>
+                    </td>
+                    {canEdit && <td className="px-4 py-3" />}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </Card>
+
+          {/* Damage Reports Section */}
+          {damageReports.length > 0 && (
+            <Card>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-red-500" />
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Damage Reports
+                  </h2>
+                  <Badge variant="error">{damageReports.length}</Badge>
+                </div>
+                {(order.status === "shipped" || order.status === "delivered") && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={openDamageModal}
+                    className="text-red-600 border-red-200 hover:bg-red-50"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Report
+                  </Button>
+                )}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left px-4 py-2 font-medium text-gray-500">Product</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-500">Qty Damaged</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-500">Damage Type</th>
+                      <th className="text-center px-4 py-2 font-medium text-gray-500">Status</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-500">Reported</th>
+                      <th className="text-center px-4 py-2 font-medium text-gray-500"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {damageReports.map((report) => {
+                      const badge = getDamageResolutionBadge(report.resolution);
+                      const typeLabel = damageTypeOptions.find((o) => o.value === report.damage_type)?.label || report.damage_type || "—";
+                      return (
+                        <tr key={report.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-gray-900">{report.product?.name || "Unknown"}</div>
+                            {report.product?.sku && (
+                              <div className="text-xs text-gray-500">{report.product.sku}</div>
                             )}
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium text-red-600">
+                            {report.quantity}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">{typeLabel}</td>
+                          <td className="px-4 py-3 text-center">
+                            <Badge variant={badge.variant}>{badge.label}</Badge>
+                          </td>
+                          <td className="px-4 py-3 text-gray-500">
+                            {formatDate(report.reported_at)}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <Link
+                              href={`/damage-reports/${report.id}`}
+                              className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                            >
+                              View
+                            </Link>
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
-                  <tfoot className="bg-gray-50">
-                    <tr>
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                        Total ({order.items.length} items)
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-900">
-                        {totalRequested}
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-900">
-                        {totalShipped}
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-900">
-                        {(order.status === "shipped" || order.status === "delivered") ? totalShipped : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="text-sm text-gray-500">
-                          {Math.round((totalShipped / totalRequested) * 100) || 0}% picked
-                        </span>
-                      </td>
-                    </tr>
-                  </tfoot>
                 </table>
               </div>
             </Card>
@@ -2304,23 +2868,23 @@ export default function OutboundOrderDetailPage() {
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600">Progress</span>
                   <span className="font-medium text-gray-900">
-                    {totalShipped.toLocaleString()} / {totalRequested.toLocaleString()} units
+                    {itemsComplete} / {order.items.length} items
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-3">
                   <div
                     className={`h-3 rounded-full transition-all ${
-                      totalShipped >= totalRequested
+                      itemsComplete >= order.items.length
                         ? "bg-green-600"
                         : "bg-blue-600"
                     }`}
                     style={{
-                      width: `${Math.min((totalShipped / totalRequested) * 100, 100) || 0}%`,
+                      width: `${Math.min((itemsComplete / order.items.length) * 100, 100) || 0}%`,
                     }}
                   />
                 </div>
                 <p className="text-center text-sm font-medium mt-2">
-                  {Math.round((totalShipped / totalRequested) * 100) || 0}% Picked
+                  {Math.round((itemsComplete / order.items.length) * 100) || 0}% Picked
                 </p>
               </div>
 
@@ -2332,31 +2896,31 @@ export default function OutboundOrderDetailPage() {
                     {order.items.length}
                   </span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Total Requested</span>
-                  <span className="font-medium text-gray-900">
-                    {totalRequested.toLocaleString()}
-                  </span>
+                <div className="text-sm">
+                  <span className="text-gray-600">Requested</span>
+                  <p className="font-medium text-gray-900 mt-0.5">
+                    {requestedBreakdown || "—"}
+                  </p>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Total Picked</span>
-                  <span className={`font-medium ${
-                    totalShipped >= totalRequested
+                <div className="text-sm">
+                  <span className="text-gray-600">Picked</span>
+                  <p className={`font-medium mt-0.5 ${
+                    itemsComplete >= order.items.length
                       ? "text-green-600"
                       : "text-gray-900"
                   }`}>
-                    {totalShipped.toLocaleString()}
-                  </span>
+                    {shippedBreakdown || "—"}
+                  </p>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Remaining</span>
+                  <span className="text-gray-600">Items Remaining</span>
                   <span className={`font-medium ${
-                    totalRequested - totalShipped > 0
+                    order.items.length - itemsComplete > 0
                       ? "text-orange-600"
                       : "text-gray-400"
                   }`}>
-                    {totalRequested - totalShipped > 0
-                      ? (totalRequested - totalShipped).toLocaleString()
+                    {order.items.length - itemsComplete > 0
+                      ? `${order.items.length - itemsComplete} of ${order.items.length}`
                       : "—"}
                   </span>
                 </div>
@@ -2515,6 +3079,7 @@ export default function OutboundOrderDetailPage() {
         isAlcoholOrder={isAlcoholOrder}
         fedexConfigured={fedexConfigured}
         orderId={order?.id}
+        preferredCarrier={order?.preferred_carrier || ""}
         shipToAddress={order ? {
           name: order.ship_to_name || undefined,
           company: order.ship_to_company || undefined,
@@ -2750,6 +3315,152 @@ export default function OutboundOrderDetailPage() {
           />
         </Modal>
       )}
+
+      {/* Damage Report Modal */}
+      <Modal
+        isOpen={showDamageModal}
+        onClose={() => !submittingDamage && closeDamageModal()}
+        title="Report Damage"
+        size="lg"
+      >
+        <div className="space-y-4">
+          {damageError && (
+            <Alert type="error" message={damageError} onClose={() => setDamageError("")} />
+          )}
+
+          <p className="text-sm text-gray-600">
+            Select the items that were damaged and provide details for each.
+          </p>
+
+          <div className="max-h-[400px] overflow-y-auto space-y-3">
+            {order?.items.map((item) => {
+              const productId = item.product_id;
+              const damageItem = damageItems[productId];
+              if (!damageItem) return null;
+              const maxQty = item.qty_shipped > 0 ? item.qty_shipped : item.qty_requested;
+
+              return (
+                <div
+                  key={productId}
+                  className={`border rounded-lg p-3 transition-colors ${
+                    damageItem.checked ? "border-red-300 bg-red-50/50" : "border-gray-200"
+                  }`}
+                >
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={damageItem.checked}
+                      onChange={(e) =>
+                        setDamageItems((prev) => ({
+                          ...prev,
+                          [productId]: { ...prev[productId], checked: e.target.checked },
+                        }))
+                      }
+                      className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                    />
+                    <div className="flex-1">
+                      <span className="font-medium text-gray-900">{item.product?.name || "Unknown"}</span>
+                      {item.product?.sku && (
+                        <span className="ml-2 text-xs text-gray-500">{item.product.sku}</span>
+                      )}
+                      <span className="ml-2 text-xs text-gray-400">
+                        (shipped: {item.qty_shipped > 0 ? item.qty_shipped : item.qty_requested})
+                      </span>
+                    </div>
+                  </label>
+
+                  {damageItem.checked && (
+                    <div className="mt-3 ml-7 grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Qty Damaged <span className="text-red-500">*</span>
+                        </label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={maxQty}
+                          value={damageItem.quantity}
+                          onChange={(e) =>
+                            setDamageItems((prev) => ({
+                              ...prev,
+                              [productId]: { ...prev[productId], quantity: parseInt(e.target.value) || 1 },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Damage Type <span className="text-red-500">*</span>
+                        </label>
+                        <Select
+                          name={`damage-type-${productId}`}
+                          options={damageTypeOptions}
+                          value={damageItem.damageType}
+                          onChange={(e) =>
+                            setDamageItems((prev) => ({
+                              ...prev,
+                              [productId]: { ...prev[productId], damageType: e.target.value },
+                            }))
+                          }
+                          placeholder="Select type..."
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Description (optional)
+                        </label>
+                        <Textarea
+                          value={damageItem.description}
+                          onChange={(e) =>
+                            setDamageItems((prev) => ({
+                              ...prev,
+                              [productId]: { ...prev[productId], description: e.target.value },
+                            }))
+                          }
+                          rows={2}
+                          placeholder="Describe the damage..."
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              General Notes (optional)
+            </label>
+            <Textarea
+              value={damageGeneralNotes}
+              onChange={(e) => setDamageGeneralNotes(e.target.value)}
+              rows={2}
+              placeholder="Any additional notes about the damage..."
+            />
+          </div>
+
+          <div className="flex gap-3 pt-4 border-t border-gray-200">
+            <Button
+              variant="secondary"
+              onClick={closeDamageModal}
+              disabled={submittingDamage}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmitDamageReports}
+              loading={submittingDamage}
+              disabled={submittingDamage || !Object.values(damageItems).some((i) => i.checked)}
+              className="flex-1 bg-red-600 hover:bg-red-700 focus:ring-red-500"
+            >
+              <AlertTriangle className="w-4 h-4 mr-2" />
+              Submit Damage Report
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </AppShell>
   );
 }

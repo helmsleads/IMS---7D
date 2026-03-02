@@ -64,6 +64,17 @@ export default function PortalOrdersPage() {
       setError(null);
       const supabase = createClient();
 
+      // Get all order IDs this client has access to (primary client OR product owner)
+      const { data: orderIds, error: rpcErr } = await supabase
+        .rpc("get_client_order_ids", { p_client_id: client.id });
+
+      if (rpcErr) throw rpcErr;
+
+      if (!orderIds || orderIds.length === 0) {
+        setOrders([]);
+        return;
+      }
+
       const { data, error: fetchErr } = await supabase
         .from("outbound_orders")
         .select(`
@@ -81,7 +92,7 @@ export default function PortalOrdersPage() {
             qty_requested
           )
         `)
-        .eq("client_id", client.id)
+        .in("id", orderIds)
         .order("created_at", { ascending: false });
 
       if (fetchErr) throw fetchErr;

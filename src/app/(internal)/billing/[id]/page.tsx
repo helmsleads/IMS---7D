@@ -91,6 +91,11 @@ export default function InvoiceDetailPage() {
   // Tax rate editing
   const [editTaxRate, setEditTaxRate] = useState("");
 
+  // QuickBooks sync
+  const [qbConnected, setQbConnected] = useState(false);
+  const [qbSyncing, setQbSyncing] = useState(false);
+  const [qbSyncResult, setQbSyncResult] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
   const fetchInvoice = async () => {
     setLoading(true);
     setError(null);
@@ -117,6 +122,37 @@ export default function InvoiceDetailPage() {
     }
   }, [invoiceId]);
 
+  // Check if QuickBooks is connected
+  useEffect(() => {
+    fetch("/api/integrations/quickbooks/settings")
+      .then((res) => res.json())
+      .then((data) => setQbConnected(!!data.connected))
+      .catch(() => {});
+  }, []);
+
+  const syncInvoiceToQB = async (id: string) => {
+    setQbSyncing(true);
+    setQbSyncResult(null);
+    try {
+      const res = await fetch("/api/integrations/quickbooks/sync/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoiceId: id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setQbSyncResult({ type: "success", message: "Synced to QuickBooks" });
+        await fetchInvoice(); // Refresh to show qb_synced_at
+      } else {
+        setQbSyncResult({ type: "error", message: data.error || "QB sync failed" });
+      }
+    } catch {
+      setQbSyncResult({ type: "error", message: "QB sync failed — will retry" });
+    } finally {
+      setQbSyncing(false);
+    }
+  };
+
   const handleSend = async () => {
     if (!invoice) return;
     setActionLoading(true);
@@ -125,6 +161,11 @@ export default function InvoiceDetailPage() {
       await fetchInvoice();
       setSuccessMessage("Invoice sent successfully");
       setTimeout(() => setSuccessMessage(""), 3000);
+
+      // Non-blocking QB sync — failure shows warning but doesn't prevent send
+      if (qbConnected) {
+        syncInvoiceToQB(invoice.id);
+      }
     } catch (err) {
       setError(handleApiError(err));
     } finally {
@@ -422,6 +463,25 @@ export default function InvoiceDetailPage() {
       );
     }
 
+    // Add QB sync button for sent/overdue invoices not yet synced
+    if (
+      qbConnected &&
+      !invoice.qb_synced_at &&
+      (invoice.status === "sent" || invoice.status === "overdue")
+    ) {
+      actions.push(
+        <Button
+          key="qb-sync"
+          variant="secondary"
+          onClick={() => syncInvoiceToQB(invoice.id)}
+          disabled={qbSyncing || actionLoading}
+        >
+          <RefreshCw className={`w-4 h-4 mr-2 ${qbSyncing ? "animate-spin" : ""}`} />
+          Sync to QB
+        </Button>
+      );
+    }
+
     return <div className="flex gap-2 flex-wrap">{actions}</div>;
   };
 
@@ -450,6 +510,15 @@ export default function InvoiceDetailPage() {
           <Alert type="error" message={error} onClose={() => setError(null)} />
         </div>
       )}
+      {qbSyncResult && (
+        <div className="mb-4">
+          <Alert
+            type={qbSyncResult.type === "success" ? "success" : "warning"}
+            message={qbSyncResult.message}
+            onClose={() => setQbSyncResult(null)}
+          />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Invoice Content */}
@@ -465,9 +534,21 @@ export default function InvoiceDetailPage() {
                   Created on {formatDate(invoice.created_at)}
                 </p>
               </div>
-              <Badge variant={statusColors[invoice.status]}>
-                {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant={statusColors[invoice.status]}>
+                  {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                </Badge>
+                {invoice.qb_synced_at && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                    QB Synced
+                  </span>
+                )}
+                {qbSyncing && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                    Syncing to QB...
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-6">

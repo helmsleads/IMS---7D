@@ -123,6 +123,7 @@ const resolutionFilterOptions = [
 
 const referenceTypeOptions = [
   { value: "inbound", label: "Inbound Shipment" },
+  { value: "outbound_order", label: "Outbound Shipment" },
   { value: "inventory", label: "Inventory" },
   { value: "return", label: "Return" },
 ];

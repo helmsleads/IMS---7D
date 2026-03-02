@@ -31,10 +31,11 @@ import {
   StockProjectionPoint,
 } from "@/lib/api/portal-dashboard";
 import { formatDate, formatCurrency, getGreeting } from "@/lib/utils/formatting";
+import { getUnitLabel } from "@/lib/labels";
 
 interface DashboardStats {
   totalProducts: number;
-  totalUnits: number;
+  stockBreakdown: string;
   activeOrders: number;
   recentArrivals: number;
 }
@@ -58,7 +59,7 @@ export default function PortalDashboardPage() {
   const { client } = useClient();
   const [stats, setStats] = useState<DashboardStats>({
     totalProducts: 0,
-    totalUnits: 0,
+    stockBreakdown: "",
     activeOrders: 0,
     recentArrivals: 0,
   });
@@ -113,16 +114,24 @@ export default function PortalDashboardPage() {
           qty_on_hand,
           product:products!inner (
             id,
-            client_id
+            client_id,
+            container_type
           )
         `)
         .eq("product.client_id", client.id);
 
       const totalProducts = inventoryData?.length || 0;
-      const totalUnits = (inventoryData || []).reduce(
-        (sum, item) => sum + (item.qty_on_hand || 0),
-        0
-      );
+      const grouped: Record<string, number> = {};
+      for (const item of inventoryData || []) {
+        const qty = item.qty_on_hand || 0;
+        if (qty <= 0) continue;
+        const product = Array.isArray(item.product) ? item.product[0] : item.product;
+        const label = getUnitLabel((product as any)?.container_type);
+        grouped[label] = (grouped[label] || 0) + qty;
+      }
+      const stockBreakdown = Object.entries(grouped)
+        .map(([label, qty]) => `${qty.toLocaleString()} ${label}`)
+        .join(", ") || "0";
 
       const { count: activeOrders } = await supabase
         .from("outbound_orders")
@@ -142,7 +151,7 @@ export default function PortalDashboardPage() {
 
       setStats({
         totalProducts,
-        totalUnits,
+        stockBreakdown,
         activeOrders: activeOrders || 0,
         recentArrivals: recentArrivals || 0,
       });
@@ -350,8 +359,8 @@ export default function PortalDashboardPage() {
           <StatCard
             icon={<Boxes className="w-6 h-6" />}
             iconColor="bg-green-50 text-green-600"
-            label="Total Units"
-            value={loading ? "\u2014" : stats.totalUnits}
+            label="Stock on Hand"
+            value={loading ? "\u2014" : stats.stockBreakdown}
             loading={loading}
           />
         </div>

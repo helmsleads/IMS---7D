@@ -7,7 +7,7 @@ import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
-import Select from "@/components/ui/Select";
+
 import Alert from "@/components/ui/Alert";
 import {
   ArrowLeft,
@@ -478,13 +478,47 @@ function GeneralTab({ profile, industries, updateField, toggleArrayItem }: Gener
           />
         </div>
 
-        <Select
-          label="Industry"
-          name="industry"
-          value={profile.industry}
-          onChange={(e) => updateField("industry", e.target.value as ClientIndustry)}
-          options={industries.map((i) => ({ value: i.value, label: i.label }))}
-        />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Industries</label>
+          <div className="space-y-3">
+            {(() => {
+              const grouped = industries.reduce((acc, ind) => {
+                if (!acc[ind.category]) acc[ind.category] = [];
+                acc[ind.category].push(ind);
+                return acc;
+              }, {} as Record<string, typeof industries>);
+              return Object.entries(grouped).map(([category, items]) => (
+                <div key={category}>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{category}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {items.map((ind) => {
+                      const isSelected = profile.industries.includes(ind.value);
+                      return (
+                        <button
+                          key={ind.value}
+                          type="button"
+                          onClick={() => {
+                            const updated = isSelected
+                              ? profile.industries.filter((i) => i !== ind.value)
+                              : [...profile.industries, ind.value];
+                            updateField("industries", updated);
+                          }}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                            isSelected
+                              ? "bg-blue-600 text-white"
+                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          }`}
+                        >
+                          {ind.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Color</label>

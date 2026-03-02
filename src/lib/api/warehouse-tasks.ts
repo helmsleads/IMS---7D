@@ -857,10 +857,12 @@ export async function recordShortPick(
   if (error) throw new Error(error.message);
 
   // Log activity
+  const { data: { user } } = await supabase.auth.getUser();
   await supabase.from("activity_log").insert({
     entity_type: "pick_list_item",
     entity_id: pickItemId,
     action: "short_pick",
+    user_id: user?.id || null,
     details: { qty_short: qtyShort, reason },
   });
 

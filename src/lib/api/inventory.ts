@@ -288,10 +288,12 @@ export async function adjustStock({
   }
 
   // Log to activity_log
+  const { data: { user: adjustUser } } = await supabase.auth.getUser();
   const { error: logError } = await supabase.from("activity_log").insert({
     entity_type: "inventory",
     entity_id: inventoryData.id,
     action: "stock_adjustment",
+    user_id: adjustUser?.id || null,
     details: {
       product_id: productId,
       location_id: locationId,
@@ -460,6 +462,7 @@ export async function updateInventoryStatus(
     entity_type: "inventory",
     entity_id: id,
     action: "status_change",
+    user_id: userId || null,
     performed_by: userId || null,
     details: {
       old_status: oldStatus,
@@ -721,6 +724,7 @@ export async function moveInventoryToSublocation({
   notes,
 }: MoveInventoryParams): Promise<{ success: boolean; message: string }> {
   const supabase = createClient();
+  const { data: { user: moveUser } } = await supabase.auth.getUser();
 
   // Get source inventory details
   const { data: sourceInventory, error: sourceError } = await supabase
@@ -762,6 +766,7 @@ export async function moveInventoryToSublocation({
       entity_type: "inventory",
       entity_id: sourceInventoryId,
       action: "sublocation_move",
+      user_id: moveUser?.id || null,
       details: {
         product_id: sourceInventory.product_id,
         location_id: sourceInventory.location_id,
@@ -836,6 +841,7 @@ export async function moveInventoryToSublocation({
     entity_type: "inventory",
     entity_id: sourceInventoryId,
     action: "sublocation_move",
+    user_id: moveUser?.id || null,
     details: {
       product_id: sourceInventory.product_id,
       location_id: sourceInventory.location_id,
@@ -1045,10 +1051,12 @@ export async function confirmPutAway(
   }
 
   // Log activity
+  const { data: { user: putAwayUser } } = await supabase.auth.getUser();
   await supabase.from("activity_log").insert({
     entity_type: "inventory",
     entity_id: inventory.id,
     action: "put_away",
+    user_id: putAwayUser?.id || null,
     details: {
       product_id: productId,
       location_id: locationId,
@@ -1099,10 +1107,12 @@ export async function deleteInventory(
   }
 
   // Log activity before deletion
+  const { data: { user: deleteUser } } = await supabase.auth.getUser();
   await supabase.from("activity_log").insert({
     entity_type: "inventory",
     entity_id: inventoryId,
     action: "deleted",
+    user_id: deleteUser?.id || null,
     details: {
       product_id: inventory.product_id,
       location_id: inventory.location_id,

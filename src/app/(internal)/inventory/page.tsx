@@ -19,6 +19,7 @@ import { getSublocations, SublocationWithLocation } from "@/lib/api/sublocations
 import { getDamageReportsByProduct, DamageReportWithProduct } from "@/lib/api/damage-reports";
 import { handleApiError } from "@/lib/utils/error-handler";
 import { formatCurrency, formatNumber } from "@/lib/utils/formatting";
+import { getContainerBadge, getUnitLabel } from "@/lib/labels";
 import StockAdjustmentModal from "@/components/internal/StockAdjustmentModal";
 import ScannerModal from "@/components/internal/ScannerModal";
 import Pagination from "@/components/ui/Pagination";
@@ -459,10 +460,12 @@ export default function InventoryPage() {
       }
 
       // Log the move
+      const { data: { user: dmgMoveUser } } = await supabase.auth.getUser();
       await supabase.from("activity_log").insert({
         entity_type: "inventory",
         entity_id: moveToDamagedItem.id,
         action: "moved_to_damaged_goods",
+        user_id: dmgMoveUser?.id || null,
         details: {
           product_id: moveToDamagedItem.product_id,
           from_location_id: moveToDamagedItem.location_id,
@@ -628,20 +631,7 @@ export default function InventoryPage() {
         header: "Type",
         hideOnMobile: true,
         render: (item: InventoryWithDetails) => {
-          const ct = item.product.container_type || "other";
-          const labels: Record<string, { label: string; color: string }> = {
-            bottle: { label: "Bottle", color: "bg-blue-100 text-blue-700" },
-            can: { label: "Can/RTD", color: "bg-orange-100 text-orange-700" },
-            keg: { label: "Keg", color: "bg-amber-100 text-amber-700" },
-            bag_in_box: { label: "BIB", color: "bg-teal-100 text-teal-700" },
-            gift_box: { label: "Box", color: "bg-pink-100 text-pink-700" },
-            raw_materials: { label: "Raw Mat", color: "bg-stone-100 text-stone-700" },
-            empty_bottle: { label: "Empty", color: "bg-gray-100 text-gray-600" },
-            merchandise: { label: "Merch", color: "bg-purple-100 text-purple-700" },
-            sample: { label: "Sample", color: "bg-cyan-100 text-cyan-700" },
-            other: { label: "Other", color: "bg-gray-100 text-gray-600" },
-          };
-          const info = labels[ct] || labels.other;
+          const info = getContainerBadge(item.product.container_type);
           return (
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${info.color}`}>
               {info.label}
@@ -657,23 +647,9 @@ export default function InventoryPage() {
         header: "On Hand",
         mobilePriority: 3,
         render: (item: InventoryWithDetails) => {
-          const ct = item.product.container_type || "other";
-          const unitLabels: Record<string, string> = {
-            bottle: "Bottles",
-            can: "Cans",
-            keg: "Kegs",
-            bag_in_box: "Units",
-            gift_box: "Units",
-            raw_materials: "Units",
-            empty_bottle: "Bottles",
-            merchandise: "Units",
-            sample: "ML",
-            other: "Units",
-          };
-          const label = unitLabels[ct] || "Units";
           return (
             <span className="font-medium">
-              {item.qty_on_hand} <span className="text-gray-500 font-normal text-xs">{label}</span>
+              {item.qty_on_hand} <span className="text-gray-500 font-normal text-xs">{getUnitLabel(item.product.container_type)}</span>
             </span>
           );
         },
@@ -772,7 +748,10 @@ export default function InventoryPage() {
         header: "Status",
         mobilePriority: 2,
         render: (item: InventoryWithDetails) => {
-          const statusInfo = getInventoryStatusDisplay(item.status || "available");
+          const isOutOfStock = item.qty_on_hand === 0 && (item.status === "available" || !item.status);
+          const statusInfo = isOutOfStock
+            ? { label: "Out of Stock", bgClass: "bg-red-100", textClass: "text-red-700" }
+            : getInventoryStatusDisplay(item.status || "available");
           return (
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusInfo.bgClass} ${statusInfo.textClass}`}>
               {statusInfo.label}

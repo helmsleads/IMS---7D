@@ -46,6 +46,8 @@ export interface FedExShipmentResponse {
   trackingNumber: string
   labelPdfBase64: string
   shipmentId: string
+  actualCost?: number
+  listCost?: number
 }
 
 export interface FedExError {
@@ -291,9 +293,28 @@ export async function createShipment(
     piece?.packageDocuments?.[0]?.encodedLabel ||
     shipment.completedShipmentDetail?.completedPackageDetails?.[0]?.operationalDetail?.labelData
 
+  // Extract shipping rates (ACCOUNT = discounted, LIST = retail)
+  let actualCost: number | undefined
+  let listCost: number | undefined
+  const rateDetails =
+    shipment.completedShipmentDetail?.shipmentRating?.shipmentRateDetails as
+      | { rateType: string; totalNetCharge: number }[]
+      | undefined
+  if (Array.isArray(rateDetails)) {
+    for (const rate of rateDetails) {
+      if (rate.rateType === 'ACCOUNT' || rate.rateType === 'PREFERRED_ACCOUNT') {
+        actualCost = rate.totalNetCharge
+      } else if (rate.rateType === 'LIST' || rate.rateType === 'PREFERRED_LIST') {
+        listCost = rate.totalNetCharge
+      }
+    }
+  }
+
   return {
     trackingNumber,
     labelPdfBase64: labelData || '',
     shipmentId: shipment.shipDatestamp ? `${trackingNumber}-${shipment.shipDatestamp}` : trackingNumber,
+    actualCost,
+    listCost,
   }
 }

@@ -30,6 +30,9 @@ import {
   Mail,
   Tag,
   Trash2,
+  ExternalLink,
+  Unplug,
+  BookOpen,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import { getSystemSettings, setSystemSetting } from "@/lib/api/settings";
@@ -675,6 +678,9 @@ export default function SystemSettingsPage() {
 
       {/* FedEx Shipping Section */}
       <FedExShippingSection />
+
+      {/* QuickBooks Online Section */}
+      <QuickBooksSection />
 
       {/* Brand Aliases Section */}
       <BrandAliasesSection />
@@ -1761,6 +1767,683 @@ function FedExShippingSection() {
             )}
           </button>
         </div>
+      </div>
+    </Card>
+  );
+}
+
+// ── QuickBooks Online Integration ────────────────────────
+
+interface QBAccount {
+  id: string;
+  name: string;
+}
+
+interface QBAccountMappings {
+  income_account_id: string | null;
+  income_account_name: string | null;
+  expense_account_id: string | null;
+  expense_account_name: string | null;
+  shipping_expense_account_id: string | null;
+  shipping_expense_account_name: string | null;
+  bank_account_id: string | null;
+  bank_account_name: string | null;
+}
+
+function QuickBooksSection() {
+  const [configured, setConfigured] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [savingMappings, setSavingMappings] = useState(false);
+  const [result, setResult] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+
+  // App credentials (Client ID / Secret / Webhook Verifier)
+  const [appForm, setAppForm] = useState({
+    client_id: "",
+    client_secret: "",
+    webhook_verifier: "",
+    environment: "sandbox" as "sandbox" | "production",
+  });
+
+  const [connectionInfo, setConnectionInfo] = useState<{
+    realm_id: string;
+    environment: string;
+    connected_at: string;
+    token_status: string;
+    refresh_token_status: string;
+    company_name?: string;
+  } | null>(null);
+
+  const [accountMappings, setAccountMappings] = useState<QBAccountMappings>({
+    income_account_id: null,
+    income_account_name: null,
+    expense_account_id: null,
+    expense_account_name: null,
+    shipping_expense_account_id: null,
+    shipping_expense_account_name: null,
+    bank_account_id: null,
+    bank_account_name: null,
+  });
+
+  const [qbAccounts, setQbAccounts] = useState<{
+    income: QBAccount[];
+    expense: QBAccount[];
+    bank: QBAccount[];
+  }>({ income: [], expense: [], bank: [] });
+
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const res = await fetch("/api/integrations/quickbooks/settings");
+      const data = await res.json();
+      if (data.configured && data.app_credentials) {
+        setConfigured(true);
+        setAppForm({
+          client_id: data.app_credentials.client_id || "",
+          client_secret: data.app_credentials.client_secret || "",
+          webhook_verifier: data.app_credentials.webhook_verifier || "",
+          environment: data.app_credentials.environment || "sandbox",
+        });
+      }
+      if (data.connected) {
+        setConnected(true);
+        setConnectionInfo({
+          realm_id: data.realm_id,
+          environment: data.environment,
+          connected_at: data.connected_at,
+          token_status: data.token_status,
+          refresh_token_status: data.refresh_token_status,
+        });
+        if (data.account_mappings) {
+          setAccountMappings(data.account_mappings);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load QB settings:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadAccounts = async () => {
+    if (accountsLoaded) return;
+    try {
+      const res = await fetch("/api/integrations/quickbooks/accounts");
+      const data = await res.json();
+      if (!data.error) {
+        setQbAccounts({
+          income: data.income || [],
+          expense: data.expense || [],
+          bank: data.bank || [],
+        });
+        setAccountsLoaded(true);
+      }
+    } catch (err) {
+      console.error("Failed to load QB accounts:", err);
+    }
+  };
+
+  const handleSaveCredentials = async () => {
+    if (!appForm.client_id) {
+      setResult({ type: "error", message: "Client ID is required." });
+      return;
+    }
+    setSaving(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/integrations/quickbooks/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ app_credentials: appForm }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResult({ type: "success", message: "QuickBooks credentials saved." });
+        setConfigured(true);
+      } else {
+        setResult({ type: "error", message: data.error || "Failed to save" });
+      }
+    } catch {
+      setResult({ type: "error", message: "Network error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConnect = () => {
+    window.location.href = "/api/integrations/quickbooks/auth";
+  };
+
+  const updateApp = (key: keyof typeof appForm, value: string) => {
+    setAppForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/integrations/quickbooks/test", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setResult({ type: "success", message: data.message || "Connected!" });
+        if (data.company_name) {
+          setConnectionInfo((prev) =>
+            prev ? { ...prev, company_name: data.company_name } : prev
+          );
+        }
+      } else {
+        setResult({ type: "error", message: data.error || "Connection failed" });
+      }
+    } catch {
+      setResult({ type: "error", message: "Network error" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!confirm("Disconnect QuickBooks? Entity mappings will be preserved.")) return;
+    setDisconnecting(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/integrations/quickbooks/disconnect", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setConnected(false);
+        setConnectionInfo(null);
+        setResult({ type: "success", message: "QuickBooks disconnected" });
+      } else {
+        setResult({ type: "error", message: data.error || "Disconnect failed" });
+      }
+    } catch {
+      setResult({ type: "error", message: "Network error" });
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
+  const handleSaveMappings = async () => {
+    setSavingMappings(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/integrations/quickbooks/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_mappings: accountMappings }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResult({ type: "success", message: "Account mappings saved" });
+      } else {
+        setResult({ type: "error", message: data.error || "Failed to save" });
+      }
+    } catch {
+      setResult({ type: "error", message: "Network error" });
+    } finally {
+      setSavingMappings(false);
+    }
+  };
+
+  const updateMapping = (
+    key: keyof QBAccountMappings,
+    nameKey: keyof QBAccountMappings,
+    value: string,
+    accounts: QBAccount[]
+  ) => {
+    const account = accounts.find((a) => a.id === value);
+    setAccountMappings((prev) => ({
+      ...prev,
+      [key]: value || null,
+      [nameKey]: account?.name || null,
+    }));
+  };
+
+  if (loading) {
+    return (
+      <Card padding="none" className="mb-6">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3">
+          <div className="p-2 bg-green-100 rounded-lg">
+            <BookOpen className="w-5 h-5 text-green-600" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              QuickBooks Online
+            </h2>
+            <p className="text-sm text-gray-500">Loading...</p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card padding="none" className="mb-6">
+      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-green-100 rounded-lg">
+            <BookOpen className="w-5 h-5 text-green-600" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              QuickBooks Online
+            </h2>
+            <p className="text-sm text-gray-500">
+              Sync invoices, payments, and costs to QuickBooks
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {connected ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+              <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+              Connected
+            </span>
+          ) : configured ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
+              Configured
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+              <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+              Not Configured
+            </span>
+          )}
+        </div>
+      </div>
+
+      {result && (
+        <div
+          className={`mx-6 mt-4 p-3 rounded-lg flex items-center gap-2 text-sm ${
+            result.type === "success"
+              ? "bg-green-50 text-green-700 border border-green-200"
+              : "bg-red-50 text-red-700 border border-red-200"
+          }`}
+        >
+          {result.type === "success" ? (
+            <Check className="w-4 h-4 flex-shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          )}
+          {result.message}
+        </div>
+      )}
+
+      <div className="p-6 space-y-6">
+        {/* App Credentials (always shown — like FedEx) */}
+        <div>
+          {/* Environment Toggle */}
+          <div className="flex items-center gap-4 mb-4">
+            <label className="text-sm font-medium text-gray-700 w-32">Environment</label>
+            <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => updateApp("environment", "sandbox")}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  appForm.environment === "sandbox"
+                    ? "bg-amber-100 text-amber-800"
+                    : "bg-white text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                Sandbox
+              </button>
+              <button
+                type="button"
+                onClick={() => updateApp("environment", "production")}
+                className={`px-4 py-2 text-sm font-medium border-l border-gray-300 transition-colors ${
+                  appForm.environment === "production"
+                    ? "bg-green-100 text-green-800"
+                    : "bg-white text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                Production
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <Input
+                label="Client ID"
+                value={appForm.client_id}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => updateApp("client_id", e.target.value)}
+                placeholder="ABxxxxxxxxxxxxxxx"
+              />
+            </div>
+            <div>
+              <Input
+                label="Client Secret"
+                type="password"
+                value={appForm.client_secret}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => updateApp("client_secret", e.target.value)}
+                placeholder={configured ? "****" : "Enter secret"}
+              />
+            </div>
+            <div>
+              <Input
+                label="Webhook Verifier"
+                type="password"
+                value={appForm.webhook_verifier}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => updateApp("webhook_verifier", e.target.value)}
+                placeholder={configured ? "****" : "From Intuit webhooks"}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 mt-4">
+            <button
+              onClick={handleSaveCredentials}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  Save Credentials
+                </>
+              )}
+            </button>
+            {configured && !connected && (
+              <button
+                onClick={handleConnect}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Connect to QuickBooks
+              </button>
+            )}
+          </div>
+        </div>
+
+        {!connected ? (
+          /* ── Not Connected hint ── */
+          !configured ? (
+            <p className="text-sm text-gray-500 text-center py-2">
+              Enter your Intuit Developer app credentials above, then click
+              &quot;Connect to QuickBooks&quot; to start the OAuth flow.
+            </p>
+          ) : null
+        ) : (
+          /* ── Connected State ── */
+          <>
+            {/* Connection Info */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <span className="text-gray-500">Company</span>
+                <p className="font-medium text-gray-900">
+                  {connectionInfo?.company_name || "—"}
+                </p>
+              </div>
+              <div>
+                <span className="text-gray-500">Realm ID</span>
+                <p className="font-medium text-gray-900 font-mono text-xs">
+                  {connectionInfo?.realm_id || "—"}
+                </p>
+              </div>
+              <div>
+                <span className="text-gray-500">Environment</span>
+                <p className="font-medium text-gray-900 capitalize">
+                  {connectionInfo?.environment || "—"}
+                </p>
+              </div>
+              <div>
+                <span className="text-gray-500">Token Status</span>
+                <p className="font-medium">
+                  <span
+                    className={
+                      connectionInfo?.token_status === "valid"
+                        ? "text-green-600"
+                        : "text-amber-600"
+                    }
+                  >
+                    {connectionInfo?.token_status === "valid"
+                      ? "Valid"
+                      : "Needs Refresh"}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {/* Account Mappings */}
+            <div className="border-t border-gray-200 pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Account Mappings
+                </h3>
+                {!accountsLoaded && (
+                  <button
+                    onClick={loadAccounts}
+                    className="text-xs text-blue-600 hover:text-blue-700"
+                  >
+                    Load QB Accounts
+                  </button>
+                )}
+              </div>
+
+              {accountsLoaded ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Income Account (for invoices)
+                    </label>
+                    <select
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      value={accountMappings.income_account_id || ""}
+                      onChange={(e) =>
+                        updateMapping(
+                          "income_account_id",
+                          "income_account_name",
+                          e.target.value,
+                          qbAccounts.income
+                        )
+                      }
+                    >
+                      <option value="">Select account...</option>
+                      {qbAccounts.income.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Expense Account (for supply costs)
+                    </label>
+                    <select
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      value={accountMappings.expense_account_id || ""}
+                      onChange={(e) =>
+                        updateMapping(
+                          "expense_account_id",
+                          "expense_account_name",
+                          e.target.value,
+                          qbAccounts.expense
+                        )
+                      }
+                    >
+                      <option value="">Select account...</option>
+                      {qbAccounts.expense.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Shipping Expense Account
+                    </label>
+                    <select
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      value={
+                        accountMappings.shipping_expense_account_id || ""
+                      }
+                      onChange={(e) =>
+                        updateMapping(
+                          "shipping_expense_account_id",
+                          "shipping_expense_account_name",
+                          e.target.value,
+                          qbAccounts.expense
+                        )
+                      }
+                    >
+                      <option value="">Select account...</option>
+                      {qbAccounts.expense.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Bank Account (for expenses)
+                    </label>
+                    <select
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      value={accountMappings.bank_account_id || ""}
+                      onChange={(e) =>
+                        updateMapping(
+                          "bank_account_id",
+                          "bank_account_name",
+                          e.target.value,
+                          qbAccounts.bank
+                        )
+                      }
+                    >
+                      <option value="">Select account...</option>
+                      {qbAccounts.bank.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  Click &quot;Load QB Accounts&quot; to configure which QB
+                  accounts invoices and expenses map to.
+                </p>
+              )}
+
+              {accountsLoaded && (
+                <div className="mt-3">
+                  <button
+                    onClick={handleSaveMappings}
+                    disabled={savingMappings}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50"
+                  >
+                    {savingMappings ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Save Mappings
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Webhook Setup Instructions */}
+            <div className="border-t border-gray-200 pt-4">
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                Webhook Setup (Payment Sync)
+              </h3>
+              <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600 space-y-2">
+                <p>
+                  To receive payment updates from QuickBooks, configure a
+                  webhook in the{" "}
+                  <span className="font-medium">Intuit Developer Dashboard</span>:
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-xs">
+                  <li>
+                    Go to your app settings in the Intuit Developer portal
+                  </li>
+                  <li>Under Webhooks, add a new subscription</li>
+                  <li>
+                    Set the endpoint URL to:{" "}
+                    <code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono">
+                      {typeof window !== "undefined"
+                        ? window.location.origin
+                        : "https://your-domain.com"}
+                      /api/webhooks/quickbooks
+                    </code>
+                  </li>
+                  <li>
+                    Subscribe to <strong>Payment</strong> events (Create,
+                    Update)
+                  </li>
+                  <li>
+                    Copy the Webhook Verifier Token and paste it into the{" "}
+                    <strong>Webhook Verifier</strong> field above, then
+                    click Save Credentials
+                  </li>
+                </ol>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-3 pt-2 border-t border-gray-200">
+              <button
+                onClick={handleTest}
+                disabled={testing || disconnecting}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                {testing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Test Connection
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleDisconnect}
+                disabled={disconnecting || testing}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium border border-red-300 text-red-700 hover:bg-red-50 transition-colors disabled:opacity-50"
+              >
+                {disconnecting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Disconnecting...
+                  </>
+                ) : (
+                  <>
+                    <Unplug className="w-4 h-4" />
+                    Disconnect
+                  </>
+                )}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </Card>
   );

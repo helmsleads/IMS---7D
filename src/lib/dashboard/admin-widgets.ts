@@ -73,13 +73,13 @@ export const ADMIN_WIDGETS: WidgetConfig[] = [
   },
   {
     id: "inventory-overview",
-    title: "Inventory Overview",
-    description: "High-level inventory stats",
+    title: "Inventory Health",
+    description: "Per-product stock levels, velocity, and months of supply",
     category: "core",
     defaultEnabled: true,
     defaultOrder: 7,
-    defaultSize: "half",
-    previewType: "count-badge",
+    defaultSize: "full",
+    previewType: "list",
   },
   {
     id: "pending-returns",
