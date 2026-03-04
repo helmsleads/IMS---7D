@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase";
 import { SystemSetting, ClientSetting, PortalSetting } from "@/types/database";
 
+export type { ClientSetting, PortalSetting, SystemSetting };
+
 export async function getSystemSettings(category?: string): Promise<SystemSetting[]> {
   const supabase = createClient();
 

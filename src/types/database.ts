@@ -471,7 +471,7 @@ export interface ChecklistCompletion {
   created_at: string
 }
 
-export type ContainerType = 'bottle' | 'can' | 'keg' | 'bag_in_box' | 'other';
+export type ContainerType = 'bottle' | 'can' | 'keg' | 'bag_in_box' | 'gift_box' | 'other';
 
 // Client Industry and Workflow Profiles
 // Expanded to support more specific product types - clients can have multiple
@@ -488,7 +488,7 @@ export type ClientIndustry =
   | 'general_merchandise'; // General merchandise, other
 
 // Pick strategy for outbound orders
-export type PickStrategy = 'FEFO' | 'FIFO' | 'LIFO'
+export type PickStrategy = 'FEFO' | 'FIFO' | 'LIFO' | 'SERIAL'
 
 // Billing model types
 export type BillingModel = 'per_order' | 'per_unit' | 'monthly' | 'custom'
@@ -1091,8 +1091,6 @@ export type ProductType =
   | 'pharma'
   | 'hazmat'
   | 'general'
-
-export type PickStrategy = 'FIFO' | 'FEFO' | 'LIFO' | 'SERIAL'
 
 export interface ProductTypeConfig {
   id: string

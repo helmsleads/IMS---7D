@@ -26,6 +26,9 @@ export interface InventoryWithDetails {
   qty_reserved: number;
   updated_at: string;
   status: InventoryStatus;
+  status_changed_at: string | null;
+  status_changed_by: string | null;
+  status_notes: string | null;
   product: {
     id: string;
     sku: string;

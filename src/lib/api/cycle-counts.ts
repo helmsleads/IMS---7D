@@ -208,6 +208,9 @@ export async function approveCycleCount(
   if (!count) {
     throw new Error("Cycle count not found");
   }
+  if (!count.location_id) {
+    throw new Error("Cycle count has no location");
+  }
 
   // Apply inventory adjustments for items with variance using transaction logging
   for (const item of count.items) {

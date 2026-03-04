@@ -1022,7 +1022,7 @@ export default function PortalSettingsPage() {
           <button
             onClick={() => { setAddUserMode("create"); setUserError(""); setUserSuccess(""); }}
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-              addUserMode === "invite"
+              addUserMode === "create"
                 ? "text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50"
                 : "text-slate-500 hover:text-slate-700"
             }`}
@@ -1056,7 +1056,7 @@ export default function PortalSettingsPage() {
         )}
 
         {/* Invite User Form */}
-        {addUserMode === "invite" && (
+        {addUserMode === "create" && (
           <form onSubmit={handleInviteUser}>
             <div className="space-y-4">
               <p className="text-sm text-slate-500">

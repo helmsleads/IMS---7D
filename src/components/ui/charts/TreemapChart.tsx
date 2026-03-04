@@ -92,7 +92,7 @@ export default function TreemapChart({
     <div className="animate-chart-enter" style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <Treemap
-          data={treemapData}
+          data={treemapData as never}
           dataKey="value"
           aspectRatio={4 / 3}
           stroke="none"

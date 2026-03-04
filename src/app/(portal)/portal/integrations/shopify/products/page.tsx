@@ -6,8 +6,8 @@ import Card from '@/components/ui/Card'
 import { useClient } from '@/lib/client-auth'
 import { getClientIntegrations } from '@/lib/api/integrations'
 import { getProductMappings, createProductMapping, deleteProductMapping, ProductMapping } from '@/lib/api/product-mappings'
-import { getProducts } from '@/lib/api/products'
-import type { ClientIntegration, Product } from '@/types/database'
+import { getProducts, type ProductWithCategory } from '@/lib/api/products'
+import type { ClientIntegration } from '@/types/database'
 
 interface ShopifyProduct {
   productId: string
@@ -26,7 +26,7 @@ export default function ProductMappingPage() {
   const [integration, setIntegration] = useState<ClientIntegration | null>(null)
   const [mappings, setMappings] = useState<ProductMapping[]>([])
   const [shopifyProducts, setShopifyProducts] = useState<ShopifyProduct[]>([])
-  const [imsProducts, setImsProducts] = useState<Product[]>([])
+  const [imsProducts, setImsProducts] = useState<ProductWithCategory[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)

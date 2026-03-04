@@ -287,11 +287,11 @@ export default function ShipScanner({
         {!allCartonsScanned && (
           <>
             {scannerActive ? (
-              <div className="mb-4">
-                <BarcodeScanner
-                  onScan={handleScan}
-                  onClose={() => setScannerActive(false)}
-                />
+              <div className="mb-4 space-y-2">
+                <BarcodeScanner onScan={handleScan} isActive={true} />
+                <Button variant="secondary" onClick={() => setScannerActive(false)} className="w-full">
+                  Close scanner
+                </Button>
               </div>
             ) : (
               <Button

@@ -261,12 +261,18 @@ export async function getActiveReservations(): Promise<
     throw new Error(error.message);
   }
 
-  return (data || []).map((inv) => ({
-    productId: inv.product_id,
-    productSku: (inv.products as { sku: string; name: string })?.sku || "",
-    productName: (inv.products as { sku: string; name: string })?.name || "",
-    locationId: (inv.locations as { id: string; name: string })?.id || "",
-    locationName: (inv.locations as { id: string; name: string })?.name || "",
-    qtyReserved: inv.qty_reserved,
-  }));
+  return (data || []).map((inv) => {
+    const product = Array.isArray(inv.products) ? inv.products[0] : inv.products;
+    const location = Array.isArray(inv.locations) ? inv.locations[0] : inv.locations;
+    const p = product as { sku?: string; name?: string } | null | undefined;
+    const loc = location as { id?: string; name?: string } | null | undefined;
+    return {
+      productId: inv.product_id,
+      productSku: p?.sku ?? "",
+      productName: p?.name ?? "",
+      locationId: loc?.id ?? "",
+      locationName: loc?.name ?? "",
+      qtyReserved: inv.qty_reserved,
+    };
+  });
 }

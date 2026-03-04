@@ -561,7 +561,8 @@ export async function generateClientInvoice(
       return acc;
     }, {} as Record<string, { quantity: number; total: number; unit_price: number }>);
 
-    for (const [usageType, data] of Object.entries(groupedUsage)) {
+    type GroupedUsageItem = { quantity: number; total: number; unit_price: number };
+    for (const [usageType, data] of Object.entries(groupedUsage) as [string, GroupedUsageItem][]) {
       lineItems.push({
         description: usageType,
         quantity: data.quantity,
@@ -856,7 +857,7 @@ export async function getClientBillingSummary(
     return acc;
   }, {} as Record<string, { quantity: number; total: number; unit_price: number }>);
 
-  for (const [usageType, data] of Object.entries(groupedUsage)) {
+  for (const [usageType, data] of Object.entries(groupedUsage) as [string, { quantity: number; total: number; unit_price: number }][]) {
     lineItems.push({
       description: usageType,
       quantity: data.quantity,

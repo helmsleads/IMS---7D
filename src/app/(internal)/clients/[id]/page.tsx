@@ -515,7 +515,7 @@ export default function ClientDetailPage() {
     try {
       let result;
 
-      if (addUserMode === "invite") {
+      if (addUserMode === "create") {
         // Create/invite user
         if (!addUserFormData.email.trim()) {
           setAddUserError("Email is required");
@@ -2307,7 +2307,7 @@ export default function ClientDetailPage() {
                   type="button"
                   onClick={() => { setAddUserMode("create"); setAddUserError(null); setAddUserSuccess(null); }}
                   className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    addUserMode === "invite"
+                    addUserMode === "create"
                       ? "bg-white text-gray-900 shadow-sm"
                       : "text-gray-600 hover:text-gray-900"
                   }`}
@@ -2341,7 +2341,7 @@ export default function ClientDetailPage() {
                 </div>
               )}
 
-              {addUserMode === "invite" ? (
+              {addUserMode === "create" ? (
                 <>
                   <p className="text-sm text-gray-500">
                     Send an email invitation. The user will set their own password when they accept.
@@ -2455,7 +2455,7 @@ export default function ClientDetailPage() {
                 >
                   {addUserSuccess ? "Close" : "Cancel"}
                 </Button>
-                {!addUserSuccess && addUserMode === "invite" && (
+                {!addUserSuccess && addUserMode === "create" && (
                   <>
                     <Button
                       type="button"

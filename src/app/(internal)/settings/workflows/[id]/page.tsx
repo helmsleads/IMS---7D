@@ -264,9 +264,9 @@ export default function WorkflowEditorPage() {
       </div>
 
       {error && (
-        <Alert variant="error" className="mb-6">
-          {error}
-        </Alert>
+        <div className="mb-6">
+          <Alert type="error" message={error} />
+        </div>
       )}
 
       <div className="flex flex-col lg:flex-row gap-6">

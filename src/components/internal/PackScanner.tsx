@@ -111,11 +111,14 @@ export default function PackScanner({
       return;
     }
 
-    setItems((data || []).map(item => ({
-      ...item,
-      product: item.product as PackItem["product"],
-      qty_packed: 0, // Will be calculated from carton contents
-    })));
+    setItems((data || []).map(item => {
+      const product = Array.isArray(item.product) ? item.product[0] : item.product;
+      return {
+        ...item,
+        product: product as PackItem["product"],
+        qty_packed: 0, // Will be calculated from carton contents
+      };
+    }));
 
     // Fetch existing cartons for this order
     const { data: existingCartons } = await supabase
@@ -246,12 +249,16 @@ export default function PackScanner({
           `)
           .eq("lpn_id", carton.id);
 
-        setCartonContents((contents || []).map(c => ({
-          productId: c.product_id,
-          sku: (c.product as { sku: string; name: string })?.sku || "",
-          name: (c.product as { sku: string; name: string })?.name || "",
-          qty: c.qty,
-        })));
+        setCartonContents((contents || []).map(c => {
+          const product = Array.isArray(c.product) ? c.product[0] : c.product;
+          const p = product as { sku?: string; name?: string } | undefined;
+          return {
+            productId: c.product_id,
+            sku: p?.sku || "",
+            name: p?.name || "",
+            qty: c.qty,
+          };
+        }));
         setMessage({ type: "success", text: `Resumed carton ${carton.lpn_number}` });
       }
     }
@@ -402,11 +409,14 @@ export default function PackScanner({
 
             {/* Scanner */}
             {scannerActive ? (
-              <div className="mb-3">
+              <div className="mb-3 space-y-2">
                 <BarcodeScanner
                   onScan={handleScan}
-                  onClose={() => setScannerActive(false)}
+                  isActive={true}
                 />
+                <Button variant="secondary" onClick={() => setScannerActive(false)} className="w-full">
+                  Close scanner
+                </Button>
               </div>
             ) : (
               <Button
@@ -421,7 +431,7 @@ export default function PackScanner({
             <Button
               onClick={handleCloseCarton}
               disabled={saving || cartonContents.length === 0}
-              variant="outline"
+              variant="secondary"
               className="w-full"
             >
               Close & Stage Carton

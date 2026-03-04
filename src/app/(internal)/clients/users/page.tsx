@@ -223,7 +223,7 @@ export default function PortalUsersPage() {
     try {
       let result;
 
-      if (addUserMode === "invite") {
+      if (addUserMode === "create") {
         // Create/invite user
         if (!addFormData.email.trim()) {
           setAddError("Email is required");
@@ -529,7 +529,7 @@ export default function PortalUsersPage() {
                   type="button"
                   onClick={() => { setAddUserMode("create"); setAddError(null); setAddSuccess(null); }}
                   className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    addUserMode === "invite"
+                    addUserMode === "create"
                       ? "bg-white text-gray-900 shadow-sm"
                       : "text-gray-600 hover:text-gray-900"
                   }`}
@@ -563,7 +563,7 @@ export default function PortalUsersPage() {
                 </div>
               )}
 
-              {addUserMode === "invite" ? (
+              {addUserMode === "create" ? (
                 <>
                   <p className="text-sm text-gray-500">
                     Send an email invitation. The user will set their own password when they accept.
@@ -697,7 +697,7 @@ export default function PortalUsersPage() {
                 >
                   {addSuccess ? "Close" : "Cancel"}
                 </Button>
-                {!addSuccess && addUserMode === "invite" && (
+                {!addSuccess && addUserMode === "create" && (
                   <>
                     <Button
                       type="button"

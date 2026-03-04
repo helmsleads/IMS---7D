@@ -1147,7 +1147,7 @@ export default function OutboundOrderDetailPage() {
   const totalShipped = order.items.reduce((sum, item) => sum + item.qty_shipped, 0);
   const itemsComplete = order.items.filter((item) => item.qty_shipped >= item.qty_requested).length;
 
-  const buildUnitBreakdown = (getQty: (item: typeof order.items[0]) => number) => {
+  const buildUnitBreakdown = (getQty: (item: OutboundItemWithProduct) => number) => {
     const grouped: Record<string, number> = {};
     for (const item of order.items) {
       const qty = getQty(item);

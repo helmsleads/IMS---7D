@@ -19,9 +19,6 @@ const ITEMS_PER_PAGE = 25;
 
 interface OutboundOrderWithCount extends OutboundOrderWithClient {
   item_count: number;
-  source?: 'portal' | 'internal' | 'api';
-  is_rush?: boolean | null;
-  preferred_carrier?: string | null;
 }
 
 type StatusFilter = "all" | "pending" | "confirmed" | "processing" | "packed" | "shipped" | "delivered";
