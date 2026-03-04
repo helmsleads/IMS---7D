@@ -20,6 +20,8 @@ export interface Product {
   active: boolean;
   created_at: string;
   workflow_profile_id: string | null; // Product-level workflow override
+  lead_time_days: number;
+  velocity_reorder_enabled: boolean;
 }
 
 export interface ProductClient {

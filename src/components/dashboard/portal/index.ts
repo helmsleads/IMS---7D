@@ -5,7 +5,6 @@ import ProfitabilityWidget from "./ProfitabilityWidget";
 import RecentOrdersWidget from "./RecentOrdersWidget";
 import RecentArrivalsWidget from "./RecentArrivalsWidget";
 import ActiveOrdersWidget from "./ActiveOrdersWidget";
-import QuickActionsWidget from "./QuickActionsWidget";
 import InventoryValueOverTimeWidget from "./InventoryValueOverTimeWidget";
 import OrderFulfillmentSpeedWidget from "./OrderFulfillmentSpeedWidget";
 import SpendingBreakdownWidget from "./SpendingBreakdownWidget";
@@ -19,7 +18,6 @@ export {
   RecentOrdersWidget,
   RecentArrivalsWidget,
   ActiveOrdersWidget,
-  QuickActionsWidget,
   InventoryValueOverTimeWidget,
   OrderFulfillmentSpeedWidget,
   SpendingBreakdownWidget,
@@ -35,7 +33,6 @@ export const PORTAL_WIDGET_COMPONENTS: Record<string, React.ComponentType<any>> 
   "recent-orders": RecentOrdersWidget,
   "recent-arrivals": RecentArrivalsWidget,
   "active-orders": ActiveOrdersWidget,
-  "quick-actions": QuickActionsWidget,
   "inventory-value-over-time": InventoryValueOverTimeWidget,
   "order-fulfillment-speed": OrderFulfillmentSpeedWidget,
   "spending-breakdown": SpendingBreakdownWidget,

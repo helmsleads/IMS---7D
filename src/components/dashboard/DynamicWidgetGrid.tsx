@@ -69,7 +69,7 @@ export default function DynamicWidgetGrid({
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="lg:columns-2 gap-6">
       {enabledWidgets.map((widget, idx) => {
         const Component = componentMap[widget.id];
         if (!Component) return null;
@@ -79,8 +79,8 @@ export default function DynamicWidgetGrid({
         return (
           <div
             key={widget.id}
-            className={`animate-widget-enter ${
-              widget.size === "full" ? "lg:col-span-2" : ""
+            className={`break-inside-avoid mb-6 animate-widget-enter ${
+              widget.size === "full" ? "[column-span:all]" : ""
             }`}
             style={{ animationDelay: `${idx * 50}ms` }}
           >

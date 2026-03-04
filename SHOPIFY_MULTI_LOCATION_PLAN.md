@@ -117,6 +117,7 @@ Implement Shopify's native multi-location inventory feature to:
 | FR-6 | Support location-specific fulfillment orders | P0 |
 | FR-7 | Show location name in portal UI | P1 |
 | FR-8 | Handle location deletion gracefully | P2 |
+| FR-9 | Deactivate location on disconnect (if created by us) | P2 |
 
 ### Non-Functional Requirements
 
@@ -966,6 +967,7 @@ describe('Location-Based Order Routing', () => {
 - [x] Unit tests (`src/__tests__/shopify/location-management.test.ts` - 20 tests)
 - [x] Locations API endpoint (`src/app/api/integrations/shopify/locations/route.ts`)
 - [x] TypeScript types updated (`src/types/database.ts`)
+- [x] Location deactivation on disconnect (zeroes inventory, then deactivates via GraphQL `locationDeactivate` mutation)
 
 ### Phase 2: Inventory Sync (Week 2)
 - [ ] Update inventory sync for locations
@@ -1046,6 +1048,7 @@ async function migrateExistingIntegrations() {
 | Client deletes our location | Sync breaks | Health check alerts, auto-recreate option |
 | Shopify API changes | Integration breaks | Pin API version, monitor deprecations |
 | Rate limits during migration | Slow rollout | Batch migration with delays |
+| Location deactivation fails on disconnect | Orphaned location in client store | Best-effort cleanup, logged warning, client can manually deactivate in Shopify admin |
 
 ---
 

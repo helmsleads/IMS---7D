@@ -6,7 +6,7 @@ import Card from "@/components/ui/Card";
 import type { InventoryHealthItem } from "@/lib/api/dashboard";
 
 type FilterTab = "all" | "critical" | "low" | "healthy" | "overstock" | "no-movement";
-type SortKey = "product" | "onHand" | "velocity" | "mos" | "status";
+type SortKey = "product" | "onHand" | "v1m" | "v3m" | "v6m" | "mos" | "status";
 type SortDir = "asc" | "desc";
 
 const TABS: { key: FilterTab; label: string }[] = [
@@ -42,7 +42,6 @@ const STATUS_ORDER: Record<InventoryHealthItem["status"], number> = {
   "no-movement": 4,
 };
 
-const MAX_VISIBLE = 8;
 
 interface Props {
   items: InventoryHealthItem[];
@@ -66,10 +65,12 @@ function SkeletonRows() {
             <div className="h-4 w-32 bg-slate-100 rounded animate-pulse" />
             <div className="h-3 w-16 bg-slate-50 rounded animate-pulse mt-1" />
           </td>
-          <td className="py-2.5 px-3"><div className="h-4 w-12 bg-slate-100 rounded animate-pulse ml-auto" /></td>
-          <td className="py-2.5 px-3"><div className="h-4 w-10 bg-slate-100 rounded animate-pulse ml-auto" /></td>
-          <td className="py-2.5 px-3"><div className="h-4 w-8 bg-slate-100 rounded animate-pulse ml-auto" /></td>
-          <td className="py-2.5 pl-3"><div className="h-4 w-14 bg-slate-100 rounded animate-pulse ml-auto" /></td>
+          <td className="py-2.5 px-2"><div className="h-4 w-12 bg-slate-100 rounded animate-pulse ml-auto" /></td>
+          <td className="py-2.5 px-2"><div className="h-4 w-10 bg-slate-100 rounded animate-pulse ml-auto" /></td>
+          <td className="py-2.5 px-2"><div className="h-4 w-10 bg-slate-100 rounded animate-pulse ml-auto" /></td>
+          <td className="py-2.5 px-2"><div className="h-4 w-10 bg-slate-100 rounded animate-pulse ml-auto" /></td>
+          <td className="py-2.5 px-2"><div className="h-4 w-8 bg-slate-100 rounded animate-pulse ml-auto" /></td>
+          <td className="py-2.5 pl-2"><div className="h-4 w-14 bg-slate-100 rounded animate-pulse ml-auto" /></td>
         </tr>
       ))}
     </>
@@ -80,10 +81,23 @@ function getSortValue(item: InventoryHealthItem, key: SortKey): string | number 
   switch (key) {
     case "product": return item.productName.toLowerCase();
     case "onHand": return item.qtyOnHand;
-    case "velocity": return item.avgDailyUsage;
+    case "v1m": return item.avgDailyUsage;
+    case "v3m": return item.avgDailyUsage3m;
+    case "v6m": return item.avgDailyUsage6m;
     case "mos": return item.status === "no-movement" ? -1 : item.monthsOfSupply;
     case "status": return STATUS_ORDER[item.status];
   }
+}
+
+/** Show trend arrow comparing current velocity to a longer-term baseline */
+function VelocityTrend({ current, baseline }: { current: number; baseline: number }) {
+  if (baseline === 0 || current === 0) return null;
+  const pctChange = ((current - baseline) / baseline) * 100;
+  if (Math.abs(pctChange) < 10) return null; // ignore <10% changes
+  if (pctChange > 0) {
+    return <span className="text-green-500 text-[10px] ml-0.5">{"\u2191"}</span>;
+  }
+  return <span className="text-red-400 text-[10px] ml-0.5">{"\u2193"}</span>;
 }
 
 export default function InventoryOverviewWidget({ items, loading }: Props) {
@@ -117,9 +131,6 @@ export default function InventoryOverviewWidget({ items, loading }: Props) {
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [items, activeTab, sortKey, sortDir]);
-
-  const visible = sorted.slice(0, MAX_VISIBLE);
-  const hasMore = sorted.length > MAX_VISIBLE;
 
   const summaryParts: string[] = [];
   if (counts.critical > 0) summaryParts.push(`${counts.critical} critical`);
@@ -163,23 +174,38 @@ export default function InventoryOverviewWidget({ items, loading }: Props) {
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
+      <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
+        <table className="w-full text-sm" style={{ tableLayout: "fixed", minWidth: "640px" }}>
+          <colgroup>
+            <col style={{ width: "28%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "12%" }} />
+          </colgroup>
+          <thead className="sticky top-0 bg-white z-10">
             <tr className="border-b border-slate-100">
               <th className={`text-left ${thBase} px-5`} onClick={() => handleSort("product")}>
                 Product<SortIndicator active={sortKey === "product"} dir={sortDir} />
               </th>
-              <th className={`text-right ${thBase} px-3`} onClick={() => handleSort("onHand")}>
+              <th className={`text-center ${thBase} px-2`} onClick={() => handleSort("onHand")}>
                 On Hand<SortIndicator active={sortKey === "onHand"} dir={sortDir} />
               </th>
-              <th className={`text-right ${thBase} px-3`} onClick={() => handleSort("velocity")}>
-                Velocity<SortIndicator active={sortKey === "velocity"} dir={sortDir} />
+              <th className={`text-center ${thBase} px-2`} onClick={() => handleSort("v1m")}>
+                1M Vel<SortIndicator active={sortKey === "v1m"} dir={sortDir} />
               </th>
-              <th className={`text-right ${thBase} px-3`} onClick={() => handleSort("mos")}>
+              <th className={`text-center ${thBase} px-2`} onClick={() => handleSort("v3m")}>
+                3M Vel<SortIndicator active={sortKey === "v3m"} dir={sortDir} />
+              </th>
+              <th className={`text-center ${thBase} px-2`} onClick={() => handleSort("v6m")}>
+                6M Vel<SortIndicator active={sortKey === "v6m"} dir={sortDir} />
+              </th>
+              <th className={`text-center ${thBase} px-2`} onClick={() => handleSort("mos")}>
                 MOS<SortIndicator active={sortKey === "mos"} dir={sortDir} />
               </th>
-              <th className={`text-right ${thBase} px-5`} onClick={() => handleSort("status")}>
+              <th className={`text-center ${thBase} px-2`} onClick={() => handleSort("status")}>
                 Status<SortIndicator active={sortKey === "status"} dir={sortDir} />
               </th>
             </tr>
@@ -187,29 +213,40 @@ export default function InventoryOverviewWidget({ items, loading }: Props) {
           <tbody className="divide-y divide-slate-50">
             {loading ? (
               <SkeletonRows />
-            ) : visible.length === 0 ? (
+            ) : sorted.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-8 text-center text-sm text-slate-400">
+                <td colSpan={7} className="py-8 text-center text-sm text-slate-400">
                   No products found
                 </td>
               </tr>
             ) : (
-              visible.map((item) => (
+              sorted.map((item) => (
                 <tr key={item.sku} className="hover:bg-slate-25 transition-colors">
                   <td className="py-2.5 px-5">
-                    <div className="text-sm text-slate-700 font-medium truncate max-w-[200px]">{item.productName}</div>
-                    <div className="text-xs text-slate-400 font-mono">{item.sku}</div>
+                    <div className="text-sm text-slate-700 font-medium truncate">{item.productName}</div>
+                    <div className="text-xs text-slate-400 font-mono truncate">{item.sku}</div>
                   </td>
-                  <td className="py-2.5 px-3 text-right tabular-nums text-slate-700">
+                  <td className="py-2.5 px-2 text-center tabular-nums text-slate-700">
                     {item.qtyOnHand.toLocaleString()}
                   </td>
-                  <td className="py-2.5 px-3 text-right tabular-nums text-slate-500">
-                    {item.avgDailyUsage > 0 ? `${item.avgDailyUsage}/d` : "\u2014"}
+                  <td className="py-2.5 px-2 text-center tabular-nums text-slate-500">
+                    {item.avgDailyUsage > 0 ? (
+                      <span>
+                        {item.avgDailyUsage}/d
+                        <VelocityTrend current={item.avgDailyUsage} baseline={item.avgDailyUsage3m} />
+                      </span>
+                    ) : "\u2014"}
                   </td>
-                  <td className="py-2.5 px-3 text-right tabular-nums text-slate-700">
+                  <td className="py-2.5 px-2 text-center tabular-nums text-slate-500">
+                    {item.avgDailyUsage3m > 0 ? `${item.avgDailyUsage3m}/d` : "\u2014"}
+                  </td>
+                  <td className="py-2.5 px-2 text-center tabular-nums text-slate-500">
+                    {item.avgDailyUsage6m > 0 ? `${item.avgDailyUsage6m}/d` : "\u2014"}
+                  </td>
+                  <td className="py-2.5 px-2 text-center tabular-nums text-slate-700">
                     {item.status === "no-movement" ? "\u2014" : item.monthsOfSupply.toFixed(1)}
                   </td>
-                  <td className="py-2.5 px-5 text-right">
+                  <td className="py-2.5 px-2 text-center">
                     <span className={`text-xs font-semibold ${STATUS_STYLES[item.status]}`}>
                       {STATUS_LABELS[item.status]}
                     </span>
@@ -222,16 +259,17 @@ export default function InventoryOverviewWidget({ items, loading }: Props) {
       </div>
 
       {/* Footer */}
-      {hasMore && !loading && (
-        <div className="px-5 py-3 border-t border-slate-100">
+      <div className="px-5 py-3 border-t border-slate-100">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-slate-400">{sorted.length} products</span>
           <Link
             href="/inventory"
             className="text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
           >
-            View all {sorted.length} products
+            View all
           </Link>
         </div>
-      )}
+      </div>
     </Card>
   );
 }

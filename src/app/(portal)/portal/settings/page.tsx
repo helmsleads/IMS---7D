@@ -198,7 +198,7 @@ export default function PortalSettingsPage() {
   const [teamMembers, setTeamMembers] = useState<ClientUserWithDetails[]>([]);
   const [loadingTeam, setLoadingTeam] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [addUserMode, setAddUserMode] = useState<"invite" | "existing">("invite");
+  const [addUserMode, setAddUserMode] = useState<"create" | "existing">("existing");
   const [existingUserEmail, setExistingUserEmail] = useState("");
   const [existingUserRole, setExistingUserRole] = useState<ClientUserRole>("member");
   const [inviteForm, setInviteForm] = useState<InviteUserData & { role: ClientUserRole }>({
@@ -421,7 +421,7 @@ export default function PortalSettingsPage() {
   // Team management functions
   const resetUserForm = () => {
     setShowAddUserModal(false);
-    setAddUserMode("invite");
+    setAddUserMode("create");
     setExistingUserEmail("");
     setExistingUserRole("member");
     setInviteForm({
@@ -1020,9 +1020,9 @@ export default function PortalSettingsPage() {
         {/* Mode Toggle */}
         <div className="flex border-b border-slate-200 -mx-4 -mt-4 mb-4">
           <button
-            onClick={() => { setAddUserMode("invite"); setUserError(""); setUserSuccess(""); }}
+            onClick={() => { setAddUserMode("create"); setUserError(""); setUserSuccess(""); }}
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-              addUserMode === "invite"
+              addUserMode === "create"
                 ? "text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50"
                 : "text-slate-500 hover:text-slate-700"
             }`}
@@ -1056,7 +1056,7 @@ export default function PortalSettingsPage() {
         )}
 
         {/* Invite User Form */}
-        {addUserMode === "invite" && (
+        {addUserMode === "create" && (
           <form onSubmit={handleInviteUser}>
             <div className="space-y-4">
               <p className="text-sm text-slate-500">

@@ -101,13 +101,15 @@ export async function getPortalLots(
       .eq("lot_id", lot.id);
 
     const qtyOnHand = (lotInventory || []).reduce((sum, li) => {
-      const inv = li.inventory as { qty_on_hand: number } | null;
-      return sum + (inv?.qty_on_hand || 0);
+      const raw = Array.isArray(li.inventory) ? li.inventory[0] : li.inventory;
+      const inv = raw as { qty_on_hand?: number } | null | undefined;
+      return sum + (inv?.qty_on_hand ?? 0);
     }, 0);
 
+    const product = Array.isArray(lot.product) ? lot.product[0] : lot.product;
     lotsWithQty.push({
       ...lot,
-      product: lot.product as PortalLot["product"],
+      product: product as PortalLot["product"],
       qty_on_hand: qtyOnHand,
     });
   }
@@ -252,8 +254,9 @@ export async function getPortalLotDetail(lotId: string): Promise<{
     .eq("lot_id", lotId);
 
   const qtyOnHand = (lotInventory || []).reduce((sum, li) => {
-    const inv = li.inventory as { qty_on_hand: number } | null;
-    return sum + (inv?.qty_on_hand || 0);
+    const raw = Array.isArray(li.inventory) ? li.inventory[0] : li.inventory;
+    const inv = raw as { qty_on_hand?: number } | null | undefined;
+    return sum + (inv?.qty_on_hand ?? 0);
   }, 0);
 
   // Get transactions for this lot

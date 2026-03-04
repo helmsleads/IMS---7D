@@ -109,15 +109,21 @@ export async function getDashboardStats(): Promise<DashboardData> {
         )
       `),
 
-    // Low stock items (where qty_on_hand <= reorder_point)
+    // Low stock items (where qty_on_hand <= reorder_point, active products + active clients only)
     supabase
       .from("inventory")
       .select(`
         qty_on_hand,
-        product:products (
-          reorder_point
+        product:products!inner (
+          reorder_point,
+          active,
+          client:clients!inner (
+            active
+          )
         )
-      `),
+      `)
+      .eq("product.active", true)
+      .eq("product.client.active", true),
 
     // Pending inbound orders
     supabase
@@ -181,7 +187,7 @@ export async function getDashboardStats(): Promise<DashboardData> {
   const lowStockCount = lowStockData.filter((item) => {
     const product = item.product as unknown as { reorder_point: number } | null;
     const reorderPoint = product?.reorder_point || 0;
-    return item.qty_on_hand <= reorderPoint && item.qty_on_hand > 0;
+    return item.qty_on_hand === 0 || (reorderPoint > 0 && item.qty_on_hand <= reorderPoint);
   }).length;
 
   return {
@@ -200,11 +206,13 @@ export async function getDashboardStats(): Promise<DashboardData> {
   };
 }
 
-export async function getLowStockItems(): Promise<{
+export interface LowStockItemResult {
   id: string;
   product_id: string;
   location_id: string;
   qty_on_hand: number;
+  avgDailyVelocity: number;
+  daysOfStock: number;
   product: {
     id: string;
     sku: string;
@@ -215,53 +223,128 @@ export async function getLowStockItems(): Promise<{
     id: string;
     name: string;
   };
-}[]> {
+}
+
+export async function getLowStockItems(): Promise<LowStockItemResult[]> {
   const supabase = createClient();
 
-  const { data, error } = await supabase
-    .from("inventory")
-    .select(`
-      id,
-      product_id,
-      location_id,
-      qty_on_hand,
-      product:products (
-        id,
-        sku,
-        name,
-        reorder_point
-      ),
-      location:locations (
-        id,
-        name
-      )
-    `);
+  // Load velocity settings for alert threshold
+  const velocitySettings = await getVelocitySettings();
+  const windowDays = velocitySettings.velocityWindowDays;
+  const alertThreshold = velocitySettings.daysOfStockAlertThreshold;
 
-  if (error) {
-    throw new Error(error.message);
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - windowDays);
+
+  const safetyMultiplier = velocitySettings.safetyStockMultiplier;
+  const defaultLeadTime = velocitySettings.defaultLeadTimeDays;
+
+  const [inventoryResult, usageResult] = await Promise.all([
+    supabase
+      .from("inventory")
+      .select(`
+        id,
+        product_id,
+        location_id,
+        qty_on_hand,
+        product:products!inner (
+          id,
+          sku,
+          name,
+          reorder_point,
+          active,
+          client:clients!inner (
+            active
+          )
+        ),
+        location:locations (
+          id,
+          name
+        )
+      `)
+      .eq("product.active", true)
+      .eq("product.client.active", true),
+    supabase
+      .from("outbound_items")
+      .select(`
+        qty_shipped,
+        product_id,
+        order:outbound_orders!inner (shipped_date)
+      `)
+      .gt("qty_shipped", 0)
+      .gte("order.shipped_date", cutoffDate.toISOString()),
+  ]);
+
+  if (inventoryResult.error) {
+    throw new Error(inventoryResult.error.message);
   }
 
-  // Filter to only low stock items
-  return (data || []).filter((item) => {
-    const product = item.product as unknown as { reorder_point: number } | null;
-    const reorderPoint = product?.reorder_point || 0;
-    return item.qty_on_hand <= reorderPoint && item.qty_on_hand > 0;
-  }) as unknown as {
-    id: string;
-    product_id: string;
-    location_id: string;
-    qty_on_hand: number;
-    product: {
-      id: string;
-      sku: string;
-      name: string;
-      reorder_point: number;
-    };
-    location: {
-      id: string;
-      name: string;
-    };
-  }[];
+  // Build velocity map: product_id -> total shipped in window
+  const velocityMap = new Map<string, number>();
+  for (const row of usageResult.data || []) {
+    velocityMap.set(
+      row.product_id,
+      (velocityMap.get(row.product_id) || 0) + (row.qty_shipped || 0)
+    );
+  }
+
+  // Enrich and filter
+  type ProductData = {
+    id: string; sku: string; name: string; reorder_point: number;
+    velocity_reorder_enabled?: boolean; lead_time_days?: number;
+  };
+
+  const results: LowStockItemResult[] = [];
+  for (const item of inventoryResult.data || []) {
+    const product = item.product as unknown as ProductData | null;
+    const location = item.location as unknown as { id: string; name: string } | null;
+
+    const storedReorderPoint = product?.reorder_point || 0;
+    const velocityEnabled = product?.velocity_reorder_enabled || false;
+    const leadTimeDays = product?.lead_time_days || defaultLeadTime;
+
+    const totalShipped = velocityMap.get(item.product_id) || 0;
+    const avgDailyVelocity = totalShipped / windowDays;
+    const daysOfStock = avgDailyVelocity > 0
+      ? Math.round(item.qty_on_hand / avgDailyVelocity)
+      : 999;
+
+    // For velocity-enabled products with sales history, calculate effective reorder point
+    // so it works immediately even before the daily cron updates the stored value
+    let effectiveReorderPoint = storedReorderPoint;
+    if (velocityEnabled && avgDailyVelocity > 0) {
+      effectiveReorderPoint = Math.ceil(avgDailyVelocity * leadTimeDays * safetyMultiplier);
+    }
+
+    const isLowByReorder = effectiveReorderPoint > 0 && item.qty_on_hand <= effectiveReorderPoint;
+    const isLowByDays = avgDailyVelocity > 0 && daysOfStock < alertThreshold;
+
+    if (isLowByReorder || isLowByDays) {
+      results.push({
+        id: item.id,
+        product_id: item.product_id,
+        location_id: item.location_id,
+        qty_on_hand: item.qty_on_hand,
+        avgDailyVelocity: Math.round(avgDailyVelocity * 10) / 10,
+        daysOfStock,
+        product: {
+          id: product?.id || "",
+          sku: product?.sku || "",
+          name: product?.name || "Unknown",
+          reorder_point: effectiveReorderPoint,
+        },
+        location: {
+          id: location?.id || "",
+          name: location?.name || "Unknown",
+        },
+      });
+    }
+  }
+
+  // Sort by daysOfStock ascending (most urgent first)
+  results.sort((a, b) => a.daysOfStock - b.daysOfStock);
+
+  return results;
 }
 
 export interface ExpectedArrival {
@@ -770,45 +853,95 @@ export interface ReorderSuggestion {
   reorderPoint: number;
   suggestedQty: number;
   supplier: string | null;
+  avgDailyVelocity: number;
+  daysOfStock: number;
+  velocityBased: boolean;
 }
 
 /**
  * Generate reorder suggestions for products below their reorder point.
- * Suggested quantity = 2x reorder point - current quantity (brings to 2x safety stock).
+ * For velocity-enabled products: effectiveReorderPoint = ceil(avgDailyVelocity * leadTimeDays * safetyMultiplier)
+ * For manual products: suggestedQty = reorderPoint * 2 - currentQty
  */
 export async function getReorderSuggestions(): Promise<ReorderSuggestion[]> {
   const supabase = createClient();
 
-  const { data, error } = await supabase
-    .from("inventory")
-    .select(`
-      product_id,
-      location_id,
-      qty_on_hand,
-      client_id,
-      product:products (id, name, sku, reorder_point, supplier),
-      location:locations (id, name),
-      client:clients (id, company_name)
-    `)
-    .gt("qty_on_hand", -1);
+  const velocitySettings = await getVelocitySettings();
+  const windowDays = velocitySettings.velocityWindowDays;
+  const safetyMultiplier = velocitySettings.safetyStockMultiplier;
 
-  if (error) {
-    throw new Error(error.message);
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - windowDays);
+
+  const [inventoryResult, usageResult] = await Promise.all([
+    supabase
+      .from("inventory")
+      .select(`
+        product_id,
+        location_id,
+        qty_on_hand,
+        client_id,
+        product:products (id, name, sku, reorder_point, supplier),
+        location:locations (id, name),
+        client:clients (id, company_name)
+      `)
+      .gt("qty_on_hand", -1),
+    supabase
+      .from("outbound_items")
+      .select(`
+        qty_shipped,
+        product_id,
+        order:outbound_orders!inner (shipped_date)
+      `)
+      .gt("qty_shipped", 0)
+      .gte("order.shipped_date", cutoffDate.toISOString()),
+  ]);
+
+  if (inventoryResult.error) {
+    throw new Error(inventoryResult.error.message);
+  }
+
+  // Build velocity map: product_id -> total shipped
+  const velocityMap = new Map<string, number>();
+  for (const row of usageResult.data || []) {
+    velocityMap.set(
+      row.product_id,
+      (velocityMap.get(row.product_id) || 0) + (row.qty_shipped || 0)
+    );
   }
 
   const suggestions: ReorderSuggestion[] = [];
 
-  for (const row of data || []) {
+  for (const row of inventoryResult.data || []) {
     const product = Array.isArray(row.product) ? row.product[0] : row.product;
     const location = Array.isArray(row.location) ? row.location[0] : row.location;
     const client = Array.isArray(row.client) ? row.client[0] : row.client;
 
     const reorderPoint = (product as { reorder_point?: number })?.reorder_point || 0;
-    if (reorderPoint <= 0) continue;
-    if (row.qty_on_hand > reorderPoint) continue;
+    const velocityEnabled = (product as { velocity_reorder_enabled?: boolean })?.velocity_reorder_enabled || false;
+    const leadTimeDays = (product as { lead_time_days?: number })?.lead_time_days || velocitySettings.defaultLeadTimeDays;
 
-    // Suggest ordering enough to reach 2x reorder point
-    const suggestedQty = reorderPoint * 2 - row.qty_on_hand;
+    const totalShipped = velocityMap.get(row.product_id) || 0;
+    const avgDailyVelocity = Math.round((totalShipped / windowDays) * 10) / 10;
+    const daysOfStock = avgDailyVelocity > 0
+      ? Math.round(row.qty_on_hand / avgDailyVelocity)
+      : 999;
+
+    let effectiveReorderPoint = reorderPoint;
+    let suggestedQty: number;
+    let velocityBased = false;
+
+    if (velocityEnabled && avgDailyVelocity > 0) {
+      effectiveReorderPoint = Math.ceil(avgDailyVelocity * leadTimeDays * safetyMultiplier);
+      suggestedQty = effectiveReorderPoint * 2 - row.qty_on_hand;
+      velocityBased = true;
+    } else {
+      if (reorderPoint <= 0) continue;
+      suggestedQty = reorderPoint * 2 - row.qty_on_hand;
+    }
+
+    if (row.qty_on_hand > effectiveReorderPoint) continue;
+    if (suggestedQty <= 0) continue;
 
     suggestions.push({
       productId: row.product_id,
@@ -819,18 +952,17 @@ export async function getReorderSuggestions(): Promise<ReorderSuggestion[]> {
       locationId: row.location_id,
       locationName: (location as { name: string })?.name || "Unknown",
       currentQty: row.qty_on_hand,
-      reorderPoint,
+      reorderPoint: effectiveReorderPoint,
       suggestedQty,
       supplier: (product as { supplier?: string })?.supplier || null,
+      avgDailyVelocity,
+      daysOfStock,
+      velocityBased,
     });
   }
 
-  // Sort by urgency (lowest qty relative to reorder point first)
-  suggestions.sort((a, b) => {
-    const aRatio = a.currentQty / a.reorderPoint;
-    const bRatio = b.currentQty / b.reorderPoint;
-    return aRatio - bRatio;
-  });
+  // Sort by daysOfStock ascending (most urgent first)
+  suggestions.sort((a, b) => a.daysOfStock - b.daysOfStock);
 
   return suggestions;
 }
@@ -1219,10 +1351,11 @@ export interface DaysOfSupplyItem {
   daysOfSupply: number;
 }
 
-export async function getDaysOfSupply(): Promise<DaysOfSupplyItem[]> {
+export async function getDaysOfSupply(windowDays?: number): Promise<DaysOfSupplyItem[]> {
   const supabase = createClient();
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const days = windowDays || 30;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
 
   // Get current inventory and recent outbound items for usage
   const [inventoryResult, usageResult] = await Promise.all([
@@ -1241,7 +1374,7 @@ export async function getDaysOfSupply(): Promise<DaysOfSupplyItem[]> {
         order:outbound_orders!inner (shipped_date)
       `)
       .gt("qty_shipped", 0)
-      .gte("order.shipped_date", thirtyDaysAgo.toISOString()),
+      .gte("order.shipped_date", cutoff.toISOString()),
   ]);
 
   // Sum qty on hand per SKU
@@ -1255,7 +1388,7 @@ export async function getDaysOfSupply(): Promise<DaysOfSupplyItem[]> {
     stockMap.set(sku, entry);
   }
 
-  // Sum shipped in last 30 days per SKU
+  // Sum shipped in window per SKU
   const usageMap = new Map<string, number>();
   for (const row of usageResult.data || []) {
     const product = Array.isArray(row.product) ? row.product[0] : row.product;
@@ -1266,15 +1399,15 @@ export async function getDaysOfSupply(): Promise<DaysOfSupplyItem[]> {
   const results: DaysOfSupplyItem[] = [];
   for (const [sku, stock] of stockMap) {
     const totalShipped = usageMap.get(sku) || 0;
-    const avgDaily = totalShipped / 30;
-    const days = avgDaily > 0 ? Math.round(stock.qty / avgDaily) : 999;
+    const avgDaily = totalShipped / days;
+    const daysOfSupply = avgDaily > 0 ? Math.round(stock.qty / avgDaily) : 999;
 
     results.push({
       productName: stock.name,
       sku,
       qtyOnHand: stock.qty,
       avgDailyUsage: Math.round(avgDaily * 10) / 10,
-      daysOfSupply: days,
+      daysOfSupply,
     });
   }
 
@@ -1294,16 +1427,23 @@ export interface InventoryHealthItem {
   qtyOnHand: number;
   reorderPoint: number;
   avgDailyUsage: number;
+  avgDailyUsage3m: number;
+  avgDailyUsage6m: number;
   monthsOfSupply: number;
   status: "critical" | "low" | "healthy" | "overstock" | "no-movement";
 }
 
 export async function getInventoryHealth(): Promise<InventoryHealthItem[]> {
   const supabase = createClient();
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now);
+  thirtyDaysAgo.setDate(now.getDate() - 30);
+  const ninetyDaysAgo = new Date(now);
+  ninetyDaysAgo.setDate(now.getDate() - 90);
+  const oneEightyDaysAgo = new Date(now);
+  oneEightyDaysAgo.setDate(now.getDate() - 180);
 
-  const [inventoryResult, usageResult] = await Promise.all([
+  const [inventoryResult, usage30Result, usage90Result, usage180Result] = await Promise.all([
     supabase
       .from("inventory")
       .select(`
@@ -1320,6 +1460,24 @@ export async function getInventoryHealth(): Promise<InventoryHealthItem[]> {
       `)
       .gt("qty_shipped", 0)
       .gte("order.shipped_date", thirtyDaysAgo.toISOString()),
+    supabase
+      .from("outbound_items")
+      .select(`
+        qty_shipped,
+        product:products (sku),
+        order:outbound_orders!inner (shipped_date)
+      `)
+      .gt("qty_shipped", 0)
+      .gte("order.shipped_date", ninetyDaysAgo.toISOString()),
+    supabase
+      .from("outbound_items")
+      .select(`
+        qty_shipped,
+        product:products (sku),
+        order:outbound_orders!inner (shipped_date)
+      `)
+      .gt("qty_shipped", 0)
+      .gte("order.shipped_date", oneEightyDaysAgo.toISOString()),
   ]);
 
   // Sum qty on hand per SKU
@@ -1337,22 +1495,32 @@ export async function getInventoryHealth(): Promise<InventoryHealthItem[]> {
     stockMap.set(sku, entry);
   }
 
-  // Sum shipped in last 30 days per SKU
-  const usageMap = new Map<string, number>();
-  for (const row of usageResult.data || []) {
-    const product = Array.isArray(row.product) ? row.product[0] : row.product;
-    const sku = (product as { sku: string })?.sku || "unknown";
-    usageMap.set(sku, (usageMap.get(sku) || 0) + (row.qty_shipped || 0));
+  // Helper to build usage map from outbound data
+  function buildUsageMap(data: typeof usage30Result.data) {
+    const map = new Map<string, number>();
+    for (const row of data || []) {
+      const product = Array.isArray(row.product) ? row.product[0] : row.product;
+      const sku = (product as { sku: string })?.sku || "unknown";
+      map.set(sku, (map.get(sku) || 0) + (row.qty_shipped || 0));
+    }
+    return map;
   }
+
+  const usageMap30 = buildUsageMap(usage30Result.data);
+  const usageMap90 = buildUsageMap(usage90Result.data);
+  const usageMap180 = buildUsageMap(usage180Result.data);
 
   const results: InventoryHealthItem[] = [];
   for (const [sku, stock] of stockMap) {
-    const totalShipped = usageMap.get(sku) || 0;
-    const avgDaily = totalShipped / 30;
-    const mos = avgDaily > 0 ? stock.qty / (avgDaily * 30) : -1;
+    const avgDaily30 = (usageMap30.get(sku) || 0) / 30;
+    const avgDaily90 = (usageMap90.get(sku) || 0) / 90;
+    const avgDaily180 = (usageMap180.get(sku) || 0) / 180;
+
+    // MOS based on 30-day velocity (most responsive)
+    const mos = avgDaily30 > 0 ? stock.qty / (avgDaily30 * 30) : -1;
 
     let status: InventoryHealthItem["status"];
-    if (avgDaily === 0) {
+    if (avgDaily30 === 0) {
       status = "no-movement";
     } else if (mos < 1) {
       status = "critical";
@@ -1369,7 +1537,9 @@ export async function getInventoryHealth(): Promise<InventoryHealthItem[]> {
       sku,
       qtyOnHand: stock.qty,
       reorderPoint: stock.reorderPoint,
-      avgDailyUsage: Math.round(avgDaily * 10) / 10,
+      avgDailyUsage: Math.round(avgDaily30 * 10) / 10,
+      avgDailyUsage3m: Math.round(avgDaily90 * 10) / 10,
+      avgDailyUsage6m: Math.round(avgDaily180 * 10) / 10,
       monthsOfSupply: mos > 0 ? Math.round(mos * 10) / 10 : 0,
       status,
     });
@@ -1402,7 +1572,7 @@ export async function getRevenueByClient(): Promise<ClientRevenue[]> {
       total,
       client:clients (company_name)
     `)
-    .in("status", ["sent", "paid"]);
+    .in("status", ["draft", "sent", "paid"]);
 
   if (error) throw new Error(error.message);
 
@@ -2196,4 +2366,286 @@ export async function getExpirationTimeline(): Promise<ExpirationTimelineItem[]>
       daysUntilExpiry: daysUntil,
     };
   });
+}
+
+// ============================================
+// Invoice Status / AR Aging Report
+// ============================================
+
+export type AgingBucket = "current" | "1-30" | "31-60" | "61-90" | "90+";
+
+export interface InvoiceStatusItem {
+  id: string;
+  invoice_number: string;
+  clientName: string;
+  clientId: string;
+  due_date: string;
+  total: number;
+  status: string;
+  daysOverdue: number;
+  agingBucket: AgingBucket;
+}
+
+export interface InvoiceStatusReport {
+  invoices: InvoiceStatusItem[];
+  summary: {
+    totalExposure: number;
+    overdueAmount: number;
+    topDebtor: { name: string; exposure: number } | null;
+  };
+}
+
+export async function getInvoiceStatusReport(): Promise<InvoiceStatusReport> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("invoices")
+    .select(`
+      id,
+      invoice_number,
+      due_date,
+      total,
+      status,
+      client:clients (id, company_name)
+    `)
+    .not("status", "in", '("cancelled","paid")');
+
+  if (error) throw new Error(error.message);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const invoices: InvoiceStatusItem[] = (data || []).map((inv) => {
+    const client = Array.isArray(inv.client) ? inv.client[0] : inv.client;
+    const clientName = (client as { company_name: string })?.company_name || "Unknown";
+    const clientId = (client as { id: string })?.id || "";
+
+    const dueDate = inv.due_date ? new Date(inv.due_date) : today;
+    dueDate.setHours(0, 0, 0, 0);
+    const diffMs = today.getTime() - dueDate.getTime();
+    const daysOverdue = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+
+    let agingBucket: AgingBucket = "current";
+    if (daysOverdue > 90) agingBucket = "90+";
+    else if (daysOverdue > 60) agingBucket = "61-90";
+    else if (daysOverdue > 30) agingBucket = "31-60";
+    else if (daysOverdue > 0) agingBucket = "1-30";
+
+    return {
+      id: inv.id,
+      invoice_number: inv.invoice_number || "",
+      clientName,
+      clientId,
+      due_date: inv.due_date || "",
+      total: inv.total || 0,
+      status: inv.status || "draft",
+      daysOverdue,
+      agingBucket,
+    };
+  });
+
+  // Summary
+  const totalExposure = invoices.reduce((sum, inv) => sum + inv.total, 0);
+  const overdueAmount = invoices
+    .filter((inv) => inv.daysOverdue > 0)
+    .reduce((sum, inv) => sum + inv.total, 0);
+
+  // Top debtor by total exposure
+  const debtorMap = new Map<string, number>();
+  for (const inv of invoices) {
+    debtorMap.set(inv.clientName, (debtorMap.get(inv.clientName) || 0) + inv.total);
+  }
+  let topDebtor: { name: string; exposure: number } | null = null;
+  for (const [name, exposure] of debtorMap) {
+    if (!topDebtor || exposure > topDebtor.exposure) {
+      topDebtor = { name, exposure };
+    }
+  }
+
+  // Sort by days overdue descending
+  invoices.sort((a, b) => b.daysOverdue - a.daysOverdue);
+
+  return { invoices, summary: { totalExposure, overdueAmount, topDebtor } };
+}
+
+// ============================================
+// Sales Summary
+// ============================================
+
+export interface SalesPeriodData {
+  cases: number;
+  revenue: number;
+  orderCount: number;
+}
+
+export interface SalesSummaryData {
+  currentMonth: SalesPeriodData;
+  yearToDate: SalesPeriodData;
+  last12Months: SalesPeriodData;
+  openOrders: SalesPeriodData;
+}
+
+export async function getSalesSummary(): Promise<SalesSummaryData> {
+  const supabase = createClient();
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const startOfYear = new Date(now.getFullYear(), 0, 1).toISOString();
+  const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 12, 1).toISOString();
+
+  const [shippedResult, openResult] = await Promise.all([
+    supabase
+      .from("outbound_orders")
+      .select(`
+        id, status, shipped_date,
+        outbound_items (
+          qty_shipped,
+          unit_price,
+          product:products (units_per_case)
+        )
+      `)
+      .in("status", ["shipped", "delivered"])
+      .gte("shipped_date", twelveMonthsAgo),
+    supabase
+      .from("outbound_orders")
+      .select(`
+        id, status,
+        outbound_items (
+          qty_requested,
+          unit_price,
+          product:products (units_per_case)
+        )
+      `)
+      .in("status", ["pending", "confirmed", "processing", "packed"]),
+  ]);
+
+  if (shippedResult.error) throw new Error(shippedResult.error.message);
+  if (openResult.error) throw new Error(openResult.error.message);
+
+  function aggregateShipped(orders: typeof shippedResult.data, startDate: string): SalesPeriodData {
+    let cases = 0;
+    let revenue = 0;
+    let orderCount = 0;
+    for (const order of orders || []) {
+      if (!order.shipped_date || order.shipped_date < startDate) continue;
+      orderCount++;
+      const items = Array.isArray(order.outbound_items) ? order.outbound_items : [];
+      for (const item of items) {
+        const product = Array.isArray(item.product) ? item.product[0] : item.product;
+        const unitsPerCase = (product as { units_per_case: number })?.units_per_case || 1;
+        const qty = item.qty_shipped || 0;
+        cases += unitsPerCase > 0 ? qty / unitsPerCase : qty;
+        revenue += qty * (item.unit_price || 0);
+      }
+    }
+    return { cases: Math.round(cases), revenue: Math.round(revenue), orderCount };
+  }
+
+  const currentMonth = aggregateShipped(shippedResult.data, startOfMonth);
+  const yearToDate = aggregateShipped(shippedResult.data, startOfYear);
+  const last12Months = aggregateShipped(shippedResult.data, twelveMonthsAgo);
+
+  // Open orders
+  let openCases = 0;
+  let openRevenue = 0;
+  const openOrderCount = (openResult.data || []).length;
+  for (const order of openResult.data || []) {
+    const items = Array.isArray(order.outbound_items) ? order.outbound_items : [];
+    for (const item of items) {
+      const product = Array.isArray(item.product) ? item.product[0] : item.product;
+      const unitsPerCase = (product as { units_per_case: number })?.units_per_case || 1;
+      const qty = (item as { qty_requested?: number }).qty_requested || 0;
+      openCases += unitsPerCase > 0 ? qty / unitsPerCase : qty;
+      openRevenue += qty * (item.unit_price || 0);
+    }
+  }
+
+  return {
+    currentMonth,
+    yearToDate,
+    last12Months,
+    openOrders: { cases: Math.round(openCases), revenue: Math.round(openRevenue), orderCount: openOrderCount },
+  };
+}
+
+// ============================================
+// Inventory Status Breakdown
+// ============================================
+
+export interface InventoryStatusBreakdown {
+  available: number;
+  reserved: number;
+  damaged: number;
+  quarantine: number;
+  returned: number;
+  totalOnHand: number;
+}
+
+export async function getInventoryStatusBreakdown(): Promise<InventoryStatusBreakdown> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("inventory")
+    .select("qty_on_hand, qty_reserved, status");
+
+  if (error) throw new Error(error.message);
+
+  const result: InventoryStatusBreakdown = {
+    available: 0,
+    reserved: 0,
+    damaged: 0,
+    quarantine: 0,
+    returned: 0,
+    totalOnHand: 0,
+  };
+
+  for (const row of data || []) {
+    const qty = row.qty_on_hand || 0;
+    const reserved = row.qty_reserved || 0;
+    const status = row.status || "available";
+
+    result.totalOnHand += qty;
+    result.reserved += reserved;
+
+    if (status === "damaged") result.damaged += qty;
+    else if (status === "quarantine") result.quarantine += qty;
+    else if (status === "returned") result.returned += qty;
+    else result.available += qty - reserved;
+  }
+
+  return result;
+}
+
+// ============================================
+// Velocity Settings
+// ============================================
+
+export interface VelocitySettings {
+  velocityWindowDays: number;
+  defaultLeadTimeDays: number;
+  safetyStockMultiplier: number;
+  daysOfStockAlertThreshold: number;
+}
+
+export async function getVelocitySettings(): Promise<VelocitySettings> {
+  const supabase = createClient();
+
+  const { data } = await supabase
+    .from("system_settings")
+    .select("setting_key, setting_value")
+    .eq("category", "inventory")
+    .in("setting_key", [
+      "velocity_window_days",
+      "default_lead_time_days",
+      "safety_stock_multiplier",
+      "days_of_stock_alert_threshold",
+    ]);
+
+  const map = new Map((data || []).map((r) => [r.setting_key, r.setting_value]));
+
+  return {
+    velocityWindowDays: parseInt(map.get("velocity_window_days") || "30") || 30,
+    defaultLeadTimeDays: parseInt(map.get("default_lead_time_days") || "7") || 7,
+    safetyStockMultiplier: parseFloat(map.get("safety_stock_multiplier") || "1.5") || 1.5,
+    daysOfStockAlertThreshold: parseInt(map.get("days_of_stock_alert_threshold") || "14") || 14,
+  };
 }

@@ -38,6 +38,8 @@ import ReturnsByReasonWidget from "./ReturnsByReasonWidget";
 import DamageRateTrendWidget from "./DamageRateTrendWidget";
 import ExpirationTimelineWidget from "./ExpirationTimelineWidget";
 import FEFOComplianceWidget from "./FEFOComplianceWidget";
+import SalesSummaryWidget from "./SalesSummaryWidget";
+import InventoryStatusWidget from "./InventoryStatusWidget";
 
 export {
   RecentActivityWidget,
@@ -79,6 +81,8 @@ export {
   DamageRateTrendWidget,
   ExpirationTimelineWidget,
   FEFOComplianceWidget,
+  SalesSummaryWidget,
+  InventoryStatusWidget,
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -122,4 +126,6 @@ export const ADMIN_WIDGET_COMPONENTS: Record<string, React.ComponentType<any>> =
   "damage-rate-trend": DamageRateTrendWidget,
   "expiration-timeline": ExpirationTimelineWidget,
   "fefo-compliance": FEFOComplianceWidget,
+  "sales-summary": SalesSummaryWidget,
+  "inventory-status-breakdown": InventoryStatusWidget,
 };

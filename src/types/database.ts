@@ -1,4 +1,5 @@
 export type InboundStatus = 'ordered' | 'in_transit' | 'arrived' | 'received'
+export type AppointmentStatus = 'pending_approval' | 'approved' | 'rejected'
 export type OutboundStatus = 'pending' | 'confirmed' | 'processing' | 'packed' | 'shipped' | 'delivered'
 export type UserRole = 'admin' | 'warehouse' | 'viewer'
 
@@ -470,7 +471,7 @@ export interface ChecklistCompletion {
   created_at: string
 }
 
-export type ContainerType = 'bottle' | 'can' | 'keg' | 'bag_in_box' | 'other';
+export type ContainerType = 'bottle' | 'can' | 'keg' | 'bag_in_box' | 'gift_box' | 'other';
 
 // Client Industry and Workflow Profiles
 // Expanded to support more specific product types - clients can have multiple
@@ -487,7 +488,7 @@ export type ClientIndustry =
   | 'general_merchandise'; // General merchandise, other
 
 // Pick strategy for outbound orders
-export type PickStrategy = 'FEFO' | 'FIFO' | 'LIFO'
+export type PickStrategy = 'FEFO' | 'FIFO' | 'LIFO' | 'SERIAL'
 
 // Billing model types
 export type BillingModel = 'per_order' | 'per_unit' | 'monthly' | 'custom'
@@ -575,6 +576,7 @@ export interface WorkflowProfile {
   billing_pick_rate: number | null
   billing_pack_rate: number | null
   billing_minimum_monthly: number | null
+  billing_handling_fee: number | null
 
   // === INTEGRATION SETTINGS ===
   integration_auto_import_orders: boolean
@@ -686,6 +688,9 @@ export interface Product {
   container_type: ContainerType
   // Optional workflow override (if client allows)
   workflow_profile_id: string | null
+  // Velocity-based reorder fields
+  lead_time_days: number
+  velocity_reorder_enabled: boolean
 }
 
 export interface Location {
@@ -805,6 +810,14 @@ export interface InboundOrder {
   notes: string | null
   created_by: string | null
   created_at: string
+  carrier: string | null
+  tracking_number: string | null
+  preferred_time_slot: string | null
+  // Dock appointment approval
+  appointment_status: AppointmentStatus | null
+  appointment_approved_by: string | null
+  appointment_approved_at: string | null
+  appointment_rejection_reason: string | null
   // Shopify incoming inventory sync tracking
   shopify_incoming_synced: boolean
   shopify_incoming_synced_at: string | null
@@ -1078,8 +1091,6 @@ export type ProductType =
   | 'pharma'
   | 'hazmat'
   | 'general'
-
-export type PickStrategy = 'FIFO' | 'FEFO' | 'LIFO' | 'SERIAL'
 
 export interface ProductTypeConfig {
   id: string

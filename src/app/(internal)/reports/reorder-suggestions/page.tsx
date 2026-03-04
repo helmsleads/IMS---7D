@@ -121,14 +121,14 @@ export default function ReorderSuggestionsPage() {
             columns={[
               {
                 key: "sku",
-                label: "SKU",
+                header: "SKU",
                 render: (row: ReorderSuggestion) => (
                   <span className="font-medium text-gray-900">{row.sku}</span>
                 ),
               },
               {
                 key: "productName",
-                label: "Product",
+                header: "Product",
                 render: (row: ReorderSuggestion) => (
                   <div>
                     <p className="text-gray-900">{row.productName}</p>
@@ -140,7 +140,7 @@ export default function ReorderSuggestionsPage() {
               },
               {
                 key: "currentQty",
-                label: "On Hand",
+                header: "On Hand",
                 render: (row: ReorderSuggestion) => (
                   <span className={row.currentQty === 0 ? "text-red-600 font-medium" : "text-gray-900"}>
                     {row.currentQty.toLocaleString()}
@@ -149,19 +149,72 @@ export default function ReorderSuggestionsPage() {
               },
               {
                 key: "reorderPoint",
-                label: "Reorder At",
+                header: "Reorder At",
                 render: (row: ReorderSuggestion) => (
                   <span className="text-gray-600">{row.reorderPoint.toLocaleString()}</span>
                 ),
               },
               {
+                key: "velocity",
+                header: "Velocity",
+                render: (row: ReorderSuggestion) => (
+                  <span className="text-gray-600">
+                    {row.avgDailyVelocity > 0 ? `${row.avgDailyVelocity}/day` : "—"}
+                  </span>
+                ),
+              },
+              {
+                key: "daysOfStock",
+                header: "Days of Stock",
+                render: (row: ReorderSuggestion) => {
+                  if (row.avgDailyVelocity === 0) {
+                    return (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-500">
+                        No recent sales
+                      </span>
+                    );
+                  }
+                  if (row.daysOfStock <= 7) {
+                    return (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">
+                        {row.daysOfStock}d
+                      </span>
+                    );
+                  }
+                  if (row.daysOfStock <= 14) {
+                    return (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                        {row.daysOfStock}d
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+                      {row.daysOfStock}d
+                    </span>
+                  );
+                },
+              },
+              {
+                key: "method",
+                header: "Method",
+                render: (row: ReorderSuggestion) =>
+                  row.velocityBased ? (
+                    <Badge variant="info">Velocity</Badge>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
+                      Manual
+                    </span>
+                  ),
+              },
+              {
                 key: "urgency",
-                label: "Urgency",
+                header: "Urgency",
                 render: (row: ReorderSuggestion) => getUrgencyBadge(row.currentQty, row.reorderPoint),
               },
               {
                 key: "suggestedQty",
-                label: "Suggested Order",
+                header: "Suggested Order",
                 render: (row: ReorderSuggestion) => (
                   <span className="font-medium text-blue-600">
                     {row.suggestedQty.toLocaleString()} units
@@ -170,14 +223,14 @@ export default function ReorderSuggestionsPage() {
               },
               {
                 key: "supplier",
-                label: "Supplier",
+                header: "Supplier",
                 render: (row: ReorderSuggestion) => (
                   <span className="text-gray-600">{row.supplier || "—"}</span>
                 ),
               },
               {
                 key: "actions",
-                label: "",
+                header: "",
                 render: (row: ReorderSuggestion) => (
                   <Button
                     variant="secondary"

@@ -181,21 +181,21 @@ export default function PortalLotsPage() {
         <Filter className="w-4 h-4 text-gray-400" />
         <div className="flex gap-2">
           <Button
-            variant={filter === "all" ? "primary" : "outline"}
+            variant={filter === "all" ? "primary" : "secondary"}
             size="sm"
             onClick={() => setFilter("all")}
           >
             All Lots
           </Button>
           <Button
-            variant={filter === "expiring" ? "primary" : "outline"}
+            variant={filter === "expiring" ? "primary" : "secondary"}
             size="sm"
             onClick={() => setFilter("expiring")}
           >
             Expiring Soon
           </Button>
           <Button
-            variant={filter === "expired" ? "primary" : "outline"}
+            variant={filter === "expired" ? "primary" : "secondary"}
             size="sm"
             onClick={() => setFilter("expired")}
           >

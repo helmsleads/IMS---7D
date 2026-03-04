@@ -61,16 +61,6 @@ export const PORTAL_WIDGETS: WidgetConfig[] = [
     defaultSize: "half",
     previewType: "list",
   },
-  {
-    id: "quick-actions",
-    title: "Quick Actions",
-    description: "Shortcuts to common portal tasks",
-    category: "core",
-    defaultEnabled: true,
-    defaultOrder: 6,
-    defaultSize: "half",
-    previewType: "action-grid",
-  },
   // ── New portal widgets ──
   {
     id: "inventory-value-over-time",

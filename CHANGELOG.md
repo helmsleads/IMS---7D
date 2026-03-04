@@ -1,5 +1,271 @@
 # Changelog
 
+## [2.7.0] - 2026-03-03
+
+### Overview
+
+Dock appointment system with calendar-based scheduling, capacity limits, and admin approval workflow. Clients book dock time slots through an availability calendar; admins approve or reject each appointment.
+
+---
+
+### New Features
+
+#### Dock Appointment Calendar (Portal)
+Replaced the basic date input and AM/PM buttons in Schedule Arrival with a full month calendar.
+
+- **Custom month calendar:** CSS grid (7 cols), month navigation, past dates disabled
+- **Color-coded availability:** Green (both slots open), amber (one full), red (both full), gray (past)
+- **Slot picker:** AM/PM cards below calendar showing time ranges and "X of Y booked" counts
+- **Full slots disabled:** Cannot select a slot that has reached capacity
+- **Capacity-aware:** Pending and approved appointments both count against capacity; only rejected orders are excluded
+
+**Files:** `src/components/portal/DockCalendar.tsx` (new), `src/components/portal/ScheduleArrivalForm.tsx`
+
+#### Appointment Approval Workflow
+All portal-submitted arrivals now require admin approval before the dock slot is confirmed.
+
+- **Portal submit:** Creates inbound order with `appointment_status = 'pending_approval'`
+- **Portal arrivals page:** Shows appointment status badge (amber "Pending Approval" / green "Approved" / red "Rejected") on each card and in the detail modal
+- **Portal rejection alert:** Detail modal shows a red alert box with the rejection reason
+- **Admin inbound list:** "Pending Approval" quick-filter button with live count badge; amber "Appt" indicator in the status column
+- **Admin inbound detail:** Dock Appointment section in sidebar with Approve and Reject buttons
+- **Reject modal:** Textarea for rejection reason, required before confirming
+- **Notifications:** Approve/reject actions send portal messages via `sendPortalOrderNotification` ("approved for dock appointment" / "declined for dock appointment")
+- **Activity logging:** Both actions logged to `activity_log`
+
+**Files:** `src/lib/api/dock-appointments.ts` (new), `src/app/(portal)/portal/arrivals/page.tsx`, `src/app/(internal)/inbound/page.tsx`, `src/app/(internal)/inbound/[id]/page.tsx`, `src/lib/api/notifications.ts`
+
+#### Dock Scheduling Settings
+Admins can configure dock capacity and time windows from System Settings.
+
+- **Max Appointments Per Slot:** Number input (default 3)
+- **AM/PM Window Start/End:** Text inputs for 24h time format (defaults: 08:00–12:00, 12:00–17:00)
+- Settings seeded into `system_settings` (category: `dock`) via migration
+
+**Files:** `src/app/(internal)/settings/system/page.tsx`, `supabase/migrations/20260303_dock_appointments.sql`
+
+---
+
+### Database Changes
+
+**Migration:** `supabase/migrations/20260303_dock_appointments.sql`
+
+| Change | Detail |
+|--------|--------|
+| `inbound_orders.appointment_status` | VARCHAR(20), nullable — `pending_approval` / `approved` / `rejected` |
+| `inbound_orders.appointment_approved_by` | UUID FK to `users(id)` |
+| `inbound_orders.appointment_approved_at` | TIMESTAMPTZ |
+| `inbound_orders.appointment_rejection_reason` | TEXT |
+| Partial index | `idx_inbound_orders_appointment_status` WHERE `appointment_status IS NOT NULL` |
+| `system_settings` seeds | 5 rows in category `dock` (capacity + time windows) |
+
+---
+
+### API Layer
+
+**New file:** `src/lib/api/dock-appointments.ts`
+
+| Function | Description |
+|----------|-------------|
+| `getDockCapacity()` | Reads dock settings from `system_settings`, returns max per slot + time windows |
+| `getMonthAvailability(year, month)` | Counts bookings per date/slot for the month (excludes rejected) |
+| `getSlotAvailability(date)` | Returns booked/max/available for AM and PM on a single date |
+| `approveAppointment(orderId)` | Sets status to `approved`, logs activity, notifies client |
+| `rejectAppointment(orderId, reason)` | Sets status to `rejected` with reason, logs activity, notifies client |
+| `getPendingAppointmentCount()` | Count of `appointment_status = 'pending_approval'` |
+
+---
+
+### Files Changed
+
+**Created (3):**
+1. `supabase/migrations/20260303_dock_appointments.sql` — Appointment columns, index, dock settings seeds
+2. `src/lib/api/dock-appointments.ts` — Dock capacity, availability, approve/reject API
+3. `src/components/portal/DockCalendar.tsx` — Month calendar with availability and slot picker
+
+**Modified (8):**
+1. `src/types/database.ts` — Added `AppointmentStatus` type + 4 appointment fields on `InboundOrder`
+2. `src/lib/api/inbound.ts` — Appointment fields on interfaces, passed through in `createInboundOrder()`
+3. `src/lib/api/notifications.ts` — Added `appointment_approved` / `appointment_rejected` status labels
+4. `src/components/portal/ScheduleArrivalForm.tsx` — Replaced date/time inputs with DockCalendar, submits as `pending_approval`
+5. `src/app/(portal)/portal/arrivals/page.tsx` — Appointment badges on cards + detail modal, rejection reason alert
+6. `src/app/(internal)/inbound/page.tsx` — Pending Approval filter button with count, amber Appt indicator
+7. `src/app/(internal)/inbound/[id]/page.tsx` — Dock Appointment sidebar section with Approve/Reject, reject modal
+8. `src/app/(internal)/settings/system/page.tsx` — Dock Scheduling settings category
+
+---
+
+## [2.6.0] - 2026-03-03
+
+### Overview
+
+Account manager assignment for clients, admin dashboard improvements, messaging system fixes, and low stock alert accuracy.
+
+---
+
+### New Features
+
+#### Client Account Manager Assignment
+Each client can now be assigned a staff member as their account manager.
+
+- **Database:** New `account_manager_id` column on `clients` referencing `public.users`, with index
+- **Client Form:** Account Manager dropdown in Settings card, populated from active staff via `getInternalUsers()`
+- **Client List:** New "Account Manager" column between Location and Status
+- **Client Detail:** Account Manager row in Account Status card (shows name or "Unassigned")
+- **Portal Dashboard:** Hero banner shows "Your account manager: {name}" when assigned
+- **API:** `getClients()` and `getClient()` join `users!account_manager_id(id, name)` — no extra queries needed
+
+**Files:** `supabase/migrations/20260303_client_account_manager.sql` (new), `src/lib/api/clients.ts`, `src/components/internal/ClientForm.tsx`, `src/app/(internal)/clients/page.tsx`, `src/app/(internal)/clients/[id]/page.tsx`, `src/app/(portal)/portal/dashboard/page.tsx`
+
+#### Admin Dashboard Improvements
+- **Proper display name:** Greeting now fetches the user's name from the `users` table instead of splitting the email prefix (was showing "sam" instead of "Sam")
+- **Contextual summary:** New subtitle below greeting: "2 pending orders · 219 low stock alerts" (or "All clear" when nothing urgent)
+- **Quick action buttons:** New Inbound, New Outbound, and Adjust Stock shortcuts in the hero banner
+
+**File:** `src/app/(internal)/dashboard/page.tsx`
+
+---
+
+### Bug Fixes
+
+#### Low Stock Alerts Showing Inactive Client Products
+Low stock alerts were including products from inactive/disabled clients (e.g., Casa Malka). Fixed in 3 places:
+
+| Location | Fix |
+|----------|-----|
+| Dashboard stat count | Joins `products!inner > clients!inner`, filters `client.active = true` |
+| Low Stock Alerts widget (`getLowStockItems`) | Same inner join + filter |
+| Daily cron email (`/api/cron/daily-low-stock-alerts`) | Added `client:clients!inner(active)` join + `.eq("product.client.active", true)` |
+
+**Files:** `src/lib/api/dashboard.ts`, `src/app/api/cron/daily-low-stock-alerts/route.ts`
+
+#### Portal Dashboard `order_number` Column Error
+`inbound_orders` uses `po_number`, not `order_number`. Fixed the arrivals query and its mapping reference.
+
+**File:** `src/app/(portal)/portal/dashboard/page.tsx`
+
+---
+
+### Messaging System Improvements
+
+Seven fixes to the admin and portal messaging system:
+
+#### 1. Real-Time Message Delivery (Admin + Portal)
+Added Supabase realtime subscriptions so new messages appear instantly without page refresh.
+
+- **Per-conversation channel:** Subscribes to `INSERT` (new messages appear live) and `UPDATE` (read receipts update in real-time)
+- **Global channel:** Refreshes conversation list when any new message arrives (updates unread badges and previews)
+- **Deduplication:** Own messages added optimistically are not duplicated by realtime events
+- **Cleanup:** Channels unsubscribe on component unmount or conversation change
+
+**Files:** `src/app/(internal)/messages/page.tsx`, `src/app/(portal)/portal/messages/page.tsx`
+
+#### 2. Fixed Portal Auto-Mark-As-Read
+Previously, `getMyConversation()` silently marked ALL staff messages as read on fetch. This meant the admin could never tell if the client actually read a message — it was always marked "read" as soon as the conversation list loaded.
+
+- Removed auto-mark from `getMyConversation()` API function
+- Added new `markConversationRead()` function called explicitly from the UI when the user actively selects a conversation
+- Admin read receipts now accurately reflect client engagement
+
+**File:** `src/lib/api/portal-messages.ts`, `src/app/(portal)/portal/messages/page.tsx`
+
+#### 3. Closed Conversation Guard on Admin API
+`sendMessage()` now verifies the conversation is open before inserting. Previously only the portal API had this check — the admin API allowed sending to closed conversations.
+
+**File:** `src/lib/api/messages.ts`
+
+#### 4. N+1 Query Fix for Portal Unread Count
+`getMyUnreadCount()` reduced from 2 sequential queries (fetch conversation IDs, then count messages) to 1 query using an inner join on conversations.
+
+**File:** `src/lib/api/portal-messages.ts`
+
+#### 5. Activity Logging for Message Sends
+`sendMessage()` (admin) and `sendPortalMessage()` (portal) now log to `activity_log` for audit trail. Previously only `startConversation()` logged activity.
+
+**Files:** `src/lib/api/messages.ts`, `src/lib/api/portal-messages.ts`
+
+#### 6. Network Error Logging for Unread Count
+`getUnreadCount()` now logs `console.warn` on network errors instead of silently returning 0. Still returns 0 to allow retry on next poll, but failures are now visible in dev tools.
+
+**File:** `src/lib/api/messages.ts`
+
+---
+
+### Files Changed
+
+**Created (1):**
+1. `supabase/migrations/20260303_client_account_manager.sql` — Add account_manager_id to clients
+
+**Modified (11):**
+1. `src/lib/api/clients.ts` — Added account_manager_id/account_manager to Client interface, joined in queries
+2. `src/components/internal/ClientForm.tsx` — Account Manager select dropdown
+3. `src/app/(internal)/clients/page.tsx` — Account Manager column + pass field on save
+4. `src/app/(internal)/clients/[id]/page.tsx` — Account Manager in Account Status card
+5. `src/app/(portal)/portal/dashboard/page.tsx` — Account manager in hero banner, fixed po_number bug
+6. `src/app/(internal)/dashboard/page.tsx` — Proper name fetch, contextual summary, quick actions
+7. `src/lib/api/dashboard.ts` — Low stock queries filter by active clients
+8. `src/app/api/cron/daily-low-stock-alerts/route.ts` — Low stock cron filters by active clients
+9. `src/lib/api/messages.ts` — Closed conversation guard, activity logging, network error logging
+10. `src/lib/api/portal-messages.ts` — Separated markConversationRead, N+1 fix, activity logging
+11. `src/app/(internal)/messages/page.tsx` — Realtime subscriptions for messages
+12. `src/app/(portal)/portal/messages/page.tsx` — Realtime subscriptions for messages
+
+---
+
+## [2.5.0] - 2026-03-03
+
+### Overview
+
+Portal Schedule Arrival feature and Shopify location deactivation fix.
+
+---
+
+### New Features
+
+#### Schedule Arrival Page (Portal)
+Clients can now notify the warehouse of incoming deliveries via a 3-step wizard at `/portal/schedule-arrival`.
+
+- **Step 1: Select Products** — Browse client's product catalog, search by name/SKU, add quantities
+- **Step 2: Delivery Details** — Requested date (required), AM/PM time slot (required), carrier (optional dropdown), tracking number (optional), special instructions
+- **Step 3: Review & Submit** — Full summary with edit links, creates `inbound_orders` record in "ordered" status + `inbound_items` rows, redirects to Arrivals page
+
+**Database:** Added `carrier`, `tracking_number`, `preferred_time_slot` columns to `inbound_orders`
+**Nav:** "Schedule Arrival" link added to portal sidebar under Orders & Shipping
+
+#### Enhanced Arrival/Inbound Detail Views
+- **Portal Arrivals modal** — Now shows expected date, preferred time slot, and carrier in a delivery info section
+- **Admin Inbound Detail** — Displays carrier, tracking number, and preferred time slot in the order info sidebar
+
+### Bug Fixes
+
+#### Shopify Location Deactivation
+Previously `deactivateShopifyLocation()` was a stub that logged a warning and returned `false`. Now fully implemented:
+1. Fetches all inventory levels at the location
+2. Zeroes out non-zero inventory (required by Shopify before deactivation)
+3. Deactivates location via GraphQL `locationDeactivate` mutation
+4. Wired into the disconnect route (best-effort, only for locations we created)
+
+**Files:** `src/lib/api/shopify/location-management.ts`, `src/app/api/integrations/shopify/[integrationId]/route.ts`
+
+---
+
+### Files Changed
+
+**Created (2):**
+1. `supabase/migrations/20260303_inbound_carrier_tracking.sql` — Add carrier, tracking_number, preferred_time_slot to inbound_orders
+2. `src/app/(portal)/portal/schedule-arrival/page.tsx` — 3-step wizard page
+
+**Modified (7):**
+1. `src/types/database.ts` — Added 3 fields to InboundOrder
+2. `src/lib/api/inbound.ts` — Added 3 fields to CreateInboundOrderData and createInboundOrder insert
+3. `src/components/portal/PortalSidebar.tsx` — Added "Schedule Arrival" nav link
+4. `src/app/(portal)/portal/arrivals/page.tsx` — Added preferred_time_slot to detail interface/query/modal
+5. `src/app/(internal)/inbound/[id]/page.tsx` — Display carrier/tracking/time slot in order info sidebar
+6. `src/lib/api/shopify/location-management.ts` — Implemented deactivateShopifyLocation
+7. `src/app/api/integrations/shopify/[integrationId]/route.ts` — Wired location deactivation into disconnect flow
+
+---
+
 ## [2.4.1] - 2026-02-23
 
 ### Overview

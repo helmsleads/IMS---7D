@@ -10,6 +10,7 @@ import FetchError from "@/components/ui/FetchError";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
 import { getMyProductValues, updateMyProductValue, ProductValue } from "@/lib/api/portal-profitability";
+import { updateProduct } from "@/lib/api/products";
 import { handleApiError } from "@/lib/utils/error-handler";
 
 interface InventoryItem {
@@ -21,6 +22,7 @@ interface InventoryItem {
   reorder_point: number;
   image_url: string | null;
   category: string | null;
+  active: boolean;
 }
 
 interface CartItem {
@@ -70,6 +72,10 @@ export default function PortalInventoryPage() {
   const [editCost, setEditCost] = useState<string>("");
   const [savingValue, setSavingValue] = useState(false);
 
+  // Active status filter & toggle
+  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive">("all");
+  const [togglingActiveIds, setTogglingActiveIds] = useState<Set<string>>(new Set());
+
   // Alert state
   const [alert, setAlert] = useState<{type: 'success' | 'error', message: string} | null>(null);
 
@@ -90,32 +96,40 @@ export default function PortalInventoryPage() {
 
     const supabase = createClient();
 
-    const { data, error: fetchErr } = await supabase
-      .from("inventory")
-      .select(`
-        id,
-        qty_on_hand,
-        product:products!inner (
+    // Fetch inventory rows and all client products in parallel
+    const [invResult, productsResult] = await Promise.all([
+      supabase
+        .from("inventory")
+        .select(`
           id,
-          name,
-          sku,
-          image_url,
-          reorder_point,
-          category,
-          client_id
-        )
-      `)
-      .eq("product.client_id", client.id)
-      .order("qty_on_hand", { ascending: false });
+          qty_on_hand,
+          product:products!inner (
+            id,
+            name,
+            sku,
+            image_url,
+            reorder_point,
+            category,
+            client_id,
+            active
+          )
+        `)
+        .eq("product.client_id", client.id)
+        .order("qty_on_hand", { ascending: false }),
+      supabase
+        .from("products")
+        .select("id, name, sku, image_url, reorder_point, category, active")
+        .eq("client_id", client.id),
+    ]);
 
-    if (fetchErr) {
-      setError(fetchErr.message || "Failed to load inventory data.");
+    if (invResult.error) {
+      setError(invResult.error.message || "Failed to load inventory data.");
       setLoading(false);
       setRefreshing(false);
       return;
     }
 
-    const inventoryItems = (data || []).map((item) => {
+    const inventoryItems = (invResult.data || []).map((item) => {
       const product = Array.isArray(item.product) ? item.product[0] : item.product;
 
       return {
@@ -127,8 +141,27 @@ export default function PortalInventoryPage() {
         reorder_point: product?.reorder_point || 0,
         image_url: product?.image_url || null,
         category: product?.category || null,
+        active: product?.active !== false,
       };
     });
+
+    // Add products with no inventory record as zero-stock items
+    const productIdsWithInventory = new Set(inventoryItems.map((i) => i.product_id));
+    for (const product of productsResult.data || []) {
+      if (!productIdsWithInventory.has(product.id)) {
+        inventoryItems.push({
+          id: `no-inv-${product.id}`,
+          product_id: product.id,
+          product_name: product.name || "Unknown",
+          sku: product.sku || "",
+          qty_on_hand: 0,
+          reorder_point: product.reorder_point || 0,
+          image_url: product.image_url || null,
+          category: product.category || null,
+          active: product.active !== false,
+        });
+      }
+    }
 
     setInventory(inventoryItems);
     setError(null);
@@ -153,6 +186,30 @@ export default function PortalInventoryPage() {
       setProductValues(valueMap);
     } catch (error) {
       console.error("Failed to fetch product values:", error);
+    }
+  };
+
+  const handleToggleActive = async (item: InventoryItem) => {
+    const newActive = !item.active;
+    // Optimistic update
+    setInventory((prev) =>
+      prev.map((i) => (i.product_id === item.product_id ? { ...i, active: newActive } : i))
+    );
+    setTogglingActiveIds((prev) => new Set(prev).add(item.product_id));
+    try {
+      await updateProduct(item.product_id, { active: newActive });
+    } catch (err) {
+      // Revert on error
+      setInventory((prev) =>
+        prev.map((i) => (i.product_id === item.product_id ? { ...i, active: !newActive } : i))
+      );
+      setAlert({ type: 'error', message: 'Failed to update product status' });
+    } finally {
+      setTogglingActiveIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.product_id);
+        return next;
+      });
     }
   };
 
@@ -241,11 +298,17 @@ export default function PortalInventoryPage() {
     const matchesCategory =
       categoryFilter === "all" || item.category === categoryFilter;
 
-    // Status filter
+    // Stock status filter
     const itemStatus = getItemStockStatus(item.qty_on_hand, item.reorder_point);
     const matchesStatus = statusFilter === "all" || itemStatus === statusFilter;
 
-    return matchesSearch && matchesCategory && matchesStatus;
+    // Active/Inactive filter
+    const matchesActive =
+      activeFilter === "all" ||
+      (activeFilter === "active" && item.active) ||
+      (activeFilter === "inactive" && !item.active);
+
+    return matchesSearch && matchesCategory && matchesStatus && matchesActive;
   });
 
   const getStockStatus = (qty: number, reorderPoint: number) => {
@@ -438,6 +501,20 @@ export default function PortalInventoryPage() {
           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
         </div>
 
+        {/* Active Filter */}
+        <div className="relative">
+          <select
+            value={activeFilter}
+            onChange={(e) => setActiveFilter(e.target.value as "all" | "active" | "inactive")}
+            className="appearance-none w-full sm:w-40 px-4 py-3 pr-10 border border-slate-200 rounded-lg bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
+          >
+            <option value="all">All Products</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+        </div>
+
         {/* View Toggle */}
         <div className="flex border border-slate-200 rounded-lg overflow-hidden">
           <button
@@ -595,6 +672,27 @@ export default function PortalInventoryPage() {
                       {item.product_name}
                     </Link>
                     <p className="text-sm text-slate-500 font-mono mt-1">{item.sku}</p>
+
+                    {/* Active Toggle */}
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={item.active}
+                        onClick={() => handleToggleActive(item)}
+                        disabled={togglingActiveIds.has(item.product_id)}
+                        className={`relative inline-flex items-center h-5 w-9 rounded-full transition-colors disabled:opacity-50 ${
+                          item.active ? "bg-cyan-600" : "bg-slate-200"
+                        }`}
+                      >
+                        <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+                          item.active ? "translate-x-4" : "translate-x-0.5"
+                        }`} />
+                      </button>
+                      <span className={`text-xs font-medium ${item.active ? "text-cyan-700" : "text-slate-400"}`}>
+                        {item.active ? "Active" : "Inactive — no low stock alerts"}
+                      </span>
+                    </div>
 
                     {/* Quantity */}
                     <div className="mt-4 pt-4 border-t border-slate-100">
@@ -754,6 +852,9 @@ export default function PortalInventoryPage() {
                       Status
                     </th>
                     <th className="text-center py-4 px-4 text-sm font-semibold text-slate-600">
+                      Alerts
+                    </th>
+                    <th className="text-center py-4 px-4 text-sm font-semibold text-slate-600">
                       Action
                     </th>
                   </tr>
@@ -857,6 +958,27 @@ export default function PortalInventoryPage() {
                         </td>
                         <td className="py-4 px-4">
                           <div className="flex items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={item.active}
+                              onClick={() => handleToggleActive(item)}
+                              disabled={togglingActiveIds.has(item.product_id)}
+                              className={`relative inline-flex items-center h-5 w-9 rounded-full transition-colors disabled:opacity-50 ${
+                                item.active ? "bg-cyan-600" : "bg-slate-200"
+                              }`}
+                            >
+                              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+                                item.active ? "translate-x-4" : "translate-x-0.5"
+                              }`} />
+                            </button>
+                            <span className={`text-xs whitespace-nowrap ${item.active ? "text-cyan-700" : "text-slate-400"}`}>
+                              {item.active ? "On" : "Off"}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex items-center justify-center gap-2">
                             {(showSalePrice || showCost || showMargin) && (
                               editingValueId === item.product_id ? (
                                 <>
@@ -905,7 +1027,7 @@ export default function PortalInventoryPage() {
       ) : (
         <div className="bg-white rounded-lg border border-slate-200 p-12 text-center text-slate-500">
           <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-          {searchQuery || categoryFilter !== "all" || statusFilter !== "all" ? (
+          {searchQuery || categoryFilter !== "all" || statusFilter !== "all" || activeFilter !== "all" ? (
             <>
               <p className="text-lg">No products match your filters</p>
               <button
@@ -913,6 +1035,7 @@ export default function PortalInventoryPage() {
                   setSearchQuery("");
                   setCategoryFilter("all");
                   setStatusFilter("all");
+                  setActiveFilter("all");
                 }}
                 className="text-cyan-600 hover:underline mt-2"
               >

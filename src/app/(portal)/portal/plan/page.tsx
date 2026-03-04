@@ -1,34 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  CreditCard,
-  FileText,
-  Download,
-  Eye,
-  Clock,
-  AlertCircle,
-  CheckCircle,
-  XCircle,
-} from "lucide-react";
+import { CreditCard } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import Card from "@/components/ui/Card";
 import { getMyPlan, MyPlan } from "@/lib/api/portal-services";
-import {
-  getMyInvoices,
-  getMyInvoiceSummary,
-  PortalInvoice,
-  InvoiceSummary,
-} from "@/lib/api/portal-billing";
-
-type TabType = "plan" | "invoices";
 
 export default function PortalPlanPage() {
   const { client } = useClient();
-  const [activeTab, setActiveTab] = useState<TabType>("plan");
   const [myPlan, setMyPlan] = useState<MyPlan | null>(null);
-  const [invoices, setInvoices] = useState<PortalInvoice[]>([]);
-  const [invoiceSummary, setInvoiceSummary] = useState<InvoiceSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -36,17 +16,10 @@ export default function PortalPlanPage() {
       if (!client) return;
 
       try {
-        const [planData, invoicesData, summaryData] = await Promise.all([
-          getMyPlan(client.id),
-          getMyInvoices(client.id),
-          getMyInvoiceSummary(client.id),
-        ]);
-
+        const planData = await getMyPlan(client.id);
         setMyPlan(planData);
-        setInvoices(invoicesData);
-        setInvoiceSummary(summaryData);
       } catch (error) {
-        console.error("Failed to fetch data:", error);
+        console.error("Failed to fetch plan data:", error);
       } finally {
         setLoading(false);
       }
@@ -72,53 +45,6 @@ export default function PortalPlanPage() {
     });
   };
 
-  const getStatusBadge = (status: string, dueDate: string | null) => {
-    const today = new Date().toISOString().split("T")[0];
-    const isOverdue = status === "sent" && dueDate && dueDate < today;
-
-    if (status === "paid") {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-          <CheckCircle className="w-3 h-3" />
-          Paid
-        </span>
-      );
-    }
-
-    if (isOverdue) {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-          <AlertCircle className="w-3 h-3" />
-          Overdue
-        </span>
-      );
-    }
-
-    if (status === "sent") {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium">
-          <Clock className="w-3 h-3" />
-          Due
-        </span>
-      );
-    }
-
-    if (status === "cancelled") {
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
-          <XCircle className="w-3 h-3" />
-          Cancelled
-        </span>
-      );
-    }
-
-    return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium capitalize">
-        {status}
-      </span>
-    );
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -131,41 +57,13 @@ export default function PortalPlanPage() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">My Plan & Billing</h1>
-        <p className="text-gray-500 mt-1">
-          Manage your service plan and view invoices
+        <h1 className="text-2xl font-bold text-slate-900">My Plan</h1>
+        <p className="text-slate-500 mt-1">
+          View your current service plan
         </p>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="flex gap-2 border-b border-gray-200">
-        <button
-          onClick={() => setActiveTab("plan")}
-          className={`flex items-center gap-2 px-6 py-3 font-medium transition-colors ${
-            activeTab === "plan"
-              ? "text-blue-600 border-b-2 border-blue-600"
-              : "text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          <CreditCard className="w-4 h-4" />
-          My Plan
-        </button>
-        <button
-          onClick={() => setActiveTab("invoices")}
-          className={`flex items-center gap-2 px-6 py-3 font-medium transition-colors ${
-            activeTab === "invoices"
-              ? "text-blue-600 border-b-2 border-blue-600"
-              : "text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          Invoices
-        </button>
-      </div>
-
-      {/* My Plan Tab */}
-      {activeTab === "plan" && (
-        <div className="space-y-6">
+      <div className="space-y-6">
           {/* Services Included */}
           <Card>
             <div className="flex items-start justify-between mb-4">
@@ -259,10 +157,10 @@ export default function PortalPlanPage() {
               <div className="text-center py-6 text-gray-500">
                 <p>No active services</p>
                 <a
-                  href="/portal/services"
-                  className="text-blue-600 hover:underline text-sm mt-1 inline-block"
+                  href="/portal/messages"
+                  className="text-cyan-600 hover:underline text-sm mt-1 inline-block"
                 >
-                  Browse available services
+                  Contact us to get started
                 </a>
               </div>
             )}
@@ -294,138 +192,6 @@ export default function PortalPlanPage() {
             </div>
           </Card>
         </div>
-      )}
-
-      {/* Invoices Tab */}
-      {activeTab === "invoices" && (
-        <div className="space-y-6">
-          {/* Invoice Summary */}
-          {invoiceSummary && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card>
-                <p className="text-sm text-gray-500">Total Invoices</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {invoiceSummary.totalInvoices}
-                </p>
-              </Card>
-              <Card>
-                <p className="text-sm text-gray-500">Total Paid</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {formatCurrency(invoiceSummary.totalPaid)}
-                </p>
-              </Card>
-              <Card>
-                <p className="text-sm text-gray-500">Outstanding</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {formatCurrency(invoiceSummary.totalOutstanding)}
-                </p>
-              </Card>
-              <Card>
-                <p className="text-sm text-gray-500">Overdue</p>
-                <p className={`text-2xl font-bold ${invoiceSummary.overdueCount > 0 ? "text-red-600" : "text-gray-900"}`}>
-                  {invoiceSummary.overdueCount > 0
-                    ? formatCurrency(invoiceSummary.overdueAmount)
-                    : "$0.00"}
-                </p>
-                {invoiceSummary.overdueCount > 0 && (
-                  <p className="text-xs text-red-500">
-                    {invoiceSummary.overdueCount} invoice{invoiceSummary.overdueCount !== 1 ? "s" : ""}
-                  </p>
-                )}
-              </Card>
-            </div>
-          )}
-
-          {/* Invoice List */}
-          <Card>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Invoice History
-            </h2>
-
-            {invoices.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
-                        Invoice
-                      </th>
-                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
-                        Period
-                      </th>
-                      <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
-                        Due Date
-                      </th>
-                      <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">
-                        Amount
-                      </th>
-                      <th className="text-center py-3 px-4 text-sm font-medium text-gray-500">
-                        Status
-                      </th>
-                      <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {invoices.map((invoice) => (
-                      <tr
-                        key={invoice.id}
-                        className="border-b border-gray-100 last:border-0"
-                      >
-                        <td className="py-3 px-4">
-                          <p className="font-medium text-gray-900">
-                            {invoice.invoice_number}
-                          </p>
-                        </td>
-                        <td className="py-3 px-4 text-sm text-gray-600">
-                          {formatDate(invoice.period_start)} -{" "}
-                          {formatDate(invoice.period_end)}
-                        </td>
-                        <td className="py-3 px-4 text-sm text-gray-600">
-                          {formatDate(invoice.due_date)}
-                        </td>
-                        <td className="py-3 px-4 text-right font-medium text-gray-900">
-                          {formatCurrency(invoice.total)}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          {getStatusBadge(invoice.status, invoice.due_date)}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-3">
-                            <a
-                              href={`/portal/plan/invoice/${invoice.id}`}
-                              className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium"
-                            >
-                              <Eye className="w-4 h-4" />
-                              View
-                            </a>
-                            <a
-                              href={`/portal/plan/invoice/${invoice.id}/pdf`}
-                              className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-700 font-medium"
-                            >
-                              <Download className="w-4 h-4" />
-                              PDF
-                            </a>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p>No invoices yet</p>
-                <p className="text-sm mt-1">
-                  Invoices will appear here once generated
-                </p>
-              </div>
-            )}
-          </Card>
-        </div>
-      )}
     </div>
   );
 }

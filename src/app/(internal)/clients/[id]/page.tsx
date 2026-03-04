@@ -134,7 +134,7 @@ export default function ClientDetailPage() {
   const [clientUsers, setClientUsers] = useState<ClientUserWithDetails[]>([]);
   const [clientUsersLoading, setClientUsersLoading] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [addUserMode, setAddUserMode] = useState<"invite" | "existing">("invite");
+  const [addUserMode, setAddUserMode] = useState<"create" | "existing">("existing");
   const [addUserFormData, setAddUserFormData] = useState({
     full_name: "",
     email: "",
@@ -500,7 +500,7 @@ export default function ClientDetailPage() {
     setSendInviteNow(true);
     setAddUserError(null);
     setAddUserSuccess(null);
-    setAddUserMode("invite");
+    setAddUserMode("create");
   };
 
   const handleAddUser = async (e: React.FormEvent, sendEmail: boolean = true) => {
@@ -515,7 +515,7 @@ export default function ClientDetailPage() {
     try {
       let result;
 
-      if (addUserMode === "invite") {
+      if (addUserMode === "create") {
         // Create/invite user
         if (!addUserFormData.email.trim()) {
           setAddUserError("Email is required");
@@ -1041,6 +1041,12 @@ export default function ClientDetailPage() {
                     }`}
                   >
                     {client.active ? "Active" : "Inactive"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Account Manager</span>
+                  <span className={client.account_manager?.name ? "text-gray-900" : "text-gray-400"}>
+                    {client.account_manager?.name || "Unassigned"}
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
@@ -2299,9 +2305,9 @@ export default function ClientDetailPage() {
               <div className="flex rounded-lg bg-gray-100 p-1">
                 <button
                   type="button"
-                  onClick={() => { setAddUserMode("invite"); setAddUserError(null); setAddUserSuccess(null); }}
+                  onClick={() => { setAddUserMode("create"); setAddUserError(null); setAddUserSuccess(null); }}
                   className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    addUserMode === "invite"
+                    addUserMode === "create"
                       ? "bg-white text-gray-900 shadow-sm"
                       : "text-gray-600 hover:text-gray-900"
                   }`}
@@ -2335,7 +2341,7 @@ export default function ClientDetailPage() {
                 </div>
               )}
 
-              {addUserMode === "invite" ? (
+              {addUserMode === "create" ? (
                 <>
                   <p className="text-sm text-gray-500">
                     Send an email invitation. The user will set their own password when they accept.
@@ -2449,7 +2455,7 @@ export default function ClientDetailPage() {
                 >
                   {addUserSuccess ? "Close" : "Cancel"}
                 </Button>
-                {!addUserSuccess && addUserMode === "invite" && (
+                {!addUserSuccess && addUserMode === "create" && (
                   <>
                     <Button
                       type="button"

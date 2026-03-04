@@ -162,7 +162,7 @@ export default function ReturnsSummaryReportPage() {
 
   // Calculate summary stats
   const totalItems = filteredReturns.reduce(
-    (sum, ret) => sum + ret.items.reduce((itemSum, item) => itemSum + (item.qty_expected || 0), 0),
+    (sum, ret) => sum + ret.items.reduce((itemSum, item) => itemSum + (item.qty_requested || 0), 0),
     0
   );
   const completedReturns = filteredReturns.filter((r) => r.status === "completed").length;
@@ -184,7 +184,7 @@ export default function ReturnsSummaryReportPage() {
 
     const rows = filteredReturns.map((ret) => {
       const itemsCount = ret.items.length;
-      const qtyExpected = ret.items.reduce((sum, item) => sum + (item.qty_expected || 0), 0);
+      const qtyExpected = ret.items.reduce((sum, item) => sum + (item.qty_requested || 0), 0);
       const qtyReceived = ret.items.reduce((sum, item) => sum + (item.qty_received || 0), 0);
 
       return [
@@ -491,7 +491,7 @@ export default function ReturnsSummaryReportPage() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredReturns.map((ret) => {
                     const qtyExpected = ret.items.reduce(
-                      (sum, item) => sum + (item.qty_expected || 0),
+                      (sum, item) => sum + (item.qty_requested || 0),
                       0
                     );
                     const qtyReceived = ret.items.reduce(

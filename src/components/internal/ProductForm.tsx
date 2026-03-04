@@ -36,6 +36,8 @@ export default function ProductForm({
   const [unitCost, setUnitCost] = useState(product?.unit_cost || 0);
   const [basePrice, setBasePrice] = useState(product?.base_price || 0);
   const [reorderPoint, setReorderPoint] = useState(product?.reorder_point || 0);
+  const [leadTimeDays, setLeadTimeDays] = useState((product as any)?.lead_time_days ?? 7);
+  const [velocityReorderEnabled, setVelocityReorderEnabled] = useState((product as any)?.velocity_reorder_enabled ?? false);
   const [barcode, setBarcode] = useState(product?.barcode || "");
   const [imageUrl, setImageUrl] = useState(product?.image_url || "");
   const [active, setActive] = useState(product?.active ?? true);
@@ -208,6 +210,8 @@ export default function ProductForm({
       unit_cost: unitCost,
       base_price: basePrice,
       reorder_point: reorderPoint,
+      lead_time_days: leadTimeDays,
+      velocity_reorder_enabled: velocityReorderEnabled,
       barcode: barcode || null,
       image_url: imageUrl || null,
       active,
@@ -370,6 +374,43 @@ export default function ProductForm({
             onChange={(e) => setReorderPoint(parseInt(e.target.value) || 0)}
             min={0}
           />
+        </div>
+        {/* Velocity-based reorder settings */}
+        <div className="mt-4 space-y-3">
+          <Input
+            label="Supplier Lead Time"
+            name="lead_time_days"
+            type="number"
+            value={leadTimeDays}
+            onChange={(e) => setLeadTimeDays(parseInt(e.target.value) || 7)}
+            min={1}
+            hint="Days from order to delivery"
+          />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={velocityReorderEnabled}
+              onClick={() => setVelocityReorderEnabled(!velocityReorderEnabled)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                velocityReorderEnabled ? "bg-indigo-600" : "bg-gray-200"
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  velocityReorderEnabled ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </button>
+            <label className="text-sm font-medium text-gray-700">
+              Auto-calculate reorder point from shipping velocity
+            </label>
+          </div>
+          {velocityReorderEnabled && (
+            <p className="text-xs text-indigo-600 ml-14">
+              Reorder point recalculated daily based on shipping velocity
+            </p>
+          )}
         </div>
       </div>
 

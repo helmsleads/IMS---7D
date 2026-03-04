@@ -61,9 +61,11 @@ export async function POST(request: NextRequest) {
         product_id,
         location_id,
         qty_on_hand,
-        product:products (id, sku, name, reorder_point),
+        product:products!inner (id, sku, name, reorder_point, active, client:clients!inner(active)),
         location:locations (id, name)
-      `);
+      `)
+      .eq("product.active", true)
+      .eq("product.client.active", true);
 
     if (invError) {
       throw new Error(`Failed to query inventory: ${invError.message}`);

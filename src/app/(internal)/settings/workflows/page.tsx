@@ -255,14 +255,15 @@ export default function WorkflowsPage() {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <Select
-            name="industry_filter"
-            value={industryFilter}
-            onChange={(e) => setIndustryFilter(e.target.value)}
-            options={industries.map((i) => ({ value: i.value, label: i.label }))}
-            placeholder="All Industries"
-            className="w-full sm:w-48"
-          />
+          <div className="w-full sm:w-48">
+            <Select
+              name="industry_filter"
+              value={industryFilter}
+              onChange={(e) => setIndustryFilter(e.target.value)}
+              options={industries.map((i) => ({ value: i.value, label: i.label }))}
+              placeholder="All Industries"
+            />
+          </div>
         </div>
       </Card>
 

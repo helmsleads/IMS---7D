@@ -720,7 +720,7 @@ export default function InventoryDetailPage({
                         <p className="mt-1 text-sm text-gray-600">
                           Quantity changed by {(entry.details.qty_change as number) > 0 ? "+" : ""}
                           {entry.details.qty_change as number}
-                          {entry.details.reason && ` (${entry.details.reason})`}
+                          {entry.details.reason != null && ` (${String(entry.details.reason)})`}
                         </p>
                       )}
 

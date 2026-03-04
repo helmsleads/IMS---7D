@@ -202,12 +202,15 @@ export async function getPortalOrderTracking(
     confirmed_at: order.confirmed_at,
     shipped_date: order.shipped_date,
     delivered_date: order.delivered_date,
-    items: (order.items || []).map(item => ({
-      id: item.id,
-      qty_requested: item.qty_requested,
-      qty_shipped: item.qty_shipped,
-      product: item.product as { sku: string; name: string },
-    })),
+    items: (order.items || []).map(item => {
+      const product = Array.isArray(item.product) ? item.product[0] : item.product;
+      return {
+        id: item.id,
+        qty_requested: item.qty_requested,
+        qty_shipped: item.qty_shipped,
+        product: product as { sku: string; name: string },
+      };
+    }),
     cartons: (cartons || []).map(c => ({
       lpn_number: c.lpn_number,
       stage: c.stage,

@@ -13,7 +13,7 @@ export default function RevenueByClientWidget({ clientRevenue }: Props) {
   const chartData = clientRevenue.slice(0, 6).map((c, idx) => ({
     name: c.clientName.length > 14 ? c.clientName.slice(0, 14) + "..." : c.clientName,
     value: c.revenue,
-    color: ["#4F46E5", "#06B6D4", "#10B981", "#F59E0B", "#8B5CF6", "#EC4899"][idx % 6],
+    color: ["#4F46E5", "#6366F1", "#818CF8", "#A5B4FC", "#C7D2FE", "#DDD6FE"][idx % 6],
   }));
 
   const totalRevenue = clientRevenue.reduce((s, c) => s + c.revenue, 0);

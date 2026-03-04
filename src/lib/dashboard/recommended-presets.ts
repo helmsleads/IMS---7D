@@ -32,7 +32,6 @@ const PORTAL_PRESET: PresetEntry[] = [
   { id: "order-fulfillment-speed", size: "half" },
   { id: "spending-breakdown", size: "half" },
   { id: "recent-orders", size: "full" },
-  { id: "quick-actions", size: "half" },
 ];
 
 /**

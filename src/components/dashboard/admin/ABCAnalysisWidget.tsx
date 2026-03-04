@@ -9,13 +9,13 @@ interface Props {
 
 const CLASS_COLORS: Record<string, string> = {
   A: "#4F46E5",
-  B: "#06B6D4",
-  C: "#94A3B8",
+  B: "#818CF8",
+  C: "#CBD5E1",
 };
 
 const CLASS_BG: Record<string, string> = {
   A: "bg-indigo-100 text-indigo-700",
-  B: "bg-cyan-100 text-cyan-700",
+  B: "bg-indigo-50 text-indigo-500",
   C: "bg-slate-100 text-slate-600",
 };
 

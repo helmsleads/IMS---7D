@@ -44,26 +44,26 @@ export default function OrdersSummaryWidget({ stats }: Props) {
           label="Inbound to receive"
           value={stats?.pendingInbound || 0}
           maxValue={maxValue}
-          color="#3B82F6"
+          color="#4F46E5"
         />
         <ProgressRow
           label="Outbound to ship"
           value={stats?.pendingOutbound || 0}
           maxValue={maxValue}
-          color="#8B5CF6"
+          color="#6366F1"
         />
         <div className="border-t border-slate-200 pt-4 space-y-4">
           <ProgressRow
             label="Ship today"
             value={stats?.ordersToShipToday || 0}
             maxValue={maxValue}
-            color="#4F46E5"
+            color="#818CF8"
           />
           <ProgressRow
             label="Receive today"
             value={stats?.ordersToReceiveToday || 0}
             maxValue={maxValue}
-            color="#06B6D4"
+            color="#A5B4FC"
           />
         </div>
       </div>

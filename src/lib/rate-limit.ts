@@ -255,5 +255,5 @@ export async function checkShopifyApiRateLimit(shopDomain: string): Promise<Rate
  * Check if Upstash Redis is configured and working
  */
 export function isDistributedRateLimitEnabled(): boolean {
-  return isUpstashConfigured && redis !== null
+  return Boolean(isUpstashConfigured && redis !== null)
 }

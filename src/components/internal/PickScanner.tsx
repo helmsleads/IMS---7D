@@ -169,17 +169,22 @@ export default function PickScanner({
         .limit(1)
         .single();
 
+      const product = Array.isArray(item.product) ? item.product[0] : item.product;
       itemsWithLocations.push({
         id: item.id,
         product_id: item.product_id,
         qty_requested: item.qty_requested,
         qty_picked: item.qty_shipped || 0,
-        product: item.product as PickItem["product"],
-        suggested_location: inventory ? {
-          id: (inventory.location as { id: string })?.id,
-          name: (inventory.location as { name: string })?.name,
-          sublocation_code: (inventory.sublocation as { code: string })?.code,
-        } : undefined,
+        product: product as PickItem["product"],
+        suggested_location: inventory ? (() => {
+          const loc = Array.isArray(inventory.location) ? inventory.location[0] : inventory.location;
+          const sub = Array.isArray(inventory.sublocation) ? inventory.sublocation[0] : inventory.sublocation;
+          return {
+            id: (loc as { id?: string })?.id ?? "",
+            name: (loc as { name?: string })?.name ?? "",
+            sublocation_code: (sub as { code?: string })?.code,
+          };
+        })() : undefined,
       });
     }
 
@@ -477,11 +482,11 @@ export default function PickScanner({
 
             {/* Scanner */}
             {scannerActive ? (
-              <div className="mb-4">
-                <BarcodeScanner
-                  onScan={handleScan}
-                  onClose={() => setScannerActive(false)}
-                />
+              <div className="mb-4 space-y-2">
+                <BarcodeScanner onScan={handleScan} isActive={true} />
+                <Button variant="secondary" onClick={() => setScannerActive(false)} className="w-full">
+                  Close scanner
+                </Button>
               </div>
             ) : (
               <Button
@@ -498,10 +503,10 @@ export default function PickScanner({
               <div className="mb-4 p-4 border rounded-lg dark:border-gray-700">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Quantity to pick:</p>
                 <div className="flex items-center gap-2 mb-3">
-                  <Button size="sm" variant="outline" onClick={() => setPendingQty(Math.max(0, pendingQty - 1))}>-</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setPendingQty(Math.max(0, pendingQty - 1))}>-</Button>
                   <span className="w-16 text-center text-xl font-bold">{pendingQty}</span>
-                  <Button size="sm" variant="outline" onClick={() => handleAddQty(1)}>+</Button>
-                  <Button size="sm" variant="outline" onClick={handlePickAll}>Pick All ({remainingQty})</Button>
+                  <Button size="sm" variant="secondary" onClick={() => handleAddQty(1)}>+</Button>
+                  <Button size="sm" variant="secondary" onClick={handlePickAll}>Pick All ({remainingQty})</Button>
                 </div>
                 <div className="flex gap-2">
                   <Button

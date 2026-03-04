@@ -75,7 +75,12 @@ export default function PortalInventoryHistoryPage() {
         ]);
 
         setTransactions(txData);
-        setSummary(summaryData);
+        setSummary({
+          totalReceived: summaryData.received,
+          totalShipped: summaryData.shipped,
+          totalAdjusted: summaryData.adjusted,
+          totalReturns: summaryData.returned,
+        });
       } catch (error) {
         console.error("Failed to fetch transactions:", error);
       } finally {

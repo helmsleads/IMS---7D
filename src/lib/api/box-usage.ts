@@ -2,13 +2,13 @@ import { createClient } from "@/lib/supabase";
 
 // Box types matching the 7Degrees rate card
 export const BOX_TYPES = [
-  { code: "BOX_1_BOTTLE", name: "1 Bottle Box", bottles: 1, price: 5.00 },
-  { code: "BOX_2_BOTTLE", name: "2 Bottle Box", bottles: 2, price: 6.00 },
-  { code: "BOX_3_BOTTLE", name: "3 Bottle Box", bottles: 3, price: 7.50 },
-  { code: "BOX_4_BOTTLE", name: "4 Bottle Box", bottles: 4, price: 9.50 },
-  { code: "BOX_6_BOTTLE", name: "6 Bottle Box", bottles: 6, price: 12.00 },
-  { code: "BOX_8_BOTTLE", name: "8 Bottle Box", bottles: 8, price: 15.00 },
-  { code: "BOX_12_BOTTLE", name: "12 Bottle Box", bottles: 12, price: 20.00 },
+  { code: "BOX_1_BOTTLE", name: "1 Bottle Box", bottles: 1, price: 5.00, isCan: false },
+  { code: "BOX_2_BOTTLE", name: "2 Bottle Box", bottles: 2, price: 6.00, isCan: false },
+  { code: "BOX_3_BOTTLE", name: "3 Bottle Box", bottles: 3, price: 7.50, isCan: false },
+  { code: "BOX_4_BOTTLE", name: "4 Bottle Box", bottles: 4, price: 9.50, isCan: false },
+  { code: "BOX_6_BOTTLE", name: "6 Bottle Box", bottles: 6, price: 12.00, isCan: false },
+  { code: "BOX_8_BOTTLE", name: "8 Bottle Box", bottles: 8, price: 15.00, isCan: false },
+  { code: "BOX_12_BOTTLE", name: "12 Bottle Box", bottles: 12, price: 20.00, isCan: false },
   { code: "BOX_6_CAN", name: "6 Can Box", bottles: 6, price: 7.00, isCan: true },
 ] as const;
 

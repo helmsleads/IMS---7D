@@ -6,6 +6,7 @@ import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import { Client } from "@/lib/api/clients";
 import { getWorkflowProfiles, getAllIndustries } from "@/lib/api/workflow-profiles";
+import { getInternalUsers, InternalUser } from "@/lib/api/internal-users";
 import { WorkflowProfile, ClientIndustry } from "@/types/database";
 
 export interface ClientFormData {
@@ -18,6 +19,7 @@ export interface ClientFormData {
   active: boolean;
   industries: ClientIndustry[];
   workflow_profile_id: string;
+  account_manager_id: string;
 }
 
 interface ClientFormProps {
@@ -44,11 +46,13 @@ export default function ClientForm({
     active: initialData?.active ?? true,
     industries: initialData?.industries || [],
     workflow_profile_id: initialData?.workflow_profile_id || "",
+    account_manager_id: initialData?.account_manager_id || "",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [workflowProfiles, setWorkflowProfiles] = useState<WorkflowProfile[]>([]);
+  const [staffUsers, setStaffUsers] = useState<InternalUser[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(true);
 
   const industries = getAllIndustries();
@@ -70,8 +74,12 @@ export default function ClientForm({
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const profiles = await getWorkflowProfiles();
+        const [profiles, users] = await Promise.all([
+          getWorkflowProfiles(),
+          getInternalUsers(),
+        ]);
         setWorkflowProfiles(profiles);
+        setStaffUsers(users.filter((u) => u.active));
       } catch (error) {
         console.error("Failed to fetch form data:", error);
       } finally {
@@ -346,6 +354,28 @@ export default function ClientForm({
               </p>
             </div>
           </label>
+
+          {/* Account Manager */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Account Manager
+            </label>
+            <select
+              value={formData.account_manager_id}
+              onChange={(e) => handleChange("account_manager_id", e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">Unassigned</option>
+              {staffUsers.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-sm text-gray-500">
+              Assign a staff member as the primary contact for this client
+            </p>
+          </div>
         </div>
       </Card>
 

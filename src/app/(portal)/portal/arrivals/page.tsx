@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   PackageOpen,
   Search,
@@ -12,6 +13,9 @@ import {
   Package,
   User,
   FileText,
+  Clock,
+  CalendarPlus,
+  AlertCircle,
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
@@ -25,6 +29,7 @@ import Spinner from "@/components/ui/Spinner";
 import StatusBadge from "@/components/ui/StatusBadge";
 import Table from "@/components/ui/Table";
 import FetchError from "@/components/ui/FetchError";
+import ScheduleArrivalForm from "@/components/portal/ScheduleArrivalForm";
 
 interface InboundOrder {
   id: string;
@@ -38,6 +43,8 @@ interface InboundOrder {
   tracking_number: string | null;
   item_count: number;
   total_units: number;
+  appointment_status: string | null;
+  appointment_rejection_reason: string | null;
 }
 
 interface ArrivalDetail {
@@ -49,8 +56,11 @@ interface ArrivalDetail {
   expected_date: string | null;
   carrier: string | null;
   tracking_number: string | null;
+  preferred_time_slot: string | null;
   notes: string | null;
   received_by: string | null;
+  appointment_status: string | null;
+  appointment_rejection_reason: string | null;
   items: {
     id: string;
     product_name: string;
@@ -169,8 +179,14 @@ const arrivalItemColumns: {
   },
 ];
 
+type PageTab = "arrivals" | "schedule";
+
 export default function PortalArrivalsPage() {
   const { client } = useClient();
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<PageTab>(
+    searchParams.get("tab") === "schedule" ? "schedule" : "arrivals"
+  );
   const [arrivals, setArrivals] = useState<InboundOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -197,8 +213,11 @@ export default function PortalArrivalsPage() {
         expected_date,
         carrier,
         tracking_number,
+        preferred_time_slot,
         notes,
         received_by,
+        appointment_status,
+        appointment_rejection_reason,
         items:inbound_items (
           id,
           qty_expected,
@@ -227,8 +246,11 @@ export default function PortalArrivalsPage() {
       expected_date: data.expected_date,
       carrier: data.carrier,
       tracking_number: data.tracking_number,
+      preferred_time_slot: data.preferred_time_slot,
       notes: data.notes,
       received_by: data.received_by,
+      appointment_status: data.appointment_status,
+      appointment_rejection_reason: data.appointment_rejection_reason,
       items: (data.items || []).map((item: {
         id: string;
         qty_expected: number;
@@ -277,6 +299,8 @@ export default function PortalArrivalsPage() {
         received_at,
         carrier,
         tracking_number,
+        appointment_status,
+        appointment_rejection_reason,
         items:inbound_items (
           qty_expected
         )
@@ -306,6 +330,8 @@ export default function PortalArrivalsPage() {
         tracking_number: order.tracking_number,
         item_count: items.length,
         total_units: items.reduce((sum, item) => sum + (item.qty_expected || 0), 0),
+        appointment_status: order.appointment_status as string | null,
+        appointment_rejection_reason: order.appointment_rejection_reason as string | null,
       };
     });
 
@@ -367,6 +393,11 @@ export default function PortalArrivalsPage() {
     );
   }
 
+  const handleScheduleSuccess = () => {
+    setActiveTab("arrivals");
+    fetchArrivals(true);
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -375,6 +406,44 @@ export default function PortalArrivalsPage() {
         <p className="text-slate-500 mt-1">Inventory received at 7 Degrees</p>
       </div>
 
+      {/* Page Tabs */}
+      <div className="flex gap-1 border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab("arrivals")}
+          className={`
+            flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
+            ${activeTab === "arrivals"
+              ? "border-cyan-500 text-cyan-700"
+              : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+            }
+          `}
+        >
+          <PackageOpen className="w-4 h-4" />
+          Arrivals
+        </button>
+        <button
+          onClick={() => setActiveTab("schedule")}
+          className={`
+            flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
+            ${activeTab === "schedule"
+              ? "border-cyan-500 text-cyan-700"
+              : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+            }
+          `}
+        >
+          <CalendarPlus className="w-4 h-4" />
+          Book Dock Appointment
+        </button>
+      </div>
+
+      {/* Schedule Tab */}
+      {activeTab === "schedule" && (
+        <ScheduleArrivalForm onSuccess={handleScheduleSuccess} />
+      )}
+
+      {/* Arrivals Tab */}
+      {activeTab === "arrivals" && (
+        <>
       {/* Status Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-2">
         {STATUS_TABS.map((tab) => {
@@ -460,7 +529,26 @@ export default function PortalArrivalsPage() {
                           Created {formatDate(order.created_at)}
                         </p>
                       </div>
-                      <StatusBadge status={order.status} entityType="inbound" />
+                      <div className="flex items-center gap-2">
+                        {order.appointment_status && (
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                              order.appointment_status === "pending_approval"
+                                ? "bg-amber-100 text-amber-800"
+                                : order.appointment_status === "approved"
+                                ? "bg-green-100 text-green-800"
+                                : "bg-red-100 text-red-800"
+                            }`}
+                          >
+                            {order.appointment_status === "pending_approval"
+                              ? "Pending Approval"
+                              : order.appointment_status === "approved"
+                              ? "Approved"
+                              : "Rejected"}
+                          </span>
+                        )}
+                        <StatusBadge status={order.status} entityType="inbound" />
+                      </div>
                     </div>
 
                     {/* Order Info Grid */}
@@ -573,6 +661,9 @@ export default function PortalArrivalsPage() {
         </Button>
       </div>
 
+        </>
+      )}
+
       {/* Detail Modal */}
       <Modal
         isOpen={!!selectedArrival || modalLoading}
@@ -590,6 +681,23 @@ export default function PortalArrivalsPage() {
             {/* Status and meta info */}
             <div className="flex items-center gap-3 flex-wrap">
               <StatusBadge status={selectedArrival.status} entityType="inbound" />
+              {selectedArrival.appointment_status && (
+                <span
+                  className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                    selectedArrival.appointment_status === "pending_approval"
+                      ? "bg-amber-100 text-amber-800"
+                      : selectedArrival.appointment_status === "approved"
+                      ? "bg-green-100 text-green-800"
+                      : "bg-red-100 text-red-800"
+                  }`}
+                >
+                  {selectedArrival.appointment_status === "pending_approval"
+                    ? "Pending Approval"
+                    : selectedArrival.appointment_status === "approved"
+                    ? "Approved"
+                    : "Rejected"}
+                </span>
+              )}
               {selectedArrival.tracking_number && (
                 <span className="text-sm text-slate-500">
                   Tracking: <span className="font-mono">{selectedArrival.tracking_number}</span>
@@ -597,11 +705,59 @@ export default function PortalArrivalsPage() {
               )}
             </div>
 
+            {/* Rejection Reason */}
+            {selectedArrival.appointment_status === "rejected" && selectedArrival.appointment_rejection_reason && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium text-red-800">Appointment Declined</p>
+                  <p className="text-sm text-red-700 mt-1">
+                    {selectedArrival.appointment_rejection_reason}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <p className="text-sm text-slate-500">
               {selectedArrival.status === "received"
                 ? `Received on ${formatDate(selectedArrival.received_at!)}`
                 : `Created on ${formatDate(selectedArrival.created_at)}`}
             </p>
+
+            {/* Delivery Info */}
+            {(selectedArrival.expected_date || selectedArrival.carrier || selectedArrival.preferred_time_slot) && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-slate-50 rounded-lg p-4">
+                {selectedArrival.expected_date && (
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="text-xs text-slate-500 uppercase tracking-wide">Expected</span>
+                    </div>
+                    <p className="font-medium text-slate-900 text-sm">{formatDate(selectedArrival.expected_date)}</p>
+                  </div>
+                )}
+                {selectedArrival.preferred_time_slot && (
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="text-xs text-slate-500 uppercase tracking-wide">Time Slot</span>
+                    </div>
+                    <p className="font-medium text-slate-900 text-sm">
+                      {selectedArrival.preferred_time_slot === "am" ? "AM (8am–12pm)" : "PM (12pm–5pm)"}
+                    </p>
+                  </div>
+                )}
+                {selectedArrival.carrier && (
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Truck className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="text-xs text-slate-500 uppercase tracking-wide">Carrier</span>
+                    </div>
+                    <p className="font-medium text-slate-900 text-sm">{selectedArrival.carrier}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Products List */}
             <div>

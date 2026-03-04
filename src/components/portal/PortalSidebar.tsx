@@ -15,10 +15,8 @@ import {
   PackageOpen,
   RotateCcw,
   Layers,
-  TrendingUp,
   MessageSquare,
-  Briefcase,
-  CreditCard,
+  Receipt,
   Plug,
   FileText,
   Settings,
@@ -70,12 +68,6 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Reports",
-    links: [
-      { label: "Profitability", icon: TrendingUp, path: "/portal/profitability" },
-    ],
-  },
-  {
     label: "Communication",
     links: [
       { label: "Messages", icon: MessageSquare, path: "/portal/messages", badgeKey: "messages" },
@@ -84,8 +76,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Account",
     links: [
-      { label: "Services", icon: Briefcase, path: "/portal/services" },
-      { label: "My Plan", icon: CreditCard, path: "/portal/plan" },
+      { label: "Billing", icon: Receipt, path: "/portal/billing" },
       { label: "Integrations", icon: Plug, path: "/portal/integrations" },
       { label: "Templates", icon: FileText, path: "/portal/templates" },
       { label: "Settings", icon: Settings, path: "/portal/settings" },

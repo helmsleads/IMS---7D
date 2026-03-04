@@ -152,7 +152,8 @@ export async function getUnreadCount(): Promise<number> {
       throw err; // Re-throw real errors
     }
 
-    // Silently return 0 for network hiccups - will retry on next poll
+    // Log network errors so they're visible in dev tools, return 0 to allow retry on next poll
+    console.warn("[messages] Network error fetching unread count, will retry:", err.message);
     return 0;
   }
 }
@@ -181,6 +182,21 @@ export async function sendMessage(
 ): Promise<Message> {
   const supabase = createClient();
 
+  // Verify conversation is open before sending
+  const { data: conversation, error: convError } = await supabase
+    .from("conversations")
+    .select("status")
+    .eq("id", conversationId)
+    .single();
+
+  if (convError) {
+    throw new Error(convError.message);
+  }
+
+  if (conversation.status === "closed") {
+    throw new Error("Cannot send message to a closed conversation");
+  }
+
   // Create the message
   const { data: message, error: messageError } = await supabase
     .from("messages")
@@ -206,6 +222,18 @@ export async function sendMessage(
   if (updateError) {
     throw new Error(updateError.message);
   }
+
+  // Log activity
+  await supabase.from("activity_log").insert({
+    entity_type: "message",
+    entity_id: message.id,
+    action: "created",
+    details: {
+      conversation_id: conversationId,
+      sender_type: senderType,
+      sender_id: senderId,
+    },
+  });
 
   return message;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   MessageSquare,
@@ -30,6 +30,7 @@ import {
 } from "@/lib/api/messages";
 import { getClients, Client } from "@/lib/api/clients";
 import { Message, ConversationStatus } from "@/types/database";
+import { createClient } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { handleApiError } from "@/lib/utils/error-handler";
 
@@ -153,6 +154,84 @@ export default function MessagesPage() {
     // Scroll to bottom when messages change
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Real-time subscription for new messages in the selected conversation
+  useEffect(() => {
+    if (!selectedConversation) return;
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`messages:${selectedConversation.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${selectedConversation.id}`,
+        },
+        (payload) => {
+          const newMsg = payload.new as Message;
+          // Only add if it's not from us (our messages are already added optimistically)
+          if (newMsg.sender_type !== "user") {
+            setMessages((prev) => {
+              // Deduplicate
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+            // Mark as read since we're viewing
+            markAllRead(selectedConversation.id).catch(() => {});
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${selectedConversation.id}`,
+        },
+        (payload) => {
+          const updated = payload.new as Message;
+          // Update read_at status on our messages (client read our message)
+          setMessages((prev) =>
+            prev.map((m) => (m.id === updated.id ? { ...m, read_at: updated.read_at } : m))
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedConversation?.id]);
+
+  // Real-time subscription for conversation list updates (new messages in any conversation)
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("messages:all")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        () => {
+          // Refresh conversation list to update unread counts and previews
+          getConversations({ status: statusFilter || undefined })
+            .then(setConversations)
+            .catch(() => {});
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [statusFilter]);
 
   const filteredConversations = useMemo(() => {
     if (!searchTerm) return conversations;

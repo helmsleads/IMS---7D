@@ -170,3 +170,20 @@ Stored in `client_integrations.settings` (JSONB):
 | `inventory_buffer` | number | Safety stock buffer subtracted from available qty |
 | `shopify_location_id` | string | Shopify location ID for inventory operations |
 | `default_location_id` | string | IMS warehouse location to sync from |
+
+## Disconnect & Location Cleanup
+
+When a client disconnects their Shopify integration (DELETE `/api/integrations/shopify/[integrationId]`):
+
+1. **Webhooks deregistered** — All registered webhooks removed from Shopify (best-effort)
+2. **Location deactivated** — If `location_created_by_us` is `true`:
+   - Fetches all inventory levels at the location
+   - Zeroes out non-zero inventory (Shopify requires this before deactivation)
+   - Deactivates the location via GraphQL `locationDeactivate` mutation
+   - Best-effort: failures are logged but don't block the disconnect
+3. **Integration record deleted** — Removed from `client_integrations`
+4. **Product mappings preserved** — `product_mappings` rows are kept (no cascade delete)
+
+**Key files:**
+- `src/lib/api/shopify/location-management.ts` — `deactivateShopifyLocation()`
+- `src/app/api/integrations/shopify/[integrationId]/route.ts` — DELETE handler

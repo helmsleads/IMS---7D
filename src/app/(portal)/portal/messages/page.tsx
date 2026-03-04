@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
   MessageSquare,
   Plus,
@@ -12,6 +12,7 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
+import { createClient } from "@/lib/supabase";
 import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
@@ -24,6 +25,7 @@ import {
   getMyConversation,
   startConversation,
   sendPortalMessage,
+  markConversationRead,
   PortalConversation,
   PortalConversationWithMessages,
 } from "@/lib/api/portal-messages";
@@ -87,6 +89,93 @@ export default function PortalMessagesPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [selectedConversation?.messages]);
 
+  // Real-time subscription for new messages in selected conversation
+  useEffect(() => {
+    if (!selectedConversation || !client) return;
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`portal-messages:${selectedConversation.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${selectedConversation.id}`,
+        },
+        (payload) => {
+          const newMsg = payload.new as PortalConversationWithMessages["messages"][0];
+          // Only add staff messages in realtime (our own messages are added locally on send)
+          if (newMsg.sender_type !== "client") {
+            setSelectedConversation((prev) => {
+              if (!prev) return prev;
+              if (prev.messages.some((m) => m.id === newMsg.id)) return prev;
+              return { ...prev, messages: [...prev.messages, newMsg] };
+            });
+            // Mark as read since we're actively viewing
+            markConversationRead(client.id, selectedConversation.id).catch(() => {});
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${selectedConversation.id}`,
+        },
+        (payload) => {
+          const updated = payload.new as PortalConversationWithMessages["messages"][0];
+          // Update read_at status on our messages (staff read our message)
+          setSelectedConversation((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  messages: prev.messages.map((m) =>
+                    m.id === updated.id ? { ...m, read_at: updated.read_at } : m
+                  ),
+                }
+              : prev
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedConversation?.id, client]);
+
+  // Real-time subscription for conversation list updates
+  useEffect(() => {
+    if (!client) return;
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel("portal-messages:all")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        () => {
+          // Refresh conversation list to update unread counts and previews
+          getMyConversations(client.id)
+            .then(setConversations)
+            .catch(() => {});
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [client]);
+
   const handleSelectConversation = async (conversationId: string) => {
     if (!client) return;
 
@@ -96,6 +185,25 @@ export default function PortalMessagesPage() {
     try {
       const data = await getMyConversation(client.id, conversationId);
       setSelectedConversation(data);
+
+      // Mark messages as read now that user is viewing the conversation
+      await markConversationRead(client.id, conversationId);
+
+      // Update local read_at on messages so read indicators reflect immediately
+      if (data) {
+        setSelectedConversation((prev) =>
+          prev
+            ? {
+                ...prev,
+                messages: prev.messages.map((m) =>
+                  m.sender_type === "user" && !m.read_at
+                    ? { ...m, read_at: new Date().toISOString() }
+                    : m
+                ),
+              }
+            : prev
+        );
+      }
 
       // Update unread count in list
       setConversations((prev) =>

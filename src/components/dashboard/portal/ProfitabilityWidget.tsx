@@ -18,11 +18,11 @@ interface Props {
 
 export default function ProfitabilityWidget({ profitability }: Props) {
   return (
-    <Card accent={profitability.netProfit >= 0 ? "green" : "red"}>
+    <Card>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <div className={`p-2 rounded-lg ${profitability.netProfit >= 0 ? "bg-green-100" : "bg-red-100"}`}>
-            <TrendingUp className={`w-5 h-5 ${profitability.netProfit >= 0 ? "text-green-600" : "text-red-600"}`} />
+          <div className="p-2 rounded-lg bg-slate-100">
+            <TrendingUp className="w-5 h-5 text-slate-500" />
           </div>
           <p className="text-sm font-medium text-slate-700">This Month&apos;s Profitability</p>
         </div>
@@ -35,14 +35,14 @@ export default function ProfitabilityWidget({ profitability }: Props) {
       </div>
       <div className="flex items-end justify-between">
         <div>
-          <p className={`text-2xl font-bold ${profitability.netProfit >= 0 ? "text-green-600" : "text-red-600"}`}>
+          <p className="text-2xl font-bold text-slate-900">
             {formatCurrency(profitability.netProfit)}
           </p>
           <p className="text-xs text-slate-500">net profit</p>
         </div>
         <div className="text-right">
           <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm font-medium ${
-            profitability.marginPercentage >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+            profitability.marginPercentage >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"
           }`}>
             {profitability.marginPercentage >= 0 ? (
               <ArrowUpRight className="w-4 h-4" />

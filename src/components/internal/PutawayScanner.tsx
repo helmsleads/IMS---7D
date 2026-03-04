@@ -443,11 +443,11 @@ export default function PutawayScanner({
 
         {/* Scanner */}
         {scannerActive ? (
-          <div className="mb-4">
-            <BarcodeScanner
-              onScan={handleScan}
-              onClose={() => setScannerActive(false)}
-            />
+          <div className="mb-4 space-y-2">
+            <BarcodeScanner onScan={handleScan} isActive={true} />
+            <Button variant="secondary" onClick={() => setScannerActive(false)} className="w-full">
+              Close scanner
+            </Button>
           </div>
         ) : (
           <Button
@@ -472,9 +472,9 @@ export default function PutawayScanner({
             <div className="mt-3">
               <label className="text-sm text-gray-600 dark:text-gray-400">Quantity</label>
               <div className="flex items-center gap-2 mt-1">
-                <Button size="sm" variant="outline" onClick={() => setQty(Math.max(1, qty - 1))}>-</Button>
+                <Button size="sm" variant="secondary" onClick={() => setQty(Math.max(1, qty - 1))}>-</Button>
                 <span className="w-12 text-center font-medium">{qty}</span>
-                <Button size="sm" variant="outline" onClick={() => setQty(qty + 1)}>+</Button>
+                <Button size="sm" variant="secondary" onClick={() => setQty(qty + 1)}>+</Button>
               </div>
             </div>
           </div>
@@ -534,7 +534,7 @@ export default function PutawayScanner({
         {/* Reset Button */}
         {(scannedProduct || scannedLPN || scannedLocation) && (
           <Button
-            variant="outline"
+            variant="secondary"
             onClick={resetScan}
             className="w-full mt-2"
           >
