@@ -134,7 +134,7 @@ export default function ClientDetailPage() {
   const [clientUsers, setClientUsers] = useState<ClientUserWithDetails[]>([]);
   const [clientUsersLoading, setClientUsersLoading] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [addUserMode, setAddUserMode] = useState<"invite" | "existing">("invite");
+  const [addUserMode, setAddUserMode] = useState<"create" | "existing">("existing");
   const [addUserFormData, setAddUserFormData] = useState({
     full_name: "",
     email: "",

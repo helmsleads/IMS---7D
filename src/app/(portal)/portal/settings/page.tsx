@@ -198,7 +198,7 @@ export default function PortalSettingsPage() {
   const [teamMembers, setTeamMembers] = useState<ClientUserWithDetails[]>([]);
   const [loadingTeam, setLoadingTeam] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [addUserMode, setAddUserMode] = useState<"invite" | "existing">("invite");
+  const [addUserMode, setAddUserMode] = useState<"create" | "existing">("existing");
   const [existingUserEmail, setExistingUserEmail] = useState("");
   const [existingUserRole, setExistingUserRole] = useState<ClientUserRole>("member");
   const [inviteForm, setInviteForm] = useState<InviteUserData & { role: ClientUserRole }>({

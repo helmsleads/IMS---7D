@@ -65,7 +65,7 @@ export default function PortalUsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addUserMode, setAddUserMode] = useState<"invite" | "existing">("invite");
+  const [addUserMode, setAddUserMode] = useState<"create" | "existing">("existing");
   const [addFormData, setAddFormData] = useState({
     full_name: "",
     email: "",
