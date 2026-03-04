@@ -500,7 +500,7 @@ export default function ClientDetailPage() {
     setSendInviteNow(true);
     setAddUserError(null);
     setAddUserSuccess(null);
-    setAddUserMode("invite");
+    setAddUserMode("create");
   };
 
   const handleAddUser = async (e: React.FormEvent, sendEmail: boolean = true) => {
@@ -2305,7 +2305,7 @@ export default function ClientDetailPage() {
               <div className="flex rounded-lg bg-gray-100 p-1">
                 <button
                   type="button"
-                  onClick={() => { setAddUserMode("invite"); setAddUserError(null); setAddUserSuccess(null); }}
+                  onClick={() => { setAddUserMode("create"); setAddUserError(null); setAddUserSuccess(null); }}
                   className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
                     addUserMode === "invite"
                       ? "bg-white text-gray-900 shadow-sm"

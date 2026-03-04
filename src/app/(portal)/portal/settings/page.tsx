@@ -421,7 +421,7 @@ export default function PortalSettingsPage() {
   // Team management functions
   const resetUserForm = () => {
     setShowAddUserModal(false);
-    setAddUserMode("invite");
+    setAddUserMode("create");
     setExistingUserEmail("");
     setExistingUserRole("member");
     setInviteForm({
@@ -1020,7 +1020,7 @@ export default function PortalSettingsPage() {
         {/* Mode Toggle */}
         <div className="flex border-b border-slate-200 -mx-4 -mt-4 mb-4">
           <button
-            onClick={() => { setAddUserMode("invite"); setUserError(""); setUserSuccess(""); }}
+            onClick={() => { setAddUserMode("create"); setUserError(""); setUserSuccess(""); }}
             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
               addUserMode === "invite"
                 ? "text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50"
