@@ -9,13 +9,13 @@ interface Props {
 
 const COLORS = [
   "#4F46E5",
-  "#06B6D4",
-  "#10B981",
-  "#F59E0B",
-  "#8B5CF6",
-  "#EC4899",
-  "#14B8A6",
-  "#F97316",
+  "#6366F1",
+  "#818CF8",
+  "#A5B4FC",
+  "#C7D2FE",
+  "#DDD6FE",
+  "#4338CA",
+  "#3730A3",
 ];
 
 export default function InventoryTurnoverWidget({ turnoverData }: Props) {

@@ -115,18 +115,6 @@ export async function getMyConversation(
     (a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
 
-  // Mark unread messages from users as read
-  const unreadIds = messages
-    .filter((m: any) => m.sender_type === "user" && m.read_at === null)
-    .map((m: any) => m.id);
-
-  if (unreadIds.length > 0) {
-    await supabase
-      .from("messages")
-      .update({ read_at: new Date().toISOString() })
-      .in("id", unreadIds);
-  }
-
   return {
     id: data.id,
     subject: data.subject,
@@ -135,6 +123,32 @@ export async function getMyConversation(
     created_at: data.created_at,
     messages,
   };
+}
+
+/**
+ * Mark all unread staff messages in a conversation as read.
+ * Call this explicitly when the user is actively viewing the conversation.
+ */
+export async function markConversationRead(
+  clientId: string,
+  conversationId: string
+): Promise<void> {
+  const supabase = createClient();
+
+  // Get unread message IDs from staff in this conversation
+  const { data: unreadMessages } = await supabase
+    .from("messages")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .eq("sender_type", "user")
+    .is("read_at", null);
+
+  if (unreadMessages && unreadMessages.length > 0) {
+    await supabase
+      .from("messages")
+      .update({ read_at: new Date().toISOString() })
+      .in("id", unreadMessages.map((m) => m.id));
+  }
 }
 
 export async function startConversation(
@@ -247,38 +261,34 @@ export async function sendPortalMessage(
     .update({ last_message_at: new Date().toISOString() })
     .eq("id", conversationId);
 
+  // Log activity
+  await supabase.from("activity_log").insert({
+    entity_type: "message",
+    entity_id: message.id,
+    action: "created",
+    details: {
+      conversation_id: conversationId,
+      sender_type: "client",
+      sender_id: clientId,
+    },
+  });
+
   return message;
 }
 
 export async function getMyUnreadCount(clientId: string): Promise<number> {
   const supabase = createClient();
 
-  // Get all conversations for this client
-  const { data: conversations, error: convError } = await supabase
-    .from("conversations")
-    .select("id")
-    .eq("client_id", clientId);
-
-  if (convError) {
-    throw new Error(convError.message);
-  }
-
-  if (!conversations || conversations.length === 0) {
-    return 0;
-  }
-
-  const conversationIds = conversations.map((c) => c.id);
-
-  // Count unread messages from users in client's conversations
-  const { count, error: countError } = await supabase
+  // Single query: count unread staff messages in client's conversations via inner join
+  const { count, error } = await supabase
     .from("messages")
-    .select("*", { count: "exact", head: true })
-    .in("conversation_id", conversationIds)
+    .select("*, conversation:conversations!inner(id)", { count: "exact", head: true })
+    .eq("conversation.client_id", clientId)
     .eq("sender_type", "user")
     .is("read_at", null);
 
-  if (countError) {
-    throw new Error(countError.message);
+  if (error) {
+    throw new Error(error.message);
   }
 
   return count || 0;

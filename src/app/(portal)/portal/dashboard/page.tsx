@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Package, Truck, Boxes, PackageCheck, Settings } from "lucide-react";
+import { Package, Truck, Boxes, PackageCheck, Settings, CalendarCheck, LayoutGrid } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import StatCard from "@/components/ui/StatCard";
 import Spinner from "@/components/ui/Spinner";
@@ -38,6 +38,7 @@ interface DashboardStats {
   stockBreakdown: string;
   activeOrders: number;
   recentArrivals: number;
+  accountManagerName: string | null;
 }
 
 interface RecentOrder {
@@ -62,6 +63,7 @@ export default function PortalDashboardPage() {
     stockBreakdown: "",
     activeOrders: 0,
     recentArrivals: 0,
+    accountManagerName: null,
   });
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [activeOrdersList, setActiveOrdersList] = useState<RecentOrder[]>([]);
@@ -149,11 +151,28 @@ export default function PortalDashboardPage() {
         .eq("status", "received")
         .gte("updated_at", thirtyDaysAgo.toISOString());
 
+      // Fetch account manager name if assigned
+      let accountManagerName: string | null = null;
+      const { data: clientRecord } = await supabase
+        .from("clients")
+        .select("account_manager_id")
+        .eq("id", client.id)
+        .single();
+      if (clientRecord?.account_manager_id) {
+        const { data: manager } = await supabase
+          .from("users")
+          .select("name")
+          .eq("id", clientRecord.account_manager_id)
+          .single();
+        accountManagerName = manager?.name || null;
+      }
+
       setStats({
         totalProducts,
         stockBreakdown,
         activeOrders: activeOrders || 0,
         recentArrivals: recentArrivals || 0,
+        accountManagerName,
       });
 
       const { data: recentData } = await supabase
@@ -207,7 +226,7 @@ export default function PortalDashboardPage() {
         .from("inbound_orders")
         .select(`
           id,
-          order_number,
+          po_number,
           updated_at,
           items:inbound_items (
             qty_expected,
@@ -244,7 +263,7 @@ export default function PortalDashboardPage() {
 
           return {
             id: arrival.id,
-            order_number: arrival.order_number,
+            order_number: arrival.po_number,
             received_at: arrival.updated_at,
             product_summary: summary,
           };
@@ -304,7 +323,6 @@ export default function PortalDashboardPage() {
     "recent-orders": { recentOrders },
     "recent-arrivals": { recentArrivalsList },
     "active-orders": { activeOrdersList },
-    "quick-actions": {},
     "inventory-value-over-time": { valueData: inventoryValueOverTime },
     "order-fulfillment-speed": { speedData: fulfillmentSpeed },
     "spending-breakdown": { spendingData: spendingBreakdown },
@@ -316,31 +334,73 @@ export default function PortalDashboardPage() {
     toggleWidget(id);
   };
 
+  const todayFormatted = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  // Sparkline data derived from already-fetched data
+  const stockSparkline = inventoryValueOverTime.map((p) => ({ value: p.value }));
+
   return (
     <div className="space-y-8">
-      {/* Welcome Message */}
-      <div className="mb-8 animate-widget-enter">
-        <h2 className="text-2xl font-semibold text-slate-900">
-          {getGreeting()}, {client?.company_name}
-        </h2>
-        <p className="text-slate-500 mt-1">
-          Welcome to your 7 Degrees inventory portal. Here&apos;s an overview of your account.
-        </p>
-        <div className="flex flex-wrap gap-3 mt-4">
-          <Link
-            href="/portal/request-shipment"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-600 text-white font-medium rounded-lg hover:from-cyan-600 hover:to-teal-700 transition-all shadow-sm text-sm"
-          >
-            <Truck className="w-4 h-4" />
-            Request Shipment
-          </Link>
-          <Link
-            href="/portal/inventory"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-lg border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors text-sm"
-          >
-            <Package className="w-4 h-4" />
-            View Inventory
-          </Link>
+      {/* Hero Banner */}
+      <div className="relative animate-widget-enter rounded-2xl bg-gradient-to-br from-cyan-50 via-white to-slate-50 border border-cyan-100/50 p-6 md:p-8 overflow-hidden">
+        <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-cyan-500/5" />
+        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-cyan-500/5" />
+        <div className="relative">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">{todayFormatted}</p>
+              <h2 className="text-2xl font-semibold text-slate-900">
+                {getGreeting()}, {client?.company_name}
+              </h2>
+              <p className="text-slate-500 mt-1">
+                Welcome to your 7 Degrees inventory portal. Here&apos;s an overview of your account.
+              </p>
+              {stats.accountManagerName && (
+                <p className="text-sm text-slate-500 mt-1">
+                  Your account manager: <span className="font-medium text-slate-700">{stats.accountManagerName}</span>
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setShowCustomizer(!showCustomizer)}
+              className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all shrink-0 ${
+                showCustomizer
+                  ? "bg-cyan-100 text-cyan-700"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+              }`}
+            >
+              <Settings className="w-4 h-4" />
+              Customize
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/portal/arrivals?tab=schedule"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-600 text-white font-medium rounded-lg hover:from-cyan-600 hover:to-teal-700 transition-all shadow-sm text-sm"
+            >
+              <CalendarCheck className="w-4 h-4" />
+              Book Dock Appointment
+            </Link>
+            <Link
+              href="/portal/inventory"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-lg border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors text-sm"
+            >
+              <Package className="w-4 h-4" />
+              View Inventory
+            </Link>
+            <Link
+              href="/portal/request-shipment"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-lg border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors text-sm"
+            >
+              <Truck className="w-4 h-4" />
+              Request Shipment
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -362,6 +422,8 @@ export default function PortalDashboardPage() {
             label="Stock on Hand"
             value={loading ? "\u2014" : stats.stockBreakdown}
             loading={loading}
+            sparklineData={stockSparkline.length >= 2 ? stockSparkline : undefined}
+            sparklineColor="#16a34a"
           />
         </div>
         <div className="animate-widget-enter" style={{ animationDelay: "150ms" }}>
@@ -384,35 +446,33 @@ export default function PortalDashboardPage() {
         </div>
       </div>
 
-      {/* Customize button + Customizer Panel */}
-      <div className="flex justify-end">
-        <button
-          onClick={() => setShowCustomizer(!showCustomizer)}
-          className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-            showCustomizer
-              ? "bg-cyan-100 text-cyan-700"
-              : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300"
-          }`}
-        >
-          <Settings className="w-4 h-4" />
-          Customize
-        </button>
-      </div>
+      {/* Section Divider */}
+      <div className="border-b border-slate-200/60 mb-6" />
 
+      {/* Customizer Panel */}
       {showCustomizer && (
-        <DashboardCustomizer
-          widgets={widgets}
-          registry={PORTAL_WIDGETS}
-          isCustomized={isCustomized}
-          onToggle={toggleWidget}
-          onMove={moveWidget}
-          onReorder={reorderByIds}
-          onResize={resizeWidget}
-          onReset={resetToDefaults}
-          onClose={() => setShowCustomizer(false)}
-          accent="cyan"
-        />
+        <div className="mb-8">
+          <DashboardCustomizer
+            widgets={widgets}
+            registry={PORTAL_WIDGETS}
+            isCustomized={isCustomized}
+            onToggle={toggleWidget}
+            onMove={moveWidget}
+            onReorder={reorderByIds}
+            onResize={resizeWidget}
+            onReset={resetToDefaults}
+            onClose={() => setShowCustomizer(false)}
+            accent="cyan"
+          />
+        </div>
       )}
+
+      {/* Section Header */}
+      <div className="flex items-center gap-2 mb-4">
+        <LayoutGrid className="w-4 h-4 text-slate-400" />
+        <h3 className="text-sm font-medium text-slate-500">Your Dashboard</h3>
+        <span className="text-xs text-slate-400">({enabledWidgets.length} active)</span>
+      </div>
 
       {/* Dynamic Widget Grid */}
       <DynamicWidgetGrid
@@ -421,11 +481,10 @@ export default function PortalDashboardPage() {
         widgetProps={widgetProps}
         loading={loading}
         onCustomize={() => setShowCustomizer(true)}
-        quickAddIds={["recent-orders", "quick-actions", "active-orders"]}
+        quickAddIds={["recent-orders", "active-orders"]}
         onQuickAdd={handleQuickAdd}
         quickAddLabels={{
           "recent-orders": "Recent Orders",
-          "quick-actions": "Quick Actions",
           "active-orders": "Active Orders",
         }}
       />

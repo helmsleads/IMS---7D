@@ -1044,6 +1044,12 @@ export default function ClientDetailPage() {
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Account Manager</span>
+                  <span className={client.account_manager?.name ? "text-gray-900" : "text-gray-400"}>
+                    {client.account_manager?.name || "Unassigned"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
                   <span className="text-gray-600">Created</span>
                   <span className="text-gray-900">
                     {new Date(client.created_at).toLocaleDateString("en-US", {

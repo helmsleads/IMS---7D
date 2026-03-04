@@ -29,19 +29,19 @@ export default function ExpiringLotsWidget({ expiringLots, loading }: Props) {
       </div>
       {expiringLots.length === 0 ? (
         <div className="text-center py-4">
-          <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
-            <Calendar className="w-6 h-6 text-green-600" />
+          <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-2">
+            <Calendar className="w-6 h-6 text-slate-400" />
           </div>
           <p className="text-slate-500 text-sm">No lots expiring soon</p>
         </div>
       ) : (
         <>
           <div className="flex items-center gap-4 mb-4">
-            <div className="w-12 h-12 rounded-lg bg-orange-100 flex items-center justify-center">
-              <Calendar className="w-6 h-6 text-orange-600" />
+            <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center">
+              <Calendar className="w-6 h-6 text-slate-500" />
             </div>
             <div>
-              <p className="text-2xl font-semibold text-orange-600">
+              <p className="text-2xl font-semibold text-slate-900">
                 {loading ? "\u2014" : expiringLots.length}
               </p>
               <p className="text-sm text-slate-500">
@@ -73,10 +73,10 @@ export default function ExpiringLotsWidget({ expiringLots, loading }: Props) {
                   </div>
                   <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                     daysLeft <= 7
-                      ? "bg-red-100 text-red-700"
+                      ? "bg-red-50 text-red-600"
                       : daysLeft <= 14
-                      ? "bg-orange-100 text-orange-700"
-                      : "bg-yellow-100 text-yellow-700"
+                      ? "bg-amber-50 text-amber-600"
+                      : "bg-slate-100 text-slate-600"
                   }`}>
                     {daysLeft <= 0 ? "Expired" : `${daysLeft}d`}
                   </span>

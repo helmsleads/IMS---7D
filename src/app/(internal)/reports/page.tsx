@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Boxes,
   Wrench,
+  Receipt,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Card from "@/components/ui/Card";
@@ -114,6 +115,14 @@ const reports: ReportCard[] = [
     icon: <Wrench className="w-6 h-6" />,
     href: "/reports/service-usage",
     color: "bg-teal-100 text-teal-600",
+  },
+  {
+    id: "invoice-status",
+    title: "Invoice Status / AR Aging",
+    description: "Accounts receivable aging report for collections management and overdue tracking",
+    icon: <Receipt className="w-6 h-6" />,
+    href: "/reports/invoice-status",
+    color: "bg-pink-100 text-pink-600",
   },
 ];
 

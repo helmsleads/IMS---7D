@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, PackageCheck, Eye, Truck, Calendar, AlertCircle } from "lucide-react";
+import { Plus, PackageCheck, Eye, Truck, Calendar, AlertCircle, Clock } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -11,6 +11,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import FetchError from "@/components/ui/FetchError";
 import Pagination from "@/components/ui/Pagination";
 import { getInboundOrders, InboundOrder } from "@/lib/api/inbound";
+import { getPendingAppointmentCount } from "@/lib/api/dock-appointments";
 import { handleApiError } from "@/lib/utils/error-handler";
 import { formatDate, formatStatus } from "@/lib/utils/formatting";
 import { getStartOfDay, getEndOfDay, getStartOfWeek, getEndOfWeek, isToday as isDateToday, isThisWeek as isDateThisWeek } from "@/lib/utils/date-utils";
@@ -55,13 +56,19 @@ export default function InboundPage() {
   const [selectedStatus, setSelectedStatus] = useState<StatusFilter>("all");
   const [selectedDateFilter, setSelectedDateFilter] = useState<DateFilter>("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  const [showPendingApproval, setShowPendingApproval] = useState(false);
 
   const fetchOrders = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getInboundOrders();
+      const [data, pendingCount] = await Promise.all([
+        getInboundOrders(),
+        getPendingAppointmentCount(),
+      ]);
       setOrders(data);
+      setPendingApprovalCount(pendingCount);
     } catch (err) {
       setError(handleApiError(err));
     } finally {
@@ -111,6 +118,14 @@ export default function InboundPage() {
   const filteredOrders = useMemo(() => {
     let filtered = orders;
 
+    // Apply pending approval filter
+    if (showPendingApproval) {
+      filtered = filtered.filter(
+        (order) => (order as InboundOrderWithCount & { appointment_status?: string | null }).appointment_status === "pending_approval"
+      );
+      return filtered;
+    }
+
     // Apply status filter
     if (selectedStatus !== "all") {
       filtered = filtered.filter((order) => order.status === selectedStatus);
@@ -133,12 +148,12 @@ export default function InboundPage() {
     }
 
     return filtered;
-  }, [orders, selectedStatus, selectedDateFilter]);
+  }, [orders, selectedStatus, selectedDateFilter, showPendingApproval]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedStatus, selectedDateFilter]);
+  }, [selectedStatus, selectedDateFilter, showPendingApproval]);
 
   // Paginate the filtered results
   const paginatedOrders = useMemo(() => {
@@ -186,9 +201,20 @@ export default function InboundPage() {
     {
       key: "status",
       header: "Status",
-      render: (order: InboundOrderWithCount) => (
-        <StatusBadge status={order.status} entityType="inbound" />
-      ),
+      render: (order: InboundOrderWithCount) => {
+        const apptStatus = (order as InboundOrderWithCount & { appointment_status?: string | null }).appointment_status;
+        return (
+          <div className="flex items-center gap-2">
+            <StatusBadge status={order.status} entityType="inbound" />
+            {apptStatus === "pending_approval" && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700" title="Dock appointment pending approval">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                Appt
+              </span>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "created_at",
@@ -277,6 +303,39 @@ export default function InboundPage() {
       actions={actionButtons}
     >
       <div className="space-y-4 mb-4">
+        {/* Pending Approval Quick Filter */}
+        {pendingApprovalCount > 0 && (
+          <div>
+            <button
+              onClick={() => {
+                setShowPendingApproval(!showPendingApproval);
+                if (!showPendingApproval) {
+                  setSelectedStatus("all");
+                  setSelectedDateFilter("all");
+                }
+              }}
+              className={`
+                inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                ${showPendingApproval
+                  ? "bg-amber-600 text-white"
+                  : "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
+                }
+              `}
+            >
+              <Clock className="w-4 h-4" />
+              Pending Approval
+              <span
+                className={`
+                  inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-semibold rounded-full
+                  ${showPendingApproval ? "bg-white/20 text-white" : "bg-amber-200 text-amber-800"}
+                `}
+              >
+                {pendingApprovalCount}
+              </span>
+            </button>
+          </div>
+        )}
+
         {/* Status Tabs */}
         <div className="flex gap-2 flex-wrap">
           {STATUS_TABS.map((tab) => {

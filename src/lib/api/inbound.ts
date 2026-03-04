@@ -16,6 +16,13 @@ export interface InboundOrder {
   notes: string | null;
   created_by: string | null;
   created_at: string;
+  carrier: string | null;
+  tracking_number: string | null;
+  preferred_time_slot: string | null;
+  appointment_status: string | null;
+  appointment_approved_by: string | null;
+  appointment_approved_at: string | null;
+  appointment_rejection_reason: string | null;
 }
 
 export interface InboundItem {
@@ -53,6 +60,10 @@ export interface CreateInboundOrderData {
   client_id?: string | null;
   expected_date?: string | null;
   notes?: string | null;
+  carrier?: string | null;
+  tracking_number?: string | null;
+  preferred_time_slot?: string | null;
+  appointment_status?: string | null;
 }
 
 export interface CreateInboundItemData {
@@ -141,6 +152,10 @@ export async function createInboundOrder(
       expected_date: order.expected_date || null,
       notes: order.notes || null,
       created_by: user?.id || null,
+      carrier: order.carrier || null,
+      tracking_number: order.tracking_number || null,
+      preferred_time_slot: order.preferred_time_slot || null,
+      appointment_status: order.appointment_status || null,
     })
     .select()
     .single();

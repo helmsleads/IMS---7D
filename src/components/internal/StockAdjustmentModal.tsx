@@ -51,6 +51,7 @@ export default function StockAdjustmentModal({
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
+  const [adjustmentDate, setAdjustmentDate] = useState(new Date().toISOString().split("T")[0]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -115,6 +116,7 @@ export default function StockAdjustmentModal({
     setQuantity("");
     setReason("");
     setNotes("");
+    setAdjustmentDate(new Date().toISOString().split("T")[0]);
     setError("");
     onClose();
   };
@@ -149,6 +151,7 @@ export default function StockAdjustmentModal({
         qtyChange,
         reason,
         notes: notes || undefined,
+        adjustmentDate: adjustmentDate !== new Date().toISOString().split("T")[0] ? adjustmentDate : undefined,
       });
 
       onComplete();
@@ -261,6 +264,14 @@ export default function StockAdjustmentModal({
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="Select a reason"
+        />
+
+        <Input
+          label="Adjustment Date"
+          name="adjustmentDate"
+          type="date"
+          value={adjustmentDate}
+          onChange={(e) => setAdjustmentDate(e.target.value)}
         />
 
         <div>

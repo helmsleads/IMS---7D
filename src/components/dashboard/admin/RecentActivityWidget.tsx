@@ -24,25 +24,26 @@ interface RecentActivity {
 }
 
 function ActivityIcon({ action }: { action: string }) {
-  const map: Record<string, { icon: React.ReactNode; bg: string }> = {
-    created:    { icon: <Plus className="w-3 h-3" />, bg: "bg-green-500 text-white" },
-    shipped:    { icon: <Truck className="w-3 h-3" />, bg: "bg-purple-500 text-white" },
-    received:   { icon: <PackageCheck className="w-3 h-3" />, bg: "bg-blue-500 text-white" },
-    deleted:    { icon: <Trash2 className="w-3 h-3" />, bg: "bg-red-500 text-white" },
-    updated:    { icon: <RefreshCw className="w-3 h-3" />, bg: "bg-amber-500 text-white" },
-    status_changed: { icon: <RefreshCw className="w-3 h-3" />, bg: "bg-amber-500 text-white" },
-    stock_adjustment: { icon: <ArrowRightLeft className="w-3 h-3" />, bg: "bg-orange-500 text-white" },
-    put_away:   { icon: <ArrowDownToLine className="w-3 h-3" />, bg: "bg-teal-500 text-white" },
-    sublocation_move: { icon: <ArrowRightLeft className="w-3 h-3" />, bg: "bg-cyan-500 text-white" },
-    confirmed:  { icon: <ClipboardCheck className="w-3 h-3" />, bg: "bg-indigo-500 text-white" },
-    packed:     { icon: <Package className="w-3 h-3" />, bg: "bg-violet-500 text-white" },
-    picked:     { icon: <ClipboardCheck className="w-3 h-3" />, bg: "bg-sky-500 text-white" },
+  const iconMap: Record<string, React.ReactNode> = {
+    created:          <Plus className="w-3 h-3" />,
+    shipped:          <Truck className="w-3 h-3" />,
+    received:         <PackageCheck className="w-3 h-3" />,
+    deleted:          <Trash2 className="w-3 h-3" />,
+    updated:          <RefreshCw className="w-3 h-3" />,
+    status_changed:   <RefreshCw className="w-3 h-3" />,
+    stock_adjustment: <ArrowRightLeft className="w-3 h-3" />,
+    put_away:         <ArrowDownToLine className="w-3 h-3" />,
+    sublocation_move: <ArrowRightLeft className="w-3 h-3" />,
+    confirmed:        <ClipboardCheck className="w-3 h-3" />,
+    packed:           <Package className="w-3 h-3" />,
+    picked:           <ClipboardCheck className="w-3 h-3" />,
   };
-  const entry = map[action] || { icon: <FileText className="w-3 h-3" />, bg: "bg-slate-400 text-white" };
+  const icon = iconMap[action] || <FileText className="w-3 h-3" />;
+  const bg = action === "deleted" ? "bg-slate-500 text-white" : "bg-slate-400 text-white";
 
   return (
-    <div className={`w-6 h-6 rounded-full flex items-center justify-center ring-4 ring-white ${entry.bg}`}>
-      {entry.icon}
+    <div className={`w-6 h-6 rounded-full flex items-center justify-center ring-4 ring-white ${bg}`}>
+      {icon}
     </div>
   );
 }

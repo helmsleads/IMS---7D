@@ -155,6 +155,59 @@ export default function ReorderSuggestionsPage() {
                 ),
               },
               {
+                key: "velocity",
+                label: "Velocity",
+                render: (row: ReorderSuggestion) => (
+                  <span className="text-gray-600">
+                    {row.avgDailyVelocity > 0 ? `${row.avgDailyVelocity}/day` : "—"}
+                  </span>
+                ),
+              },
+              {
+                key: "daysOfStock",
+                label: "Days of Stock",
+                render: (row: ReorderSuggestion) => {
+                  if (row.avgDailyVelocity === 0) {
+                    return (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-500">
+                        No recent sales
+                      </span>
+                    );
+                  }
+                  if (row.daysOfStock <= 7) {
+                    return (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">
+                        {row.daysOfStock}d
+                      </span>
+                    );
+                  }
+                  if (row.daysOfStock <= 14) {
+                    return (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                        {row.daysOfStock}d
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+                      {row.daysOfStock}d
+                    </span>
+                  );
+                },
+              },
+              {
+                key: "method",
+                label: "Method",
+                render: (row: ReorderSuggestion) =>
+                  row.velocityBased ? (
+                    <Badge variant="info">Velocity</Badge>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
+                      Manual
+                    </span>
+                  ),
+              },
+              {
                 key: "urgency",
                 label: "Urgency",
                 render: (row: ReorderSuggestion) => getUrgencyBadge(row.currentQty, row.reorderPoint),

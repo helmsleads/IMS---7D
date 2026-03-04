@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { createServiceClient } from '@/lib/supabase-service'
 import { decryptToken } from '@/lib/encryption'
+import { deactivateShopifyLocation } from '@/lib/api/shopify/location-management'
 
 /**
  * Delete/disconnect a Shopify integration
@@ -71,11 +72,23 @@ export async function DELETE(
       .eq('id', integrationId)
       .single()
 
-    // Attempt to clean up webhooks in Shopify (best effort - don't fail if this fails)
+    // Attempt to clean up in Shopify (best effort - don't fail if this fails)
     if (integration?.access_token && integration?.shop_domain) {
-      // Decrypt the access token for Shopify API calls
       const accessToken = decryptToken(integration.access_token)
+
+      // Deregister webhooks
       await deregisterShopifyWebhooks(integration.shop_domain, accessToken)
+
+      // Deactivate location if we created it
+      if (integration.location_created_by_us && integration.shopify_location_id) {
+        await deactivateShopifyLocation(
+          integration.shop_domain,
+          accessToken,
+          integration.shopify_location_id
+        ).catch((err) =>
+          console.warn('Failed to deactivate location (best effort):', err)
+        )
+      }
     }
 
     // Delete the integration (product mappings are preserved via FK with SET NULL or kept)

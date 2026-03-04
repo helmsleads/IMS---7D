@@ -337,6 +337,8 @@ export async function sendPortalOrderNotification(params: {
       shipped: "shipped",
       delivered: "delivered",
       cancelled: "cancelled",
+      appointment_approved: "approved for dock appointment",
+      appointment_rejected: "declined for dock appointment",
     };
 
     const statusText = statusLabels[params.status] || params.status;

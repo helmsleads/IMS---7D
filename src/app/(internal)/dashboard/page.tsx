@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Package,
+  PackagePlus,
   DollarSign,
   AlertTriangle,
   Clock,
   Settings,
+  LayoutGrid,
+  Truck,
+  ArrowDownToLine,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import StatCard from "@/components/ui/StatCard";
@@ -35,6 +40,7 @@ import {
   getSupplierLeadTimes,
   getReturnRateByProduct,
   getDaysOfSupply,
+  getVelocitySettings,
   getInventoryHealth,
   getRevenueByClient,
   getDailyThroughputTimeline,
@@ -51,6 +57,8 @@ import {
   getReturnsByReason,
   getDamageRateTrend,
   getExpirationTimeline,
+  getSalesSummary,
+  getInventoryStatusBreakdown,
   DashboardStats,
   RecentActivity,
   ExpectedArrival,
@@ -81,6 +89,8 @@ import {
   ReturnReasonData,
   DamageRatePoint,
   ExpirationTimelineItem,
+  SalesSummaryData,
+  InventoryStatusBreakdown,
 } from "@/lib/api/dashboard";
 import { getReturns, ReturnWithItems } from "@/lib/api/returns";
 import { getExpiringLots, LotWithInventory } from "@/lib/api/lots";
@@ -92,6 +102,8 @@ interface LowStockItem {
   product_id: string;
   location_id: string;
   qty_on_hand: number;
+  avgDailyVelocity: number;
+  daysOfStock: number;
   product: {
     id: string;
     sku: string;
@@ -148,6 +160,8 @@ export default function DashboardPage() {
   const [returnReasons, setReturnReasons] = useState<ReturnReasonData[]>([]);
   const [damageData, setDamageData] = useState<DamageRatePoint[]>([]);
   const [expirationTimeline, setExpirationTimeline] = useState<ExpirationTimelineItem[]>([]);
+  const [salesSummary, setSalesSummary] = useState<SalesSummaryData | null>(null);
+  const [inventoryStatusBreakdown, setInventoryStatusBreakdown] = useState<InventoryStatusBreakdown | null>(null);
   const [showStockAdjustment, setShowStockAdjustment] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
 
@@ -170,10 +184,23 @@ export default function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setUserId(user.id);
-      if (user.email) setUserName(user.email.split("@")[0]);
+      // Fetch proper display name from users table
+      const { data: userRecord } = await supabase
+        .from("users")
+        .select("name")
+        .eq("id", user.id)
+        .single();
+      if (userRecord?.name) {
+        setUserName(userRecord.name);
+      } else if (user.email) {
+        setUserName(user.email.split("@")[0]);
+      }
     }
 
     try {
+      // Fetch velocity settings first so getDaysOfSupply can use configurable window
+      const velSettings = await getVelocitySettings();
+
       const [
         dashboardData, lowStock, arrivals, toShip, returns, lots, invoices,
         aged, velocity, attention,
@@ -183,6 +210,8 @@ export default function DashboardPage() {
         proximity, accuracy, waterfall, monthlyRev,
         recvAccuracy, calendar, reasons, damage, expTimeline,
         health,
+        salesSummaryData,
+        invStatusBreakdown,
       ] = await Promise.all([
         getDashboardStats(),
         getLowStockItems(),
@@ -201,7 +230,7 @@ export default function DashboardPage() {
         getInvoiceAgingBuckets(),
         getSupplierLeadTimes(),
         getReturnRateByProduct(),
-        getDaysOfSupply(),
+        getDaysOfSupply(velSettings.velocityWindowDays),
         getRevenueByClient(),
         getDailyThroughputTimeline(),
         getOrderCycleTime(),
@@ -218,6 +247,8 @@ export default function DashboardPage() {
         getDamageRateTrend(),
         getExpirationTimeline(),
         getInventoryHealth(),
+        getSalesSummary(),
+        getInventoryStatusBreakdown(),
       ]);
       setStats(dashboardData.stats);
       setRecentActivity(dashboardData.recentActivity);
@@ -254,6 +285,8 @@ export default function DashboardPage() {
       setDamageData(damage);
       setExpirationTimeline(expTimeline);
       setInventoryHealth(health);
+      setSalesSummary(salesSummaryData);
+      setInventoryStatusBreakdown(invStatusBreakdown);
 
       const { count } = await supabase
         .from("messages")
@@ -327,38 +360,93 @@ export default function DashboardPage() {
     "damage-rate-trend": { damageData },
     "expiration-timeline": { timelineData: expirationTimeline },
     "fefo-compliance": {},
+    "sales-summary": { salesData: salesSummary, loading },
+    "inventory-status-breakdown": { statusBreakdown: inventoryStatusBreakdown, loading },
   };
 
   const handleQuickAdd = (id: string) => {
     toggleWidget(id);
   };
 
+  const todayFormatted = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  // Sparkline data derived from already-fetched data
+  const inventoryValueSparkline = inboundOutboundFlow.slice(-14).map((p) => ({
+    value: p.inbound + p.outbound,
+  }));
+  const pendingOrdersSparkline = dailyThroughput.map((d) => ({
+    value: d.picked + d.packed + d.shipped,
+  }));
+
   return (
     <AppShell
       title="Dashboard"
       subtitle="Overview of your warehouse operations"
-      actions={
-        <button
-          onClick={() => setShowCustomizer(!showCustomizer)}
-          className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-            showCustomizer
-              ? "bg-indigo-100 text-indigo-700"
-              : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300"
-          }`}
-        >
-          <Settings className="w-4 h-4" />
-          Customize
-        </button>
-      }
     >
-      {/* Welcome Message */}
-      <div className="mb-8 animate-widget-enter">
-        <h2 className="text-2xl font-semibold text-slate-900">
-          {getGreeting()}{userName ? `, ${userName}` : ""}!
-        </h2>
-        <p className="text-slate-500 mt-1">
-          Here&apos;s what&apos;s happening at 7D Warehouse today.
-        </p>
+      {/* Hero Banner */}
+      <div className="relative mb-8 animate-widget-enter rounded-2xl bg-gradient-to-br from-indigo-50 via-white to-slate-50 border border-indigo-100/50 p-6 md:p-8 overflow-hidden">
+        <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-indigo-500/5" />
+        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-indigo-500/5" />
+        <div className="relative">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">{todayFormatted}</p>
+              <h2 className="text-2xl font-semibold text-slate-900">
+                {getGreeting()}{userName ? `, ${userName}` : ""}!
+              </h2>
+              <p className="text-slate-500 mt-1">
+                Here&apos;s what&apos;s happening at 7D Warehouse today.
+              </p>
+              {!loading && stats && (
+                <p className="text-sm text-slate-400 mt-1">
+                  {[
+                    pendingOrdersTotal > 0 && `${pendingOrdersTotal} pending order${pendingOrdersTotal !== 1 ? "s" : ""}`,
+                    stats.lowStockCount > 0 && `${stats.lowStockCount} low stock alert${stats.lowStockCount !== 1 ? "s" : ""}`,
+                  ].filter(Boolean).join(" \u00b7 ") || "All clear \u2014 no urgent items right now."}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setShowCustomizer(!showCustomizer)}
+              className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all shrink-0 ${
+                showCustomizer
+                  ? "bg-indigo-100 text-indigo-700"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+              }`}
+            >
+              <Settings className="w-4 h-4" />
+              Customize
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/inbound/new"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white font-medium rounded-lg hover:from-indigo-600 hover:to-indigo-700 transition-all shadow-sm text-sm"
+            >
+              <ArrowDownToLine className="w-4 h-4" />
+              New Inbound
+            </Link>
+            <Link
+              href="/outbound/new"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-lg border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors text-sm"
+            >
+              <Truck className="w-4 h-4" />
+              New Outbound
+            </Link>
+            <button
+              onClick={() => setShowStockAdjustment(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-lg border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors text-sm"
+            >
+              <PackagePlus className="w-4 h-4" />
+              Adjust Stock
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Overview Stats */}
@@ -379,6 +467,8 @@ export default function DashboardPage() {
             label="Inventory Value"
             value={loading ? "\u2014" : formatCurrency(stats?.totalInventoryValue || 0, 0)}
             loading={loading}
+            sparklineData={inventoryValueSparkline.length >= 2 ? inventoryValueSparkline : undefined}
+            sparklineColor="#16a34a"
           />
         </div>
         <div className="animate-widget-enter" style={{ animationDelay: "150ms" }}>
@@ -397,9 +487,14 @@ export default function DashboardPage() {
             label="Pending Orders"
             value={loading ? "\u2014" : pendingOrdersTotal}
             loading={loading}
+            sparklineData={pendingOrdersSparkline.length >= 2 ? pendingOrdersSparkline : undefined}
+            sparklineColor="#d97706"
           />
         </div>
       </div>
+
+      {/* Section Divider */}
+      <div className="border-b border-slate-200/60 mb-6" />
 
       {/* Customizer Panel */}
       {showCustomizer && (
@@ -418,6 +513,13 @@ export default function DashboardPage() {
           />
         </div>
       )}
+
+      {/* Section Header */}
+      <div className="flex items-center gap-2 mb-4">
+        <LayoutGrid className="w-4 h-4 text-slate-400" />
+        <h3 className="text-sm font-medium text-slate-500">Dashboard Widgets</h3>
+        <span className="text-xs text-slate-400">({enabledWidgets.length} active)</span>
+      </div>
 
       {/* Dynamic Widget Grid */}
       <DynamicWidgetGrid

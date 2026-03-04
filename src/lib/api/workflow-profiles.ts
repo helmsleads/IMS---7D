@@ -114,6 +114,7 @@ export const DEFAULT_WORKFLOW_PROFILE: Omit<WorkflowProfile, 'id' | 'code' | 'na
   billing_pick_rate: null,
   billing_pack_rate: null,
   billing_minimum_monthly: null,
+  billing_handling_fee: null,
 
   // Integration - disabled by default
   integration_auto_import_orders: false,

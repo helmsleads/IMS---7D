@@ -8,6 +8,7 @@ import { sendInternalAlert, sendPortalOrderNotification } from "@/lib/api/notifi
 import { reserveOrderItems, releaseOrderReservations, releaseReservation } from "./reservations";
 import { updateInventoryWithTransaction } from "./inventory-transactions";
 import { autoAssignBoxesForOrder } from "./box-usage";
+import { generateShipmentInvoice } from "./invoices";
 import { syncFulfillmentToShopify } from "./shopify/fulfillment-sync";
 
 export type OrderSource = 'portal' | 'internal' | 'api';
@@ -543,6 +544,10 @@ export async function updateOutboundOrderStatus(
     // Record billable events for shipping
     recordOutboundUsage(id).catch((err) =>
       console.error("Failed to record outbound usage:", err)
+    );
+    // Generate draft invoice for this shipment
+    generateShipmentInvoice(id).catch((err) =>
+      console.error("Failed to generate shipment invoice:", err)
     );
     // Send internal alert for order shipped
     (async () => {

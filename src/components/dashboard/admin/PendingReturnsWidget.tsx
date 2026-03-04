@@ -20,17 +20,11 @@ export default function PendingReturnsWidget({ count, loading }: Props) {
         </Link>
       </div>
       <div className="flex items-center gap-4">
-        <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-          count > 0 ? "bg-orange-100" : "bg-slate-100"
-        }`}>
-          <RotateCcw className={`w-6 h-6 ${
-            count > 0 ? "text-orange-600" : "text-slate-400"
-          }`} />
+        <div className="w-12 h-12 rounded-lg flex items-center justify-center bg-slate-100">
+          <RotateCcw className="w-6 h-6 text-slate-500" />
         </div>
         <div>
-          <p className={`text-2xl font-semibold ${
-            count > 0 ? "text-orange-600" : "text-slate-900"
-          }`}>
+          <p className="text-2xl font-semibold text-slate-900">
             {loading ? "\u2014" : count}
           </p>
           <p className="text-sm text-slate-500">

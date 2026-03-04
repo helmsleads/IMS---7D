@@ -17,6 +17,8 @@ import {
   MapPin,
   ShieldCheck,
   ClipboardList,
+  Clock,
+  CalendarCheck,
 } from "lucide-react";
 import Link from "next/link";
 import AppShell from "@/components/internal/AppShell";
@@ -60,6 +62,10 @@ import { getSublocations, SublocationWithLocation } from "@/lib/api/sublocations
 import { getPalletLPNs, LPNWithContents, LPN } from "@/lib/api/lpns";
 import PalletContentsCard from "@/components/internal/PalletContentsCard";
 import ReceivingScanner from "@/components/internal/ReceivingScanner";
+import {
+  approveAppointment,
+  rejectAppointment,
+} from "@/lib/api/dock-appointments";
 
 const STATUS_STEPS = [
   { key: "ordered", label: "Ordered", icon: Package },
@@ -167,6 +173,12 @@ export default function InboundOrderDetailPage() {
   const [damageDescription, setDamageDescription] = useState("");
   const [reportingDamage, setReportingDamage] = useState(false);
 
+  // Appointment approval state
+  const [approvingAppointment, setApprovingAppointment] = useState(false);
+  const [rejectingAppointment, setRejectingAppointment] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [appointmentRejectReason, setAppointmentRejectReason] = useState("");
+
   // Put-away state
   interface PutAwayItem {
     itemId: string;
@@ -190,6 +202,35 @@ export default function InboundOrderDetailPage() {
 
   // Related warehouse tasks
   const [relatedTasks, setRelatedTasks] = useState<WarehouseTaskWithRelations[]>([]);
+
+  const handleApproveAppointment = async () => {
+    setApprovingAppointment(true);
+    try {
+      await approveAppointment(orderId);
+      await fetchOrder();
+    } catch (err) {
+      console.error("Failed to approve appointment:", err);
+      setError("Failed to approve appointment");
+    } finally {
+      setApprovingAppointment(false);
+    }
+  };
+
+  const handleRejectAppointment = async () => {
+    if (!appointmentRejectReason.trim()) return;
+    setRejectingAppointment(true);
+    try {
+      await rejectAppointment(orderId, appointmentRejectReason.trim());
+      setShowRejectModal(false);
+      setAppointmentRejectReason("");
+      await fetchOrder();
+    } catch (err) {
+      console.error("Failed to reject appointment:", err);
+      setError("Failed to reject appointment");
+    } finally {
+      setRejectingAppointment(false);
+    }
+  };
 
   const fetchOrder = async () => {
     try {
@@ -1255,6 +1296,98 @@ export default function InboundOrderDetailPage() {
                 </p>
               </div>
 
+              {/* Preferred Time Slot */}
+              {order.preferred_time_slot && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Time Slot</p>
+                  <p className="font-medium text-gray-900">
+                    {order.preferred_time_slot === "am" ? "AM (8am–12pm)" : "PM (12pm–5pm)"}
+                  </p>
+                </div>
+              )}
+
+              {/* Dock Appointment */}
+              {order.appointment_status && (
+                <div className="pt-4 border-t border-gray-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CalendarCheck className="w-4 h-4 text-gray-500" />
+                    <p className="text-sm font-medium text-gray-700">Dock Appointment</p>
+                  </div>
+
+                  {order.appointment_status === "pending_approval" && (
+                    <div className="space-y-2">
+                      <Badge variant="warning">Pending Approval</Badge>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleApproveAppointment}
+                          loading={approvingAppointment}
+                          disabled={approvingAppointment}
+                          className="flex-1"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setShowRejectModal(true)}
+                          disabled={approvingAppointment}
+                          className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <XCircle className="w-3.5 h-3.5 mr-1" />
+                          Reject
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {order.appointment_status === "approved" && (
+                    <div className="space-y-1">
+                      <Badge variant="success">Approved</Badge>
+                      {order.appointment_approved_at && (
+                        <p className="text-xs text-gray-500">
+                          {formatDateTime(order.appointment_approved_at)}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {order.appointment_status === "rejected" && (
+                    <div className="space-y-1">
+                      <Badge variant="default">
+                        <span className="text-red-700">Rejected</span>
+                      </Badge>
+                      {order.appointment_rejection_reason && (
+                        <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+                          {order.appointment_rejection_reason}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Carrier */}
+              {order.carrier && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Carrier</p>
+                  <p className="font-medium text-gray-900">
+                    {order.carrier}
+                  </p>
+                </div>
+              )}
+
+              {/* Tracking Number */}
+              {order.tracking_number && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Tracking Number</p>
+                  <p className="font-medium text-gray-900 font-mono text-sm">
+                    {order.tracking_number}
+                  </p>
+                </div>
+              )}
+
               {/* Created Date */}
               <div>
                 <p className="text-sm text-gray-500 mb-1">Created</p>
@@ -1980,6 +2113,56 @@ export default function InboundOrderDetailPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Reject Appointment Modal */}
+      <Modal
+        isOpen={showRejectModal}
+        onClose={() => {
+          setShowRejectModal(false);
+          setAppointmentRejectReason("");
+        }}
+        title="Reject Dock Appointment"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Please provide a reason for rejecting this dock appointment. The client will be notified.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Rejection Reason <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={appointmentRejectReason}
+              onChange={(e) => setAppointmentRejectReason(e.target.value)}
+              placeholder="e.g., Dock is at full capacity on this date, please select another date."
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-none"
+            />
+          </div>
+          <div className="flex gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowRejectModal(false);
+                setAppointmentRejectReason("");
+              }}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRejectAppointment}
+              loading={rejectingAppointment}
+              disabled={rejectingAppointment || !appointmentRejectReason.trim()}
+              className="flex-1 bg-red-600 hover:bg-red-700"
+            >
+              <XCircle className="w-4 h-4 mr-1" />
+              Reject Appointment
+            </Button>
+          </div>
+        </div>
       </Modal>
     </AppShell>
   );

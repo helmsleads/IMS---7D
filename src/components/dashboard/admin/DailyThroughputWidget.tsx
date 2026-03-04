@@ -35,8 +35,8 @@ export default function DailyThroughputWidget({ throughputData }: Props) {
             data={chartData}
             bars={[
               { dataKey: "picked", color: "#4F46E5", label: "Picked" },
-              { dataKey: "packed", color: "#06B6D4", label: "Packed" },
-              { dataKey: "shipped", color: "#10B981", label: "Shipped" },
+              { dataKey: "packed", color: "#818CF8", label: "Packed" },
+              { dataKey: "shipped", color: "#C7D2FE", label: "Shipped" },
             ]}
             showXAxis
           />

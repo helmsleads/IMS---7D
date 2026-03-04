@@ -7,6 +7,7 @@ import {
   Send,
   CheckCircle,
   Edit,
+  Pencil,
   Printer,
   Download,
   XCircle,
@@ -29,6 +30,7 @@ import {
   markInvoicePaid,
   updateInvoice,
   addInvoiceItem,
+  updateInvoiceItem,
   deleteInvoiceItem,
   deleteInvoice,
   InvoiceWithItems,
@@ -87,6 +89,14 @@ export default function InvoiceDetailPage() {
   const [newItemQuantity, setNewItemQuantity] = useState("");
   const [newItemUnitPrice, setNewItemUnitPrice] = useState("");
   const [itemSaving, setItemSaving] = useState(false);
+
+  // Edit item modal
+  const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [editItemId, setEditItemId] = useState("");
+  const [editItemDescription, setEditItemDescription] = useState("");
+  const [editItemQuantity, setEditItemQuantity] = useState("");
+  const [editItemUnitPrice, setEditItemUnitPrice] = useState("");
+  const [editItemOriginalTotal, setEditItemOriginalTotal] = useState(0);
 
   // Tax rate editing
   const [editTaxRate, setEditTaxRate] = useState("");
@@ -315,6 +325,52 @@ export default function InvoiceDetailPage() {
       setError(handleApiError(err));
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const openEditItemModal = (item: { id: string; description: string; quantity: number; unit_price: number; total: number }) => {
+    setEditItemId(item.id);
+    setEditItemDescription(item.description);
+    setEditItemQuantity(item.quantity.toString());
+    setEditItemUnitPrice(item.unit_price.toString());
+    setEditItemOriginalTotal(item.total);
+    setShowEditItemModal(true);
+  };
+
+  const handleEditItem = async () => {
+    if (!invoice || !editItemId || !editItemDescription || !editItemQuantity || !editItemUnitPrice) return;
+    setItemSaving(true);
+    try {
+      const quantity = parseFloat(editItemQuantity);
+      const unitPrice = parseFloat(editItemUnitPrice);
+      const newTotal = quantity * unitPrice;
+
+      await updateInvoiceItem(editItemId, {
+        description: editItemDescription,
+        quantity,
+        unit_price: unitPrice,
+        total: newTotal,
+      });
+
+      // Recalculate invoice totals: subtract old item total, add new
+      const newSubtotal = invoice.subtotal - editItemOriginalTotal + newTotal;
+      const newTaxAmount = newSubtotal * (invoice.tax_rate / 100);
+      const newInvoiceTotal = newSubtotal + newTaxAmount;
+
+      await updateInvoice(invoice.id, {
+        subtotal: newSubtotal,
+        tax_amount: newTaxAmount,
+        total: newInvoiceTotal,
+      });
+
+      await fetchInvoice();
+      setShowEditItemModal(false);
+      setSuccessMessage("Item updated successfully");
+      setTimeout(() => setSuccessMessage(""), 3000);
+    } catch (err) {
+      setError(handleApiError(err));
+    } finally {
+      setItemSaving(false);
     }
   };
 
@@ -650,14 +706,24 @@ export default function InvoiceDetailPage() {
                       </td>
                       {invoice.status === "draft" && (
                         <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={() => handleDeleteItem(item.id, item.total)}
-                            className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                            title="Delete item"
-                            disabled={actionLoading}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => openEditItemModal(item)}
+                              className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                              title="Edit item"
+                              disabled={actionLoading}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteItem(item.id, item.total)}
+                              className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                              title="Delete item"
+                              disabled={actionLoading}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -963,6 +1029,72 @@ export default function InvoiceDetailPage() {
               disabled={!newItemDescription || !newItemQuantity || !newItemUnitPrice || itemSaving}
             >
               {itemSaving ? "Adding..." : "Add Item"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      {/* Edit Item Modal */}
+      <Modal
+        isOpen={showEditItemModal}
+        onClose={() => setShowEditItemModal(false)}
+        title="Edit Line Item"
+        size="md"
+      >
+        <div className="space-y-4">
+          <Input
+            label="Description"
+            name="edit_description"
+            value={editItemDescription}
+            onChange={(e) => setEditItemDescription(e.target.value)}
+            placeholder="e.g., Storage fees for January"
+            required
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Quantity"
+              name="edit_quantity"
+              type="number"
+              value={editItemQuantity}
+              onChange={(e) => setEditItemQuantity(e.target.value)}
+              placeholder="1"
+              min={0}
+              step={0.01}
+              required
+            />
+            <Input
+              label="Unit Price"
+              name="edit_unit_price"
+              type="number"
+              value={editItemUnitPrice}
+              onChange={(e) => setEditItemUnitPrice(e.target.value)}
+              placeholder="0.00"
+              min={0}
+              step={0.01}
+              required
+            />
+          </div>
+          {editItemQuantity && editItemUnitPrice && (
+            <div className="bg-gray-50 rounded-md p-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Line Total:</span>
+                <span className="font-medium text-gray-900">
+                  {formatCurrency(parseFloat(editItemQuantity) * parseFloat(editItemUnitPrice))}
+                </span>
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-3 pt-4">
+            <Button
+              variant="secondary"
+              onClick={() => setShowEditItemModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleEditItem}
+              disabled={!editItemDescription || !editItemQuantity || !editItemUnitPrice || itemSaving}
+            >
+              {itemSaving ? "Saving..." : "Save Changes"}
             </Button>
           </div>
         </div>

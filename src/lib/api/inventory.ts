@@ -195,9 +195,9 @@ export async function getLowStockItems(): Promise<InventoryWithDetails[]> {
     throw new Error(error.message);
   }
 
-  // Filter items where qty_on_hand <= reorder_point
+  // Filter to low stock and out-of-stock items
   const lowStockItems = (data || []).filter(
-    (item) => item.qty_on_hand <= item.product.reorder_point
+    (item) => item.qty_on_hand === 0 || (item.product.reorder_point > 0 && item.qty_on_hand <= item.product.reorder_point)
   );
 
   return lowStockItems;
@@ -234,6 +234,7 @@ export interface StockAdjustmentParams {
   qtyChange: number;
   reason: string;
   notes?: string;
+  adjustmentDate?: string;
 }
 
 export async function adjustStock({
@@ -242,6 +243,7 @@ export async function adjustStock({
   qtyChange,
   reason,
   notes,
+  adjustmentDate,
 }: StockAdjustmentParams): Promise<InventoryWithDetails> {
   const supabase = createClient();
 
@@ -294,6 +296,7 @@ export async function adjustStock({
     entity_id: inventoryData.id,
     action: "stock_adjustment",
     user_id: adjustUser?.id || null,
+    ...(adjustmentDate ? { created_at: new Date(adjustmentDate).toISOString() } : {}),
     details: {
       product_id: productId,
       location_id: locationId,
@@ -301,6 +304,7 @@ export async function adjustStock({
       new_qty: inventoryData.qty_on_hand,
       reason,
       notes: notes || null,
+      ...(adjustmentDate ? { adjustment_date: adjustmentDate } : {}),
     },
   });
 

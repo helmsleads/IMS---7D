@@ -7,6 +7,7 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Table from "@/components/ui/Table";
 import Badge from "@/components/ui/Badge";
+import Toggle from "@/components/ui/Toggle";
 import Card from "@/components/ui/Card";
 import Select from "@/components/ui/Select";
 import EmptyState from "@/components/ui/EmptyState";
@@ -24,55 +25,6 @@ import Pagination from "@/components/ui/Pagination";
 
 const ITEMS_PER_PAGE = 25;
 
-const columns = [
-  { key: "sku", header: "SKU" },
-  { key: "name", header: "Name" },
-  {
-    key: "client",
-    header: "Client",
-    render: (product: ProductWithCategory) => (
-      <span className={product.client ? "text-gray-900" : "text-gray-400"}>
-        {product.client?.company_name || "—"}
-      </span>
-    ),
-  },
-  {
-    key: "category",
-    header: "Category",
-    render: (product: ProductWithCategory) => {
-      const categoryName = product.product_category?.name || product.category || "—";
-      const subcategoryName = product.product_subcategory?.name;
-      return (
-        <div>
-          <div className="font-medium">{categoryName}</div>
-          {subcategoryName && (
-            <div className="text-xs text-gray-500">{subcategoryName}</div>
-          )}
-        </div>
-      );
-    },
-  },
-  {
-    key: "unit_cost",
-    header: "Cost",
-    render: (product: ProductWithCategory) => formatCurrency(product.unit_cost),
-  },
-  {
-    key: "base_price",
-    header: "Price",
-    render: (product: ProductWithCategory) => formatCurrency(product.base_price),
-  },
-  {
-    key: "active",
-    header: "Status",
-    render: (product: ProductWithCategory) => (
-      <Badge variant={product.active ? "success" : "default"}>
-        {product.active ? "Active" : "Inactive"}
-      </Badge>
-    ),
-  },
-];
-
 export default function ProductsPage() {
   const [products, setProducts] = useState<ProductWithCategory[]>([]);
   const [categoryList, setCategoryList] = useState<ProductCategory[]>([]);
@@ -83,6 +35,8 @@ export default function ProductsPage() {
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedClient, setSelectedClient] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedStatus, setSelectedStatus] = useState("");
+  const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductWithCategory | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
@@ -111,6 +65,91 @@ export default function ProductsPage() {
   }, []);
 
   const [errorMessage, setErrorMessage] = useState("");
+
+  const handleToggleActive = async (product: ProductWithCategory) => {
+    const newActive = !product.active;
+    // Optimistic update
+    setProducts((prev) =>
+      prev.map((p) => (p.id === product.id ? { ...p, active: newActive } : p))
+    );
+    setTogglingIds((prev) => new Set(prev).add(product.id));
+    try {
+      await updateProduct(product.id, { active: newActive });
+    } catch (err) {
+      // Revert on error
+      setProducts((prev) =>
+        prev.map((p) => (p.id === product.id ? { ...p, active: !newActive } : p))
+      );
+      setErrorMessage("Failed to update product status");
+      setTimeout(() => setErrorMessage(""), 5000);
+    } finally {
+      setTogglingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(product.id);
+        return next;
+      });
+    }
+  };
+
+  const columns = [
+    { key: "sku", header: "SKU" },
+    { key: "name", header: "Name" },
+    {
+      key: "client",
+      header: "Client",
+      render: (product: ProductWithCategory) => (
+        <span className={product.client ? "text-gray-900" : "text-gray-400"}>
+          {product.client?.company_name || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "category",
+      header: "Category",
+      render: (product: ProductWithCategory) => {
+        const categoryName = product.product_category?.name || product.category || "—";
+        const subcategoryName = product.product_subcategory?.name;
+        return (
+          <div>
+            <div className="font-medium">{categoryName}</div>
+            {subcategoryName && (
+              <div className="text-xs text-gray-500">{subcategoryName}</div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: "unit_cost",
+      header: "Cost",
+      render: (product: ProductWithCategory) => formatCurrency(product.unit_cost),
+    },
+    {
+      key: "base_price",
+      header: "Price",
+      render: (product: ProductWithCategory) => formatCurrency(product.base_price),
+    },
+    {
+      key: "active",
+      header: "Status",
+      render: (product: ProductWithCategory) => (
+        <div
+          className="flex items-center gap-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Toggle
+            checked={product.active}
+            onChange={() => handleToggleActive(product)}
+            loading={togglingIds.has(product.id)}
+            size="sm"
+          />
+          <span className={`text-xs font-medium ${product.active ? "text-green-700" : "text-slate-400"}`}>
+            {product.active ? "Active" : "Inactive"}
+          </span>
+        </div>
+      ),
+    },
+  ];
 
   const handleSaveProduct = async (productData: Partial<Product>) => {
     try {
@@ -180,14 +219,18 @@ export default function ProductsPage() {
         !selectedCategory || product.category_id === selectedCategory;
       const matchesClient =
         !selectedClient || product.client_id === selectedClient;
-      return matchesSearch && matchesCategory && matchesClient;
+      const matchesStatus =
+        !selectedStatus ||
+        (selectedStatus === "active" && product.active) ||
+        (selectedStatus === "inactive" && !product.active);
+      return matchesSearch && matchesCategory && matchesClient && matchesStatus;
     });
-  }, [products, searchTerm, selectedCategory, selectedClient]);
+  }, [products, searchTerm, selectedCategory, selectedClient, selectedStatus]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedCategory, selectedClient]);
+  }, [searchTerm, selectedCategory, selectedClient, selectedStatus]);
 
   // Paginate the filtered results
   const paginatedProducts = useMemo(() => {
@@ -280,6 +323,18 @@ export default function ProductsPage() {
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
             placeholder="All Categories"
+          />
+        </div>
+        <div className="w-48">
+          <Select
+            name="status"
+            options={[
+              { value: "active", label: "Active" },
+              { value: "inactive", label: "Inactive" },
+            ]}
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            placeholder="All Status"
           />
         </div>
       </div>

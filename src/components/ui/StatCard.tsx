@@ -68,9 +68,9 @@ export default function StatCard({
   if (loading) return <SkeletonStatCard />;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 transition-all duration-200 hover:shadow-md hover:border-slate-300">
+    <div className="group bg-white rounded-xl border border-slate-200 shadow-sm p-6 transition-all duration-200 hover:shadow-md hover:border-slate-300">
       <div className="flex items-center gap-4">
-        <div className={`w-12 h-12 rounded-xl ring-1 ring-current/10 flex items-center justify-center ${iconColor}`}>
+        <div className={`w-12 h-12 rounded-xl ring-1 ring-current/10 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 ${iconColor}`}>
           {icon}
         </div>
         <div className="flex-1 min-w-0">
@@ -97,7 +97,7 @@ export default function StatCard({
       </div>
       {sparklineData && sparklineData.length >= 2 && (
         <div className="mt-3 -mx-1">
-          <MiniSparkline data={sparklineData} color={sparklineColor} height={32} />
+          <MiniSparkline data={sparklineData} color={sparklineColor} height={36} />
         </div>
       )}
     </div>

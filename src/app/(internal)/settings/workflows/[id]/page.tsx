@@ -1090,6 +1090,18 @@ function BillingTab({ profile, updateField }: TabProps) {
             />
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Handling Fee ($/order)</label>
+            <input
+              type="number"
+              value={profile.billing_handling_fee || ""}
+              onChange={(e) => updateField("billing_handling_fee", e.target.value ? parseFloat(e.target.value) : null)}
+              min={0}
+              step={0.01}
+              disabled={!profile.billing_enabled}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+            />
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Minimum Monthly ($)</label>
             <input
               type="number"

@@ -16,6 +16,8 @@ export interface Client {
   workflow_profile_id: string | null;
   allow_product_workflow_override: boolean;  // Allow products to have their own workflow profiles
   qb_customer_id: string | null;
+  account_manager_id: string | null;
+  account_manager?: { id: string; name: string } | null;
 }
 
 export interface ClientWithSummary extends Client {
@@ -77,12 +79,23 @@ export interface ClientOrder {
 export async function getClients(): Promise<Client[]> {
   const supabase = createClient();
 
+  // Try with account_manager join first; fall back to plain select if FK doesn't exist yet
   const { data, error } = await supabase
     .from("clients")
-    .select("*")
+    .select("*, account_manager:users!account_manager_id(id, name)")
     .order("company_name");
 
   if (error) {
+    // FK may not exist if migration hasn't been applied — fall back
+    if (error.message.includes("relationship")) {
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from("clients")
+        .select("*")
+        .order("company_name");
+
+      if (fallbackError) throw new Error(fallbackError.message);
+      return fallbackData || [];
+    }
     throw new Error(error.message);
   }
 
@@ -93,10 +106,14 @@ export async function getClient(id: string): Promise<ClientWithSummary | null> {
   const supabase = createClient();
 
   // Get client data with workflow profile
-  const { data: client, error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let client: any = null;
+
+  const { data: clientData, error } = await supabase
     .from("clients")
     .select(`
       *,
+      account_manager:users!account_manager_id(id, name),
       workflow_profile:workflow_profiles (
         id,
         code,
@@ -114,11 +131,37 @@ export async function getClient(id: string): Promise<ClientWithSummary | null> {
     .single();
 
   if (error) {
-    if (error.code === "PGRST116") {
+    // FK may not exist if migration hasn't been applied — fall back without account_manager
+    if (error.message.includes("relationship")) {
+      const { data: fallbackData, error: fbError } = await supabase
+        .from("clients")
+        .select(`
+          *,
+          workflow_profile:workflow_profiles (
+            id, code, name, description,
+            allowed_container_types, requires_lot_tracking,
+            requires_expiration_dates, requires_age_verification,
+            requires_ttb_compliance, has_state_restrictions
+          )
+        `)
+        .eq("id", id)
+        .single();
+
+      if (fbError) {
+        if (fbError.code === "PGRST116") return null;
+        throw new Error(fbError.message);
+      }
+      client = fallbackData;
+    } else if (error.code === "PGRST116") {
       return null;
+    } else {
+      throw new Error(error.message);
     }
-    throw new Error(error.message);
+  } else {
+    client = clientData;
   }
+
+  if (!client) return null;
 
   // Handle Supabase array return for joined table
   const workflowProfile = Array.isArray(client.workflow_profile)
@@ -187,7 +230,7 @@ export async function getClient(id: string): Promise<ClientWithSummary | null> {
 }
 
 export async function createClientRecord(
-  client: Omit<Client, "id" | "auth_id" | "created_at" | "qb_customer_id">
+  client: Omit<Client, "id" | "auth_id" | "created_at" | "qb_customer_id" | "account_manager">
 ): Promise<Client> {
   const supabase = createClient();
 
