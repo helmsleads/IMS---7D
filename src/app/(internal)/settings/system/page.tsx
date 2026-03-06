@@ -1129,11 +1129,6 @@ function InternalUsersSection() {
     }
   };
 
-  const roleLabels: Record<UserRole, string> = {
-    admin: "Administrator",
-    warehouse: "Warehouse Staff",
-    viewer: "Viewer",
-  };
 
   return (
     <Card padding="none" className="mb-6">
@@ -1254,7 +1249,7 @@ function InternalUsersSection() {
             </div>
 
 
-            <form onSubmit={handleInvite} className="p-4 space-y-4">
+            <form onSubmit={createMode === "invite" ? handleInvite : handleCreate} className="p-4 space-y-4">
               {success && (
                 <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
                   <p className="text-sm text-green-800">{success}</p>
@@ -1266,8 +1261,37 @@ function InternalUsersSection() {
                 </div>
               )}
 
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setCreateMode("invite")}
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                    createMode === "invite"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                  }`}
+                >
+                  <Mail className="w-4 h-4 inline mr-1.5" />
+                  Send Invite
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreateMode("password")}
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                    createMode === "password"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-50 text-gray-600 hover:bg-gray-100"
+                  }`}
+                >
+                  <Shield className="w-4 h-4 inline mr-1.5" />
+                  Set Password
+                </button>
+              </div>
+
               <p className="text-sm text-gray-500">
-                Send an email invitation. The user will set their own password when they accept.
+                {createMode === "invite"
+                  ? "Send an email invitation. The user will set their own password when they accept."
+                  : "Create the account with a password. You can share the login credentials with the user directly."}
               </p>
 
               <div>
@@ -1298,6 +1322,24 @@ function InternalUsersSection() {
                 />
               </div>
 
+              {createMode === "password" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Password <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    required
+                    placeholder="Minimum 8 characters"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Shown as plain text so you can share it with the user
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

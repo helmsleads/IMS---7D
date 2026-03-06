@@ -42,71 +42,39 @@ export async function getInternalUsers(): Promise<InternalUser[]> {
 }
 
 /**
- * Create a new internal user
- * Creates an auth user and a record in the users table
+ * Create a new internal user via server-side admin API
+ * Uses /api/internal-users to avoid affecting the current session
  */
 export async function createInternalUser(
   userData: CreateInternalUserData
 ): Promise<{ success: boolean; message: string; user?: InternalUser }> {
-  const supabase = createClient();
+  try {
+    const response = await fetch("/api/internal-users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(userData),
+    });
 
-  // Check if email already exists in users table
-  const { data: existingUser } = await supabase
-    .from("users")
-    .select("id")
-    .eq("email", userData.email.toLowerCase())
-    .single();
+    const result = await response.json();
 
-  if (existingUser) {
+    if (!response.ok) {
+      return {
+        success: false,
+        message: result.error || "Failed to create user",
+      };
+    }
+
+    return {
+      success: true,
+      message: "User created successfully",
+      user: result.user,
+    };
+  } catch (error) {
     return {
       success: false,
-      message: "A user with this email already exists.",
+      message: error instanceof Error ? error.message : "Failed to create user",
     };
   }
-
-  // Create the auth user
-  const { data: authData, error: authError } = await supabase.auth.signUp({
-    email: userData.email.toLowerCase(),
-    password: userData.password,
-    options: {
-      data: {
-        full_name: userData.name,
-      },
-    },
-  });
-
-  if (authError || !authData.user) {
-    return {
-      success: false,
-      message: authError?.message || "Failed to create user account",
-    };
-  }
-
-  // Create the internal user record
-  const { data: newUser, error: userError } = await supabase
-    .from("users")
-    .insert({
-      id: authData.user.id,
-      name: userData.name,
-      email: userData.email.toLowerCase(),
-      role: userData.role,
-      active: true,
-    })
-    .select()
-    .single();
-
-  if (userError) {
-    return {
-      success: false,
-      message: userError.message || "Failed to create user record",
-    };
-  }
-
-  return {
-    success: true,
-    message: "User created successfully",
-    user: newUser,
-  };
 }
 
 /**
