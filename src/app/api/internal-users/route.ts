@@ -16,7 +16,11 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user }, error: authCheckError } = await supabase.auth.getUser();
+    if (authCheckError) {
+      console.error("Auth check error:", authCheckError.message);
+      return NextResponse.json({ error: "Auth error: " + authCheckError.message }, { status: 401 });
+    }
     if (!user) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
@@ -74,6 +78,7 @@ export async function POST(request: NextRequest) {
       });
 
     if (authError || !authData.user) {
+      console.error("Create user error:", authError?.message);
       return NextResponse.json(
         { error: authError?.message || "Failed to create user account" },
         { status: 500 }
@@ -104,6 +109,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ user: newUser });
   } catch (err) {
+    console.error("Internal users route error:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Internal server error" },
       { status: 500 }
