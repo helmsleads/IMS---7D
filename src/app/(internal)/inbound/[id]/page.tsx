@@ -472,7 +472,19 @@ export default function InboundOrderDetailPage() {
     setEditTracking(order.tracking_number || "");
     setEditError("");
 
-    // Populate line items from current order
+    // Fetch products first so we can reverse-convert base units back to entered qty
+    let prods = allProducts;
+    if (prods.length === 0) {
+      try {
+        const fetched = await getProducts();
+        prods = fetched.filter((p) => p.active);
+        setAllProducts(prods);
+      } catch {
+        // Non-critical
+      }
+    }
+
+    // Populate line items from current order (qty_expected is stored as entered value)
     const items: EditLineItem[] = order.items.map((item) => ({
       id: item.id,
       product_id: item.product_id,
@@ -484,16 +496,6 @@ export default function InboundOrderDetailPage() {
     }));
     setEditItems(items);
     setOriginalItemIds(order.items.map((i) => i.id));
-
-    // Fetch products for adding new items
-    if (allProducts.length === 0) {
-      try {
-        const prods = await getProducts();
-        setAllProducts(prods.filter((p) => p.active));
-      } catch {
-        // Non-critical, just limits add-item capability
-      }
-    }
 
     setShowEditModal(true);
   };
@@ -564,7 +566,7 @@ export default function InboundOrderDetailPage() {
         .filter((i) => i.isNew && i.product_id)
         .map((i) => ({
           product_id: i.product_id,
-          qty_expected: editGetBaseUnits(i),
+          qty_expected: i.qty_entered,
           uom: i.uom,
           pallet_count: i.pallet_count === "" ? null : Number(i.pallet_count),
         }));
@@ -577,7 +579,7 @@ export default function InboundOrderDetailPage() {
         .filter((i) => !i.isNew && originalItemIds.includes(i.id))
         .map((i) => ({
           id: i.id,
-          qty_expected: editGetBaseUnits(i),
+          qty_expected: i.qty_entered,
           uom: i.uom,
           pallet_count: i.pallet_count === "" ? null : Number(i.pallet_count),
         }));
@@ -1203,7 +1205,12 @@ export default function InboundOrderDetailPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className="text-gray-900">{item.qty_expected}</span>
+                          <span className="text-gray-900">
+                            {item.qty_expected.toLocaleString()}
+                            {item.uom === "cases" && (
+                              <span className="text-gray-500 text-xs ml-1">cases</span>
+                            )}
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <span

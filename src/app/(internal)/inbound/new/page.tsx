@@ -220,7 +220,7 @@ export default function NewInboundOrderPage() {
 
       const itemsData: CreateInboundItemData[] = items.map((item) => ({
         product_id: item.product_id,
-        qty_expected: getBaseUnits(item),
+        qty_expected: item.qty_entered,
         uom: item.uom,
         pallet_count: item.pallet_count ? Number(item.pallet_count) : null,
       }));
