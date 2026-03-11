@@ -292,7 +292,7 @@ export default function OutboundPage() {
               <Truck className="w-4 h-4 text-blue-600" />
             </Button>
           )}
-          {order.status === "pending" && (
+          {(order.status === "pending" || order.status === "processing") && (
             <Button
               variant="ghost"
               size="sm"
