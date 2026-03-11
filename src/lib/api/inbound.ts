@@ -33,6 +33,8 @@ export interface InboundItem {
   qty_received: number;
   qty_rejected?: number;
   rejection_reason?: string | null;
+  uom?: string;
+  pallet_count?: number | null;
 }
 
 export type RejectionReason = "damaged" | "wrong_item" | "expired" | "quality_issue" | "other";
@@ -111,6 +113,9 @@ export async function getInboundOrder(id: string): Promise<InboundOrderWithItems
         product_id,
         qty_expected,
         qty_received,
+        qty_rejected,
+        uom,
+        pallet_count,
         product:products (
           id,
           sku,
