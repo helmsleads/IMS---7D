@@ -69,6 +69,8 @@ export interface CreateInboundOrderData {
 export interface CreateInboundItemData {
   product_id: string;
   qty_expected: number;
+  uom?: string;
+  pallet_count?: number | null;
 }
 
 export async function getInboundOrders(): Promise<(InboundOrder & { item_count: number })[]> {
@@ -171,6 +173,8 @@ export async function createInboundOrder(
       product_id: item.product_id,
       qty_expected: item.qty_expected,
       qty_received: 0,
+      uom: item.uom || "units",
+      pallet_count: item.pallet_count || null,
     }));
 
     const { error: itemsError } = await supabase
