@@ -214,13 +214,14 @@ export default function InboundOrderDetailPage() {
   // Edit line items state
   type UOM = "units" | "cases";
   interface EditLineItem {
-    id: string; // existing DB id or temp id for new items
+    id: string;
     product_id: string;
     qty_entered: number;
     uom: UOM;
     pallet_count: number | "";
+    units_per_case: number | "";
     isNew: boolean;
-    qty_received: number; // track received qty to prevent editing/removal
+    qty_received: number;
   }
   const [editItems, setEditItems] = useState<EditLineItem[]>([]);
   const [originalItemIds, setOriginalItemIds] = useState<string[]>([]);
@@ -485,15 +486,19 @@ export default function InboundOrderDetailPage() {
     }
 
     // Populate line items from current order (qty_expected is stored as entered value)
-    const items: EditLineItem[] = order.items.map((item) => ({
-      id: item.id,
-      product_id: item.product_id,
-      qty_entered: item.qty_expected,
-      uom: (item.uom as UOM) || "units",
-      pallet_count: item.pallet_count ?? "",
-      isNew: false,
-      qty_received: item.qty_received,
-    }));
+    const items: EditLineItem[] = order.items.map((item) => {
+      const prod = prods.find((p) => p.id === item.product_id);
+      return {
+        id: item.id,
+        product_id: item.product_id,
+        qty_entered: item.qty_expected,
+        uom: (item.uom as UOM) || "units",
+        pallet_count: item.pallet_count ?? "",
+        units_per_case: item.units_per_case ?? prod?.units_per_case ?? "",
+        isNew: false,
+        qty_received: item.qty_received,
+      };
+    });
     setEditItems(items);
     setOriginalItemIds(order.items.map((i) => i.id));
 
@@ -503,9 +508,8 @@ export default function InboundOrderDetailPage() {
   const editGetProductInfo = (productId: string) => allProducts.find((p) => p.id === productId);
 
   const editGetBaseUnits = (item: EditLineItem): number => {
-    const product = editGetProductInfo(item.product_id);
-    const unitsPerCase = product?.units_per_case || 1;
-    return item.uom === "cases" ? item.qty_entered * unitsPerCase : item.qty_entered;
+    const upc = item.units_per_case || editGetProductInfo(item.product_id)?.units_per_case || 1;
+    return item.uom === "cases" ? item.qty_entered * upc : item.qty_entered;
   };
 
   const editAvailableProducts = allProducts.filter(
@@ -526,6 +530,7 @@ export default function InboundOrderDetailPage() {
         qty_entered: 1,
         uom: "cases" as UOM,
         pallet_count: "",
+        units_per_case: "",
         isNew: true,
         qty_received: 0,
       },
@@ -569,6 +574,7 @@ export default function InboundOrderDetailPage() {
           qty_expected: i.qty_entered,
           uom: i.uom,
           pallet_count: i.pallet_count === "" ? null : Number(i.pallet_count),
+          units_per_case: i.units_per_case === "" ? null : Number(i.units_per_case),
         }));
 
       const removed = originalItemIds.filter(
@@ -582,6 +588,7 @@ export default function InboundOrderDetailPage() {
           qty_expected: i.qty_entered,
           uom: i.uom,
           pallet_count: i.pallet_count === "" ? null : Number(i.pallet_count),
+          units_per_case: i.units_per_case === "" ? null : Number(i.units_per_case),
         }));
 
       await updateInboundOrder(
@@ -2388,7 +2395,7 @@ export default function InboundOrderDetailPage() {
                 {editItems.map((item) => {
                   const product = editGetProductInfo(item.product_id) ||
                     (order?.items.find((oi) => oi.product_id === item.product_id)?.product);
-                  const unitsPerCase = (product as Product)?.units_per_case || 1;
+                  const upc = item.units_per_case || (product as Product)?.units_per_case || 1;
                   const baseUnits = editGetBaseUnits(item);
                   const hasReceived = item.qty_received > 0;
 
@@ -2438,7 +2445,7 @@ export default function InboundOrderDetailPage() {
                           </span>
                         )}
                       </div>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-4 gap-3">
                         <Input
                           label="Qty"
                           name={`edit-qty-${item.id}`}
@@ -2459,6 +2466,19 @@ export default function InboundOrderDetailPage() {
                           value={item.uom}
                           onChange={(e) => updateEditItem(item.id, "uom", e.target.value)}
                         />
+                        {item.uom === "cases" && (
+                          <Input
+                            label="Units/Case"
+                            name={`edit-upc-${item.id}`}
+                            type="number"
+                            min={1}
+                            value={item.units_per_case}
+                            onChange={(e) =>
+                              updateEditItem(item.id, "units_per_case", e.target.value === "" ? "" : parseInt(e.target.value) || 0)
+                            }
+                            placeholder={`${(product as Product)?.units_per_case || 1}`}
+                          />
+                        )}
                         <Input
                           label="Pallets"
                           name={`edit-pallets-${item.id}`}
@@ -2474,7 +2494,7 @@ export default function InboundOrderDetailPage() {
                       {item.product_id && item.qty_entered > 0 && (
                         <p className="text-xs text-gray-500">
                           {item.uom === "cases"
-                            ? `${item.qty_entered} cases × ${unitsPerCase}/case = ${baseUnits.toLocaleString()} units`
+                            ? `${item.qty_entered} cases × ${upc}/case = ${baseUnits.toLocaleString()} units`
                             : `${baseUnits.toLocaleString()} units`}
                           {item.pallet_count ? ` · ${item.pallet_count} pallet${Number(item.pallet_count) !== 1 ? "s" : ""}` : ""}
                         </p>

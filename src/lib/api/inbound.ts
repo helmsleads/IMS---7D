@@ -35,6 +35,7 @@ export interface InboundItem {
   rejection_reason?: string | null;
   uom?: string;
   pallet_count?: number | null;
+  units_per_case?: number | null;
 }
 
 export type RejectionReason = "damaged" | "wrong_item" | "expired" | "quality_issue" | "other";
@@ -73,6 +74,7 @@ export interface CreateInboundItemData {
   qty_expected: number;
   uom?: string;
   pallet_count?: number | null;
+  units_per_case?: number | null;
 }
 
 export async function getInboundOrders(): Promise<(InboundOrder & { item_count: number })[]> {
@@ -116,6 +118,7 @@ export async function getInboundOrder(id: string): Promise<InboundOrderWithItems
         qty_rejected,
         uom,
         pallet_count,
+        units_per_case,
         product:products (
           id,
           sku,
@@ -180,6 +183,7 @@ export async function createInboundOrder(
       qty_received: 0,
       uom: item.uom || "units",
       pallet_count: item.pallet_count || null,
+      units_per_case: item.units_per_case || null,
     }));
 
     const { error: itemsError } = await supabase
@@ -212,7 +216,7 @@ export async function createInboundOrder(
 export async function updateInboundOrder(
   id: string,
   updates: Partial<Pick<InboundOrder, "supplier" | "notes" | "expected_date" | "carrier" | "tracking_number">>,
-  itemUpdates?: { added: CreateInboundItemData[]; removed: string[]; changed: { id: string; qty_expected: number; uom?: string; pallet_count?: number | null }[] }
+  itemUpdates?: { added: CreateInboundItemData[]; removed: string[]; changed: { id: string; qty_expected: number; uom?: string; pallet_count?: number | null; units_per_case?: number | null }[] }
 ): Promise<InboundOrder> {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -243,7 +247,7 @@ export async function updateInboundOrder(
     for (const item of itemUpdates.changed) {
       const { error: updErr } = await supabase
         .from("inbound_items")
-        .update({ qty_expected: item.qty_expected, uom: item.uom || "units", pallet_count: item.pallet_count || null })
+        .update({ qty_expected: item.qty_expected, uom: item.uom || "units", pallet_count: item.pallet_count || null, units_per_case: item.units_per_case || null })
         .eq("id", item.id);
       if (updErr) throw new Error(updErr.message);
     }
@@ -257,6 +261,7 @@ export async function updateInboundOrder(
         qty_received: 0,
         uom: item.uom || "units",
         pallet_count: item.pallet_count || null,
+        units_per_case: item.units_per_case || null,
       }));
       const { error: addErr } = await supabase.from("inbound_items").insert(newItems);
       if (addErr) throw new Error(addErr.message);
