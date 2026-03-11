@@ -155,6 +155,7 @@ export async function createInboundOrder(
       carrier: order.carrier || null,
       tracking_number: order.tracking_number || null,
       preferred_time_slot: order.preferred_time_slot || null,
+      appointment_status: order.appointment_status || null,
     })
     .select()
     .single();

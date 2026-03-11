@@ -77,6 +77,7 @@ export default function ClientsPage() {
         active: data.active,
         industries: data.industries,
         workflow_profile_id: data.workflow_profile_id || null,
+        account_manager_id: data.account_manager_id || null,
       });
     } else {
       // Create new client
@@ -90,6 +91,7 @@ export default function ClientsPage() {
         active: data.active,
         industries: data.industries,
         workflow_profile_id: data.workflow_profile_id || null,
+        account_manager_id: data.account_manager_id || null,
         allow_product_workflow_override: false,
       });
     }
