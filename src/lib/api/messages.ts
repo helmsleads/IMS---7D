@@ -144,16 +144,16 @@ export async function getUnreadCount(): Promise<number> {
 
     return count || 0;
   } catch (err) {
-    // Only silence transient network errors (Failed to fetch, network timeout, etc.)
-    const isNetworkError = err instanceof TypeError &&
-      (err.message === "Failed to fetch" || err.message.includes("network"));
+    // Silence transient errors (network, abort from unmount/navigation)
+    const isTransient =
+      (err instanceof TypeError && (err.message === "Failed to fetch" || err.message.includes("network"))) ||
+      (err instanceof DOMException && err.name === "AbortError") ||
+      (err instanceof Error && err.message.includes("aborted"));
 
-    if (!isNetworkError) {
+    if (!isTransient) {
       throw err; // Re-throw real errors
     }
 
-    // Log network errors so they're visible in dev tools, return 0 to allow retry on next poll
-    console.warn("[messages] Network error fetching unread count, will retry:", err.message);
     return 0;
   }
 }

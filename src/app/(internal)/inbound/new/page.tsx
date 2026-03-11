@@ -9,6 +9,7 @@ import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
+import SearchSelect from "@/components/ui/SearchSelect";
 import Alert from "@/components/ui/Alert";
 import { getProducts, Product } from "@/lib/api/products";
 import { getClients, Client } from "@/lib/api/clients";
@@ -415,14 +416,14 @@ export default function NewInboundOrderPage() {
                         return (
                           <tr key={item.id}>
                             <td className="px-4 py-3">
-                              <Select
+                              <SearchSelect
                                 name={`product-${item.id}`}
                                 options={itemProductOptions}
                                 value={item.product_id}
-                                onChange={(e) =>
-                                  updateItem(item.id, "product_id", e.target.value)
+                                onChange={(val) =>
+                                  updateItem(item.id, "product_id", val)
                                 }
-                                placeholder="Select product"
+                                placeholder="Search by SKU or name..."
                               />
                             </td>
                             <td className="px-4 py-3">
