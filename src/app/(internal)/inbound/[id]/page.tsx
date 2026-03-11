@@ -32,6 +32,7 @@ import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import {
   getInboundOrder,
+  updateInboundOrder,
   updateInboundOrderStatus,
   receiveInboundItem,
   rejectInboundItem,
@@ -195,6 +196,17 @@ export default function InboundOrderDetailPage() {
   const [sublocations, setSublocations] = useState<SublocationWithLocation[]>([]);
   const [confirmingPutAway, setConfirmingPutAway] = useState<string | null>(null);
   const [showPutAwaySection, setShowPutAwaySection] = useState(false);
+
+  // Edit order state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editSupplier, setEditSupplier] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editExpectedDate, setEditExpectedDate] = useState("");
+  const [editCarrier, setEditCarrier] = useState("");
+  const [editTracking, setEditTracking] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+  const canEdit = order && ["ordered", "in_transit"].includes(order.status);
 
   // Workflow rules state
   const [workflowRules, setWorkflowRules] = useState<InboundWorkflowRules | null>(null);
@@ -430,6 +442,38 @@ export default function InboundOrderDetailPage() {
       console.error("Failed to update status:", err);
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const openEditModal = () => {
+    if (!order) return;
+    setEditSupplier(order.supplier || "");
+    setEditNotes(order.notes || "");
+    setEditExpectedDate(order.expected_date?.split("T")[0] || "");
+    setEditCarrier(order.carrier || "");
+    setEditTracking(order.tracking_number || "");
+    setEditError("");
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!order) return;
+    setEditSaving(true);
+    setEditError("");
+    try {
+      await updateInboundOrder(order.id, {
+        supplier: editSupplier || null,
+        notes: editNotes || null,
+        expected_date: editExpectedDate || null,
+        carrier: editCarrier || null,
+        tracking_number: editTracking || null,
+      });
+      await fetchOrder();
+      setShowEditModal(false);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -851,7 +895,13 @@ export default function InboundOrderDetailPage() {
             </div>
 
             {/* Status Action */}
-            <div className="mt-8 pt-6 border-t border-gray-200">
+            <div className="mt-8 pt-6 border-t border-gray-200 flex gap-3">
+              {canEdit && (
+                <Button variant="secondary" onClick={openEditModal}>
+                  <ClipboardList className="w-4 h-4 mr-2" />
+                  Edit Order
+                </Button>
+              )}
               {order.status === "ordered" && (
                 <Button
                   onClick={() => handleStatusUpdate("in_transit")}
@@ -2161,6 +2211,26 @@ export default function InboundOrderDetailPage() {
               <XCircle className="w-4 h-4 mr-1" />
               Reject Appointment
             </Button>
+          </div>
+        </div>
+      </Modal>
+      {/* Edit Order Modal */}
+      <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Inbound Order" size="md">
+        <div className="space-y-4">
+          {editError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{editError}</div>
+          )}
+          <Input label="Ship From" name="edit_supplier" value={editSupplier} onChange={(e) => setEditSupplier(e.target.value)} />
+          <Input label="Expected Date" name="edit_expected_date" type="date" value={editExpectedDate} onChange={(e) => setEditExpectedDate(e.target.value)} />
+          <Input label="Carrier" name="edit_carrier" value={editCarrier} onChange={(e) => setEditCarrier(e.target.value)} placeholder="e.g., FedEx, UPS" />
+          <Input label="Tracking Number" name="edit_tracking" value={editTracking} onChange={(e) => setEditTracking(e.target.value)} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <textarea name="edit_notes" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="secondary" onClick={() => setShowEditModal(false)} disabled={editSaving}>Cancel</Button>
+            <Button onClick={handleSaveEdit} loading={editSaving} disabled={editSaving}>Save Changes</Button>
           </div>
         </div>
       </Modal>

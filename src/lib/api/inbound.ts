@@ -204,6 +204,72 @@ export async function createInboundOrder(
   return inboundOrder;
 }
 
+export async function updateInboundOrder(
+  id: string,
+  updates: Partial<Pick<InboundOrder, "supplier" | "notes" | "expected_date" | "carrier" | "tracking_number">>,
+  itemUpdates?: { added: CreateInboundItemData[]; removed: string[]; changed: { id: string; qty_expected: number; uom?: string; pallet_count?: number | null }[] }
+): Promise<InboundOrder> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Update order fields
+  const { data, error } = await supabase
+    .from("inbound_orders")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  // Handle item changes
+  if (itemUpdates) {
+    // Remove items
+    if (itemUpdates.removed.length > 0) {
+      const { error: delErr } = await supabase
+        .from("inbound_items")
+        .delete()
+        .in("id", itemUpdates.removed)
+        .eq("qty_received", 0); // Safety: only delete unreceived items
+      if (delErr) throw new Error(delErr.message);
+    }
+
+    // Update existing items
+    for (const item of itemUpdates.changed) {
+      const { error: updErr } = await supabase
+        .from("inbound_items")
+        .update({ qty_expected: item.qty_expected, uom: item.uom || "units", pallet_count: item.pallet_count || null })
+        .eq("id", item.id);
+      if (updErr) throw new Error(updErr.message);
+    }
+
+    // Add new items
+    if (itemUpdates.added.length > 0) {
+      const newItems = itemUpdates.added.map((item) => ({
+        order_id: id,
+        product_id: item.product_id,
+        qty_expected: item.qty_expected,
+        qty_received: 0,
+        uom: item.uom || "units",
+        pallet_count: item.pallet_count || null,
+      }));
+      const { error: addErr } = await supabase.from("inbound_items").insert(newItems);
+      if (addErr) throw new Error(addErr.message);
+    }
+  }
+
+  // Log activity
+  await supabase.from("activity_log").insert({
+    entity_type: "inbound_order",
+    entity_id: id,
+    action: "edited",
+    user_id: user?.id || null,
+    details: { updated_fields: Object.keys(updates) },
+  });
+
+  return data;
+}
+
 export async function updateInboundOrderStatus(
   id: string,
   status: string
