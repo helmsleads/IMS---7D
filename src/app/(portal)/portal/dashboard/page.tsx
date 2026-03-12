@@ -149,7 +149,7 @@ export default function PortalDashboardPage() {
         .select("id", { count: "exact", head: true })
         .eq("client_id", client.id)
         .eq("status", "received")
-        .gte("updated_at", thirtyDaysAgo.toISOString());
+        .gte("created_at", thirtyDaysAgo.toISOString());
 
       // Fetch account manager name if assigned
       let accountManagerName: string | null = null;
@@ -227,7 +227,7 @@ export default function PortalDashboardPage() {
         .select(`
           id,
           po_number,
-          updated_at,
+          received_date,
           items:inbound_items (
             qty_expected,
             product:products (
@@ -237,7 +237,7 @@ export default function PortalDashboardPage() {
         `)
         .eq("client_id", client.id)
         .eq("status", "received")
-        .order("updated_at", { ascending: false })
+        .order("received_date", { ascending: false })
         .limit(5);
 
       setRecentArrivalsList(
@@ -264,7 +264,7 @@ export default function PortalDashboardPage() {
           return {
             id: arrival.id,
             order_number: arrival.po_number,
-            received_at: arrival.updated_at,
+            received_at: arrival.received_date,
             product_summary: summary,
           };
         })
