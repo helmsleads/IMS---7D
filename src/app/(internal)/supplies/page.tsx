@@ -227,6 +227,17 @@ export default function SuppliesPage() {
     }
   };
 
+  const handleReactivateSupply = async (supply: SupplyWithInventory) => {
+    try {
+      await updateSupply(supply.id, { is_active: true });
+      await fetchData();
+      setSuccessMessage("Supply reactivated successfully");
+      setTimeout(() => setSuccessMessage(""), 3000);
+    } catch (err) {
+      setError(handleApiError(err));
+    }
+  };
+
   const handleAdjustInventory = async (adjustment: number, reason: string, notes: string) => {
     if (!adjustingInventory) return;
     try {
@@ -387,13 +398,21 @@ export default function SuppliesPage() {
           >
             <Edit className="w-4 h-4" />
           </button>
-          {supply.is_active && (
+          {supply.is_active ? (
             <button
               onClick={() => setDeactivatingSupply(supply)}
               className="p-1 text-gray-500 hover:text-red-600 transition-colors"
               title="Deactivate"
             >
               <XCircle className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              onClick={() => handleReactivateSupply(supply)}
+              className="p-1 text-gray-500 hover:text-green-600 transition-colors"
+              title="Reactivate"
+            >
+              <RefreshCw className="w-4 h-4" />
             </button>
           )}
         </div>
