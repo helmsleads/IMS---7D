@@ -549,7 +549,60 @@ export async function reprocessInboundInventory(
       .eq("entity_id", item.id)
       .eq("action", "received");
 
-    if (receiveLogCount && receiveLogCount > 0) continue;
+    if (receiveLogCount && receiveLogCount > 0) {
+      // Already received — but check if case conversion was missed
+      // (items received before the conversion fix would have raw case count in inventory)
+      if (item.uom === "cases" && item.units_per_case && item.units_per_case > 1) {
+        const correctionQty = qtyToReceive * (item.units_per_case - 1);
+
+        // Check if inventory still has the unconverted amount
+        const { data: invRecords } = await supabase
+          .from("inventory")
+          .select("id, qty_on_hand")
+          .eq("product_id", item.product_id);
+
+        const totalOnHand = (invRecords || []).reduce(
+          (sum, r) => sum + (r.qty_on_hand || 0), 0
+        );
+
+        // If current inventory equals the raw case count, it was never converted
+        if (totalOnHand === qtyToReceive) {
+          const { error: correctionError } = await supabase.rpc("update_inventory", {
+            p_product_id: item.product_id,
+            p_location_id: locationId,
+            p_qty_change: correctionQty,
+          });
+
+          if (correctionError) {
+            console.error(`Failed to correct case conversion for item ${item.id}:`, correctionError);
+            continue;
+          }
+
+          // Log the correction
+          await supabase.from("activity_log").insert({
+            entity_type: "inbound_item",
+            entity_id: item.id,
+            action: "received",
+            user_id: user?.id || null,
+            details: {
+              product_id: item.product_id,
+              correction: true,
+              old_qty: qtyToReceive,
+              new_qty: inventoryQty,
+              qty_added: correctionQty,
+              uom: item.uom,
+              units_per_case: item.units_per_case,
+              location_id: locationId,
+              source: "reprocess_case_conversion",
+            },
+          });
+
+          itemsFixed++;
+          totalUnitsAdded += correctionQty;
+        }
+      }
+      continue;
+    }
 
     // Set qty_received if not set
     if (!item.qty_received) {
