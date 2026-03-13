@@ -315,27 +315,144 @@ export async function updateInboundOrderStatus(
     details: { new_status: status },
   });
 
-  // Send internal alert when inbound order is received
+  // When marking as received, verify inventory for all items
   if (status === "received") {
-    // Fetch order details for alert
+    // Fetch items with product info
+    const { data: items } = await supabase
+      .from("inbound_items")
+      .select(`
+        id,
+        product_id,
+        qty_expected,
+        qty_received
+      `)
+      .eq("order_id", id);
+
+    if (items && items.length > 0) {
+      // Find a receiving location to use for any missing inventory updates
+      const { data: receivingLocation } = await supabase
+        .from("locations")
+        .select("id")
+        .eq("location_type", "receiving")
+        .eq("is_active", true)
+        .limit(1)
+        .single();
+
+      // Fall back to any active location if no receiving location exists
+      const fallbackLocation = receivingLocation
+        ? null
+        : (await supabase
+            .from("locations")
+            .select("id")
+            .eq("is_active", true)
+            .limit(1)
+            .single()
+          ).data;
+
+      const locationId = receivingLocation?.id || fallbackLocation?.id;
+
+      if (locationId) {
+        for (const item of items) {
+          const qtyToReceive = item.qty_received || item.qty_expected;
+
+          if (qtyToReceive <= 0) continue;
+
+          // Check current inventory for this product
+          const { data: inventoryRecords } = await supabase
+            .from("inventory")
+            .select("qty_on_hand")
+            .eq("product_id", item.product_id);
+
+          const currentTotal = (inventoryRecords || []).reduce(
+            (sum, rec) => sum + (rec.qty_on_hand || 0),
+            0
+          );
+
+          // Check if inventory was already updated by receiveInboundItem
+          // by looking for activity_log entries for this item
+          const { count: receiveLogCount } = await supabase
+            .from("activity_log")
+            .select("id", { count: "exact", head: true })
+            .eq("entity_type", "inbound_item")
+            .eq("entity_id", item.id)
+            .eq("action", "received");
+
+          // If item was never individually received, update inventory now
+          if (!receiveLogCount || receiveLogCount === 0) {
+            // Set qty_received on the item if it wasn't set
+            if (!item.qty_received) {
+              await supabase
+                .from("inbound_items")
+                .update({ qty_received: item.qty_expected })
+                .eq("id", item.id);
+            }
+
+            const { error: inventoryError } = await supabase.rpc("update_inventory", {
+              p_product_id: item.product_id,
+              p_location_id: locationId,
+              p_qty_change: qtyToReceive,
+            });
+
+            if (inventoryError) {
+              console.error(`Failed to update inventory for item ${item.id}:`, inventoryError);
+              continue;
+            }
+
+            // Log activity for the inventory update
+            await supabase.from("activity_log").insert({
+              entity_type: "inbound_item",
+              entity_id: item.id,
+              action: "received",
+              user_id: user?.id || null,
+              details: {
+                product_id: item.product_id,
+                qty_received: qtyToReceive,
+                qty_diff: qtyToReceive,
+                location_id: locationId,
+                source: "order_status_receive",
+              },
+            });
+
+            // Record billable event
+            if (data.client_id) {
+              try {
+                await supabase.rpc("record_billable_event", {
+                  p_client_id: data.client_id,
+                  p_rate_code: "RECEIVE_UNIT",
+                  p_quantity: qtyToReceive,
+                  p_reference_type: "inbound_order",
+                  p_reference_id: id,
+                  p_usage_date: new Date().toISOString().split("T")[0],
+                  p_notes: `Received ${qtyToReceive} units (order-level receive)`,
+                });
+              } catch (billingError) {
+                console.error("Failed to record billable event:", billingError);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Send internal alert
     const { data: orderData } = await supabase
       .from("inbound_orders")
       .select(`
-        order_number,
-        received_at,
+        po_number,
+        received_date,
         items:inbound_items (qty_received)
       `)
       .eq("id", id)
       .single();
 
     if (orderData) {
-      const items = orderData.items as { qty_received: number }[];
-      const totalUnits = items.reduce((sum, item) => sum + (item.qty_received || 0), 0);
+      const alertItems = orderData.items as { qty_received: number }[];
+      const totalUnits = alertItems.reduce((sum, item) => sum + (item.qty_received || 0), 0);
 
       sendInternalAlert("inbound_arrived", {
-        orderNumber: orderData.order_number,
-        receivedAt: orderData.received_at || new Date().toISOString(),
-        itemCount: items.length,
+        orderNumber: orderData.po_number,
+        receivedAt: orderData.received_date || new Date().toISOString(),
+        itemCount: alertItems.length,
         totalUnits,
       }).catch((err) => console.error("Failed to send inbound arrived alert:", err));
     }
