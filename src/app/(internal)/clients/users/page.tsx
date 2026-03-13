@@ -13,6 +13,12 @@ import {
   ChevronRight,
   Users,
   X,
+  KeyRound,
+  ShieldCheck,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Eye,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
@@ -79,6 +85,15 @@ export default function PortalUsersPage() {
   const [addError, setAddError] = useState<string | null>(null);
   const [addSuccess, setAddSuccess] = useState<string | null>(null);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
+
+  // Verify & Reset
+  const [verifyingUser, setVerifyingUser] = useState<PortalUserWithClients | null>(null);
+  const [verifyData, setVerifyData] = useState<Record<string, unknown> | null>(null);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [resetPasswordUser, setResetPasswordUser] = useState<PortalUserWithClients | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetResult, setResetResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -319,6 +334,71 @@ export default function PortalUsersPage() {
     }
   };
 
+  const handleVerifyUser = async (user: PortalUserWithClients) => {
+    setVerifyingUser(user);
+    setVerifyData(null);
+    setVerifyLoading(true);
+    try {
+      const res = await fetch("/api/portal-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify", userId: user.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setVerifyData(data);
+    } catch (err) {
+      setVerifyData({ error: err instanceof Error ? err.message : "Failed to verify" });
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleConfirmEmail = async (userId: string) => {
+    try {
+      const res = await fetch("/api/portal-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "confirm-email", userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      // Refresh verify data
+      if (verifyingUser) handleVerifyUser(verifyingUser);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to confirm email");
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetPasswordUser || !newPassword) return;
+    setResetLoading(true);
+    setResetResult(null);
+    try {
+      const res = await fetch("/api/portal-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reset-password",
+          userId: resetPasswordUser.id,
+          newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setResetResult({ success: true, message: "Password reset successfully" });
+      setNewPassword("");
+    } catch (err) {
+      setResetResult({
+        success: false,
+        message: err instanceof Error ? err.message : "Failed to reset password",
+      });
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   if (error && users.length === 0) {
     return (
       <AppShell title="Portal Users" subtitle="Manage users with portal access">
@@ -434,10 +514,28 @@ export default function PortalUsersPage() {
                 {/* Expanded Client Access */}
                 {isExpanded && (
                   <div className="border-t border-gray-200 bg-gray-50 p-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
-                      <Shield className="w-4 h-4" />
-                      Client Access
-                    </h4>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                        <Shield className="w-4 h-4" />
+                        Client Access
+                      </h4>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleVerifyUser(user)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Verify Account
+                        </button>
+                        <button
+                          onClick={() => { setResetPasswordUser(user); setNewPassword(""); setResetResult(null); }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-md transition-colors"
+                        >
+                          <KeyRound className="w-3.5 h-3.5" />
+                          Reset Password
+                        </button>
+                      </div>
+                    </div>
                     <div className="space-y-2">
                       {user.client_access.map((access) => (
                         <div
@@ -732,6 +830,145 @@ export default function PortalUsersPage() {
           </div>
         </div>
       )}
+      {/* Verify Account Modal */}
+      <Modal
+        isOpen={!!verifyingUser}
+        onClose={() => { setVerifyingUser(null); setVerifyData(null); }}
+        title={`Account Status: ${verifyingUser?.full_name || verifyingUser?.email || ""}`}
+        size="md"
+      >
+        {verifyLoading ? (
+          <div className="flex justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+          </div>
+        ) : verifyData?.error ? (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-800">{String(verifyData.error)}</p>
+          </div>
+        ) : verifyData?.auth ? (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-sm text-gray-500">Email</span>
+                <span className="text-sm font-medium">{String((verifyData.auth as Record<string, unknown>).email)}</span>
+              </div>
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-sm text-gray-500">Email Confirmed</span>
+                <div className="flex items-center gap-2">
+                  {(verifyData.auth as Record<string, unknown>).email_confirmed ? (
+                    <span className="inline-flex items-center gap-1 text-sm text-green-700">
+                      <CheckCircle2 className="w-4 h-4" /> Yes
+                    </span>
+                  ) : (
+                    <>
+                      <span className="inline-flex items-center gap-1 text-sm text-red-600">
+                        <XCircle className="w-4 h-4" /> No
+                      </span>
+                      <button
+                        onClick={() => handleConfirmEmail(verifyingUser!.id)}
+                        className="text-xs px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded transition-colors"
+                      >
+                        Confirm Now
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-sm text-gray-500">Last Sign In</span>
+                <span className="text-sm font-medium">
+                  {(verifyData.auth as Record<string, unknown>).last_sign_in
+                    ? new Date(String((verifyData.auth as Record<string, unknown>).last_sign_in)).toLocaleString()
+                    : "Never"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-sm text-gray-500">Account Created</span>
+                <span className="text-sm font-medium">
+                  {new Date(String((verifyData.auth as Record<string, unknown>).created_at)).toLocaleDateString()}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-sm text-gray-500">Banned</span>
+                <span className={`text-sm font-medium ${(verifyData.auth as Record<string, unknown>).banned ? "text-red-600" : "text-green-700"}`}>
+                  {(verifyData.auth as Record<string, unknown>).banned ? "Yes" : "No"}
+                </span>
+              </div>
+            </div>
+            {Array.isArray(verifyData.client_access) && verifyData.client_access.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Client Access</h4>
+                <div className="space-y-1">
+                  {(verifyData.client_access as Array<Record<string, unknown>>).map((ca) => (
+                    <div key={String(ca.id)} className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-2">
+                      <span>{String((ca.client as Record<string, unknown>)?.company_name || "Unknown")}</span>
+                      <Badge variant="default">{String(ca.role)}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </Modal>
+
+      {/* Reset Password Modal */}
+      <Modal
+        isOpen={!!resetPasswordUser}
+        onClose={() => { setResetPasswordUser(null); setNewPassword(""); setResetResult(null); }}
+        title={`Reset Password: ${resetPasswordUser?.full_name || resetPasswordUser?.email || ""}`}
+        size="sm"
+        footer={
+          !resetResult?.success ? (
+            <>
+              <Button variant="secondary" onClick={() => setResetPasswordUser(null)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleResetPassword}
+                loading={resetLoading}
+                disabled={!newPassword || newPassword.length < 8}
+              >
+                Reset Password
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => setResetPasswordUser(null)}>
+              Done
+            </Button>
+          )
+        }
+      >
+        {resetResult ? (
+          <div className={`p-3 rounded-lg ${resetResult.success ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"}`}>
+            <p className={`text-sm ${resetResult.success ? "text-green-800" : "text-red-800"}`}>
+              {resetResult.message}
+            </p>
+          </div>
+        ) : (
+          <form onSubmit={handleResetPassword} className="space-y-4">
+            <p className="text-sm text-gray-500">
+              Set a new password for <strong>{resetPasswordUser?.email}</strong>. The user will need to use this password on their next login.
+            </p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                New Password
+              </label>
+              <input
+                type="text"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Minimum 8 characters"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                autoFocus
+              />
+              {newPassword && newPassword.length < 8 && (
+                <p className="mt-1 text-xs text-red-500">Password must be at least 8 characters</p>
+              )}
+            </div>
+          </form>
+        )}
+      </Modal>
     </AppShell>
   );
 }
