@@ -378,12 +378,13 @@ export default function InboundOrderDetailPage() {
     const items: PutAwayItem[] = [];
 
     for (const item of order.items) {
-      if (item.qty_received > 0 && item.product) {
+      const qty = item.qty_received || item.qty_expected;
+      if (qty > 0 && item.product) {
         // Get suggestion for this product
         const suggestion = await getSuggestedPutAway(
           item.product_id,
           locationId,
-          item.qty_received
+          qty
         );
 
         items.push({
@@ -391,7 +392,7 @@ export default function InboundOrderDetailPage() {
           productId: item.product_id,
           productName: item.product.name,
           productSku: item.product.sku,
-          qtyReceived: item.qty_received,
+          qtyReceived: qty,
           locationId,
           suggestion,
           selectedSublocationId: suggestion.suggestedSublocationId || "",
