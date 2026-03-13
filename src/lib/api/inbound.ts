@@ -461,6 +461,136 @@ export async function updateInboundOrderStatus(
   return data;
 }
 
+/**
+ * Re-process inventory for a received inbound order.
+ * Checks each item and updates inventory for any that were missed.
+ * Returns the number of items that were fixed.
+ */
+export async function reprocessInboundInventory(
+  orderId: string
+): Promise<{ itemsFixed: number; totalUnitsAdded: number }> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Verify order exists and is received
+  const { data: order, error: orderError } = await supabase
+    .from("inbound_orders")
+    .select("id, client_id, status")
+    .eq("id", orderId)
+    .single();
+
+  if (orderError || !order) {
+    throw new Error("Order not found");
+  }
+
+  if (order.status !== "received") {
+    throw new Error("Order must be in received status to reprocess");
+  }
+
+  // Fetch all items
+  const { data: items, error: itemsError } = await supabase
+    .from("inbound_items")
+    .select("id, product_id, qty_expected, qty_received")
+    .eq("order_id", orderId);
+
+  if (itemsError || !items) {
+    throw new Error("Failed to fetch items");
+  }
+
+  // Find receiving location
+  const { data: receivingLocation } = await supabase
+    .from("locations")
+    .select("id")
+    .eq("location_type", "receiving")
+    .eq("is_active", true)
+    .limit(1)
+    .single();
+
+  const { data: fallbackLocation } = !receivingLocation
+    ? await supabase.from("locations").select("id").eq("is_active", true).limit(1).single()
+    : { data: null };
+
+  const locationId = receivingLocation?.id || fallbackLocation?.id;
+  if (!locationId) {
+    throw new Error("No active location found for receiving");
+  }
+
+  let itemsFixed = 0;
+  let totalUnitsAdded = 0;
+
+  for (const item of items) {
+    const qtyToReceive = item.qty_received || item.qty_expected;
+    if (qtyToReceive <= 0) continue;
+
+    // Check if this item was already individually received
+    const { count: receiveLogCount } = await supabase
+      .from("activity_log")
+      .select("id", { count: "exact", head: true })
+      .eq("entity_type", "inbound_item")
+      .eq("entity_id", item.id)
+      .eq("action", "received");
+
+    if (receiveLogCount && receiveLogCount > 0) continue;
+
+    // Set qty_received if not set
+    if (!item.qty_received) {
+      await supabase
+        .from("inbound_items")
+        .update({ qty_received: item.qty_expected })
+        .eq("id", item.id);
+    }
+
+    // Update inventory
+    const { error: inventoryError } = await supabase.rpc("update_inventory", {
+      p_product_id: item.product_id,
+      p_location_id: locationId,
+      p_qty_change: qtyToReceive,
+    });
+
+    if (inventoryError) {
+      console.error(`Failed to update inventory for item ${item.id}:`, inventoryError);
+      continue;
+    }
+
+    // Log activity
+    await supabase.from("activity_log").insert({
+      entity_type: "inbound_item",
+      entity_id: item.id,
+      action: "received",
+      user_id: user?.id || null,
+      details: {
+        product_id: item.product_id,
+        qty_received: qtyToReceive,
+        qty_diff: qtyToReceive,
+        location_id: locationId,
+        source: "reprocess_inventory",
+      },
+    });
+
+    // Record billable event
+    if (order.client_id) {
+      try {
+        await supabase.rpc("record_billable_event", {
+          p_client_id: order.client_id,
+          p_rate_code: "RECEIVE_UNIT",
+          p_quantity: qtyToReceive,
+          p_reference_type: "inbound_order",
+          p_reference_id: orderId,
+          p_usage_date: new Date().toISOString().split("T")[0],
+          p_notes: `Reprocessed ${qtyToReceive} units`,
+        });
+      } catch (billingError) {
+        console.error("Failed to record billable event:", billingError);
+      }
+    }
+
+    itemsFixed++;
+    totalUnitsAdded += qtyToReceive;
+  }
+
+  return { itemsFixed, totalUnitsAdded };
+}
+
 export async function receiveInboundItem(
   itemId: string,
   qtyReceived: number,

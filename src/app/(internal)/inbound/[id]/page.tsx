@@ -19,6 +19,7 @@ import {
   ClipboardList,
   Clock,
   CalendarCheck,
+  RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 import AppShell from "@/components/internal/AppShell";
@@ -42,6 +43,7 @@ import {
   getInboundWorkflowRulesForOrder,
   generateLotNumber,
   placeOnInspectionHold,
+  reprocessInboundInventory,
   InboundOrderWithItems,
   InboundItemWithProduct,
   InboundWorkflowRules,
@@ -136,6 +138,8 @@ export default function InboundOrderDetailPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
+  const [reprocessResult, setReprocessResult] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   // Receiving state
@@ -461,6 +465,28 @@ export default function InboundOrderDetailPage() {
       console.error("Failed to update status:", err);
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const handleReprocessInventory = async () => {
+    if (!order) return;
+    setReprocessing(true);
+    setReprocessResult(null);
+    try {
+      const result = await reprocessInboundInventory(order.id);
+      if (result.itemsFixed === 0) {
+        setReprocessResult("All items already in inventory — nothing to fix.");
+      } else {
+        setReprocessResult(
+          `Fixed ${result.itemsFixed} item${result.itemsFixed > 1 ? "s" : ""}, added ${result.totalUnitsAdded} units to inventory.`
+        );
+      }
+      await fetchOrder();
+    } catch (err) {
+      console.error("Failed to reprocess inventory:", err);
+      setReprocessResult("Failed to reprocess inventory. Check console for details.");
+    } finally {
+      setReprocessing(false);
     }
   };
 
@@ -1079,9 +1105,25 @@ export default function InboundOrderDetailPage() {
               )}
 
               {order.status === "received" && (
-                <div className="flex items-center gap-2 text-green-600">
-                  <CheckCircle2 className="w-5 h-5" />
-                  <span className="font-medium">Order Complete</span>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-green-600">
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span className="font-medium">Order Complete</span>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleReprocessInventory}
+                    loading={reprocessing}
+                  >
+                    <RefreshCw className="w-4 h-4 mr-1" />
+                    Re-process Inventory
+                  </Button>
+                  {reprocessResult && (
+                    <span className={`text-sm ${reprocessResult.includes("Failed") ? "text-red-600" : "text-green-600"}`}>
+                      {reprocessResult}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
