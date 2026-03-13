@@ -59,7 +59,7 @@ export async function getClientDashboardStats(
     .select("id", { count: "exact", head: true })
     .eq("client_id", clientId)
     .eq("status", "received")
-    .gte("updated_at", thirtyDaysAgo.toISOString());
+    .gte("received_date", thirtyDaysAgo.toISOString());
 
   return {
     inventory: {
