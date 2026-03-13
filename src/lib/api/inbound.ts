@@ -559,7 +559,7 @@ export async function reprocessInboundInventory(
           .select("id", { count: "exact", head: true })
           .eq("entity_type", "inbound_item")
           .eq("entity_id", item.id)
-          .contains("details", { source: "reprocess_case_conversion" });
+          .eq("action", "case_conversion_correction");
 
         if (!correctionLogCount || correctionLogCount === 0) {
           const correctionQty = qtyToReceive * (item.units_per_case - 1);
@@ -579,7 +579,7 @@ export async function reprocessInboundInventory(
           await supabase.from("activity_log").insert({
             entity_type: "inbound_item",
             entity_id: item.id,
-            action: "received",
+            action: "case_conversion_correction",
             user_id: user?.id || null,
             details: {
               product_id: item.product_id,

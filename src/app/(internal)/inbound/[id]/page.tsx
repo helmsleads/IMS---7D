@@ -989,8 +989,14 @@ export default function InboundOrderDetailPage() {
   }
 
   const currentStatusIndex = getStatusIndex(order.status);
-  const totalExpected = order.items.reduce((sum, item) => sum + item.qty_expected, 0);
-  const totalReceived = order.items.reduce((sum, item) => sum + item.qty_received, 0);
+  const totalExpected = order.items.reduce((sum, item) => {
+    const qty = item.qty_expected;
+    return sum + (item.uom === "cases" && item.units_per_case ? qty * item.units_per_case : qty);
+  }, 0);
+  const totalReceived = order.items.reduce((sum, item) => {
+    const qty = item.qty_received;
+    return sum + (item.uom === "cases" && item.units_per_case ? qty * item.units_per_case : qty);
+  }, 0);
 
   return (
     <AppShell
