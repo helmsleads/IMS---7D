@@ -1009,6 +1009,15 @@ function InternalUsersSection() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Verify & Reset Password
+  const [verifyingUser, setVerifyingUser] = useState<InternalUser | null>(null);
+  const [verifyData, setVerifyData] = useState<Record<string, unknown> | null>(null);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [resetUser, setResetUser] = useState<InternalUser | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetResult, setResetResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
   useEffect(() => {
     loadUsers();
   }, []);
@@ -1129,6 +1138,61 @@ function InternalUsersSection() {
     }
   };
 
+  const handleVerifyUser = async (user: InternalUser) => {
+    setVerifyingUser(user);
+    setVerifyData(null);
+    setVerifyLoading(true);
+    try {
+      const res = await fetch("/api/portal-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify", userId: user.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setVerifyData(data);
+    } catch (err) {
+      setVerifyData({ error: err instanceof Error ? err.message : "Failed to verify" });
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleConfirmEmail = async (userId: string) => {
+    try {
+      const res = await fetch("/api/portal-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "confirm-email", userId }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      if (verifyingUser) handleVerifyUser(verifyingUser);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed");
+    }
+  };
+
+  const handleResetPw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetUser || !resetPassword) return;
+    setResetLoading(true);
+    setResetResult(null);
+    try {
+      const res = await fetch("/api/portal-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset-password", userId: resetUser.id, newPassword: resetPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setResetResult({ ok: true, msg: "Password reset successfully" });
+      setResetPassword("");
+    } catch (err) {
+      setResetResult({ ok: false, msg: err instanceof Error ? err.message : "Failed" });
+    } finally {
+      setResetLoading(false);
+    }
+  };
 
   return (
     <Card padding="none" className="mb-6">
@@ -1209,6 +1273,20 @@ function InternalUsersSection() {
                     <option value="viewer">Viewer</option>
                   </select>
 
+                  <button
+                    onClick={() => handleVerifyUser(user)}
+                    className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                    title="Verify account"
+                  >
+                    <Shield className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => { setResetUser(user); setResetPassword(""); setResetResult(null); }}
+                    className="p-2 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                    title="Reset password"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
                   <button
                     onClick={() => handleToggleActive(user)}
                     className={`p-2 rounded-lg transition-colors ${
@@ -1375,6 +1453,98 @@ function InternalUsersSection() {
                 )}
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Verify Account Modal */}
+      {verifyingUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Account: {verifyingUser.name}</h3>
+              <button onClick={() => setVerifyingUser(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              {verifyLoading ? (
+                <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>
+              ) : verifyData?.error ? (
+                <p className="text-sm text-red-600">{String(verifyData.error)}</p>
+              ) : verifyData?.auth ? (
+                <div className="space-y-2 text-sm">
+                  {[
+                    ["Email", String((verifyData.auth as Record<string, unknown>).email)],
+                    ["Email Confirmed", (verifyData.auth as Record<string, unknown>).email_confirmed ? "Yes" : "No"],
+                    ["Last Sign In", (verifyData.auth as Record<string, unknown>).last_sign_in ? new Date(String((verifyData.auth as Record<string, unknown>).last_sign_in)).toLocaleString() : "Never"],
+                    ["Created", new Date(String((verifyData.auth as Record<string, unknown>).created_at)).toLocaleDateString()],
+                    ["Banned", (verifyData.auth as Record<string, unknown>).banned ? "Yes" : "No"],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between py-2 border-b border-gray-100">
+                      <span className="text-gray-500">{label}</span>
+                      <span className={`font-medium ${label === "Email Confirmed" && value === "No" ? "text-red-600" : label === "Banned" && value === "Yes" ? "text-red-600" : ""}`}>{value}</span>
+                    </div>
+                  ))}
+                  {!(verifyData.auth as Record<string, unknown>).email_confirmed && (
+                    <button
+                      onClick={() => handleConfirmEmail(verifyingUser.id)}
+                      className="mt-2 w-full px-3 py-2 text-sm bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md transition-colors"
+                    >
+                      Confirm Email Now
+                    </button>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {resetUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Reset Password</h3>
+              <button onClick={() => setResetUser(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              {resetResult ? (
+                <div className={`p-3 rounded-lg mb-3 ${resetResult.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+                  <p className="text-sm">{resetResult.msg}</p>
+                </div>
+              ) : (
+                <form onSubmit={handleResetPw} className="space-y-3">
+                  <p className="text-sm text-gray-500">
+                    Set a new password for <strong>{resetUser.email}</strong>.
+                  </p>
+                  <input
+                    type="text"
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    placeholder="Minimum 8 characters"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                  />
+                  {resetPassword && resetPassword.length < 8 && (
+                    <p className="text-xs text-red-500">Must be at least 8 characters</p>
+                  )}
+                </form>
+              )}
+              <div className="flex justify-end gap-2 mt-4">
+                <Button variant="secondary" size="sm" onClick={() => setResetUser(null)}>
+                  {resetResult?.ok ? "Done" : "Cancel"}
+                </Button>
+                {!resetResult?.ok && (
+                  <Button size="sm" onClick={handleResetPw} loading={resetLoading} disabled={!resetPassword || resetPassword.length < 8}>
+                    Reset Password
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
