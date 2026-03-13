@@ -553,20 +553,17 @@ export async function reprocessInboundInventory(
       // Already received — but check if case conversion was missed
       // (items received before the conversion fix would have raw case count in inventory)
       if (item.uom === "cases" && item.units_per_case && item.units_per_case > 1) {
-        const correctionQty = qtyToReceive * (item.units_per_case - 1);
+        // Check if a case conversion correction was already applied
+        const { count: correctionLogCount } = await supabase
+          .from("activity_log")
+          .select("id", { count: "exact", head: true })
+          .eq("entity_type", "inbound_item")
+          .eq("entity_id", item.id)
+          .contains("details", { source: "reprocess_case_conversion" });
 
-        // Check if inventory still has the unconverted amount
-        const { data: invRecords } = await supabase
-          .from("inventory")
-          .select("id, qty_on_hand")
-          .eq("product_id", item.product_id);
+        if (!correctionLogCount || correctionLogCount === 0) {
+          const correctionQty = qtyToReceive * (item.units_per_case - 1);
 
-        const totalOnHand = (invRecords || []).reduce(
-          (sum, r) => sum + (r.qty_on_hand || 0), 0
-        );
-
-        // If current inventory equals the raw case count, it was never converted
-        if (totalOnHand === qtyToReceive) {
           const { error: correctionError } = await supabase.rpc("update_inventory", {
             p_product_id: item.product_id,
             p_location_id: locationId,
@@ -578,7 +575,7 @@ export async function reprocessInboundInventory(
             continue;
           }
 
-          // Log the correction
+          // Log the correction so it won't run again
           await supabase.from("activity_log").insert({
             entity_type: "inbound_item",
             entity_id: item.id,
