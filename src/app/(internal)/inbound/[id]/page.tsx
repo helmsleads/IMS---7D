@@ -482,9 +482,10 @@ export default function InboundOrderDetailPage() {
         );
       }
       await fetchOrder();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Failed to reprocess inventory:", err);
-      setReprocessResult("Failed to reprocess inventory. Check console for details.");
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setReprocessResult(`Failed: ${message}`);
     } finally {
       setReprocessing(false);
     }

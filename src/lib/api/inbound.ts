@@ -330,26 +330,24 @@ export async function updateInboundOrderStatus(
 
     if (items && items.length > 0) {
       // Find a receiving location to use for any missing inventory updates
-      const { data: receivingLocation } = await supabase
+      const { data: receivingLocations } = await supabase
         .from("locations")
         .select("id")
         .eq("location_type", "receiving")
         .eq("is_active", true)
-        .limit(1)
-        .single();
+        .limit(1);
 
-      // Fall back to any active location if no receiving location exists
-      const fallbackLocation = receivingLocation
-        ? null
-        : (await supabase
-            .from("locations")
-            .select("id")
-            .eq("is_active", true)
-            .limit(1)
-            .single()
-          ).data;
+      let locationId = receivingLocations?.[0]?.id;
 
-      const locationId = receivingLocation?.id || fallbackLocation?.id;
+      if (!locationId) {
+        const { data: anyLocations } = await supabase
+          .from("locations")
+          .select("id")
+          .eq("is_active", true)
+          .limit(1);
+
+        locationId = anyLocations?.[0]?.id;
+      }
 
       if (locationId) {
         for (const item of items) {
@@ -498,19 +496,26 @@ export async function reprocessInboundInventory(
   }
 
   // Find receiving location
-  const { data: receivingLocation } = await supabase
+  const { data: receivingLocations } = await supabase
     .from("locations")
     .select("id")
     .eq("location_type", "receiving")
     .eq("is_active", true)
-    .limit(1)
-    .single();
+    .limit(1);
 
-  const { data: fallbackLocation } = !receivingLocation
-    ? await supabase.from("locations").select("id").eq("is_active", true).limit(1).single()
-    : { data: null };
+  let locationId = receivingLocations?.[0]?.id;
 
-  const locationId = receivingLocation?.id || fallbackLocation?.id;
+  if (!locationId) {
+    // Fall back to any active location
+    const { data: anyLocations } = await supabase
+      .from("locations")
+      .select("id")
+      .eq("is_active", true)
+      .limit(1);
+
+    locationId = anyLocations?.[0]?.id;
+  }
+
   if (!locationId) {
     throw new Error("No active location found for receiving");
   }
