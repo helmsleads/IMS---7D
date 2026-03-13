@@ -334,7 +334,7 @@ export async function updateInboundOrderStatus(
         .from("locations")
         .select("id")
         .eq("location_type", "receiving")
-        .eq("is_active", true)
+        .eq("active", true)
         .limit(1);
 
       let locationId = receivingLocations?.[0]?.id;
@@ -343,7 +343,7 @@ export async function updateInboundOrderStatus(
         const { data: anyLocations } = await supabase
           .from("locations")
           .select("id")
-          .eq("is_active", true)
+          .eq("active", true)
           .limit(1);
 
         locationId = anyLocations?.[0]?.id;
@@ -500,7 +500,7 @@ export async function reprocessInboundInventory(
     .from("locations")
     .select("id")
     .eq("location_type", "receiving")
-    .eq("is_active", true)
+    .eq("active", true)
     .limit(1);
 
   let locationId = receivingLocations?.[0]?.id;
@@ -510,7 +510,7 @@ export async function reprocessInboundInventory(
     const { data: anyLocations } = await supabase
       .from("locations")
       .select("id")
-      .eq("is_active", true)
+      .eq("active", true)
       .limit(1);
 
     locationId = anyLocations?.[0]?.id;
