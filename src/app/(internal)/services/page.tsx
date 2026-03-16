@@ -48,12 +48,17 @@ const formatPriceUnit = (unit: string | null) => {
   const units: Record<string, string> = {
     per_month: "/month",
     per_pallet: "/pallet",
+    per_pallet_month: "/pallet/month",
+    per_barrel_month: "/barrel/month",
     per_case: "/case",
+    per_case_month: "/case/month",
     per_order: "/order",
-    per_item: "/item",
+    per_item: "/unit",
+    per_unit: "/unit",
+    per_box: "/box",
     flat: " (flat)",
   };
-  return units[unit] || unit;
+  return units[unit] || `/${unit}`;
 };
 
 const iconMap: Record<string, React.ReactNode> = {
