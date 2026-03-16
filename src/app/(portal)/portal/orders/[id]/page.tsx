@@ -15,6 +15,8 @@ import {
   Copy,
   Check,
   ExternalLink,
+  Download,
+  Printer,
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
@@ -22,6 +24,8 @@ import { getContainerBadge, getUnitLabel } from "@/lib/labels";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FetchError from "@/components/ui/FetchError";
 import { handleApiError } from "@/lib/utils/error-handler";
+import { downloadBOL, printBOL, BOLData } from "@/lib/generate-bol";
+import { getSystemSetting } from "@/lib/api/settings";
 
 interface OrderItem {
   id: string;
@@ -34,6 +38,8 @@ interface OrderItem {
   qty_shipped: number;
   status: string;
   image_url: string | null;
+  weight_lbs: number | null;
+  freight_class: string | null;
 }
 
 interface OrderDetail {
@@ -41,15 +47,19 @@ interface OrderDetail {
   order_number: string;
   status: string;
   created_at: string;
+  ship_to_name: string | null;
+  ship_to_company: string | null;
   ship_to_address: string;
   ship_to_address2: string | null;
   ship_to_city: string;
   ship_to_state: string;
   ship_to_zip: string;
   ship_to_country: string;
+  ship_to_phone: string | null;
   notes: string | null;
   is_rush: boolean;
   preferred_carrier: string | null;
+  carrier: string | null;
   tracking_number: string | null;
   shipped_date: string | null;
   delivered_date: string | null;
@@ -188,6 +198,7 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedTracking, setCopiedTracking] = useState(false);
+  const [generatingBOL, setGeneratingBOL] = useState(false);
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -202,15 +213,19 @@ export default function OrderDetailPage() {
           order_number,
           status,
           created_at,
+          ship_to_name,
+          ship_to_company,
           ship_to_address,
           ship_to_address2,
           ship_to_city,
           ship_to_state,
           ship_to_zip,
           ship_to_country,
+          ship_to_phone,
           notes,
           is_rush,
           preferred_carrier,
+          carrier,
           tracking_number,
           shipped_date,
           delivered_date,
@@ -229,7 +244,9 @@ export default function OrderDetailPage() {
               sku,
               image_url,
               client_id,
-              container_type
+              container_type,
+              weight_lbs,
+              freight_class
             )
           )
         `)
@@ -270,15 +287,19 @@ export default function OrderDetailPage() {
         order_number: data.order_number,
         status: data.status,
         created_at: data.created_at,
+        ship_to_name: data.ship_to_name,
+        ship_to_company: data.ship_to_company,
         ship_to_address: data.ship_to_address,
         ship_to_address2: data.ship_to_address2,
         ship_to_city: data.ship_to_city,
         ship_to_state: data.ship_to_state,
         ship_to_zip: data.ship_to_zip,
         ship_to_country: data.ship_to_country,
+        ship_to_phone: data.ship_to_phone,
         notes: data.notes,
         is_rush: data.is_rush || false,
         preferred_carrier: data.preferred_carrier,
+        carrier: data.carrier,
         tracking_number: data.tracking_number,
         shipped_date: data.shipped_date,
         delivered_date: data.delivered_date,
@@ -289,7 +310,7 @@ export default function OrderDetailPage() {
           qty_picked: number;
           qty_shipped: number;
           status: string;
-          product: { id: string; name: string; sku: string; image_url: string | null; client_id?: string | null; container_type?: string | null } | { id: string; name: string; sku: string; image_url: string | null; client_id?: string | null; container_type?: string | null }[];
+          product: { id: string; name: string; sku: string; image_url: string | null; client_id?: string | null; container_type?: string | null; weight_lbs?: number | null; freight_class?: string | null } | { id: string; name: string; sku: string; image_url: string | null; client_id?: string | null; container_type?: string | null; weight_lbs?: number | null; freight_class?: string | null }[];
         }) => {
           const product = Array.isArray(item.product) ? item.product[0] : item.product;
           return {
@@ -303,6 +324,8 @@ export default function OrderDetailPage() {
             qty_shipped: item.qty_shipped || 0,
             status: item.status,
             image_url: product?.image_url || null,
+            weight_lbs: product?.weight_lbs || null,
+            freight_class: product?.freight_class || null,
           };
         }),
       };
@@ -358,6 +381,102 @@ export default function OrderDetailPage() {
       .map(([label, qty]) => `${qty.toLocaleString()} ${label}`)
       .join(", ");
   })();
+
+  const buildBOLData = async (): Promise<BOLData | null> => {
+    if (!order) return null;
+
+    // Fetch shipper info from system settings
+    let shipperCompany = "7 Degrees Co";
+    let shipperAddress = "";
+    let shipperCity = "";
+    let shipperState = "";
+    let shipperZip = "";
+    let shipperPhone = "";
+
+    try {
+      const companyName = await getSystemSetting("general", "company_name");
+      if (companyName?.setting_value) shipperCompany = String(companyName.setting_value);
+
+      const companyAddress = await getSystemSetting("general", "company_address");
+      if (companyAddress?.setting_value) {
+        const addr = String(companyAddress.setting_value);
+        // Try to parse "street, city, state zip" format
+        const parts = addr.split(",").map((p: string) => p.trim());
+        if (parts.length >= 3) {
+          shipperAddress = parts[0];
+          shipperCity = parts[1];
+          const stateZip = parts[2].split(" ");
+          shipperState = stateZip[0] || "";
+          shipperZip = stateZip.slice(1).join(" ") || "";
+        } else {
+          shipperAddress = addr;
+        }
+      }
+
+      const companyPhone = await getSystemSetting("general", "company_phone");
+      if (companyPhone?.setting_value) shipperPhone = String(companyPhone.setting_value);
+    } catch {
+      // Use defaults if settings not available
+    }
+
+    return {
+      orderNumber: order.order_number,
+      date: new Date(order.created_at).toLocaleDateString("en-US"),
+      carrier: order.carrier || order.preferred_carrier || "TBD",
+      trackingNumber: order.tracking_number || undefined,
+      shipper: {
+        company: shipperCompany,
+        address: shipperAddress,
+        city: shipperCity,
+        state: shipperState,
+        zip: shipperZip,
+        phone: shipperPhone,
+      },
+      consignee: {
+        name: order.ship_to_name || "",
+        company: order.ship_to_company || "",
+        address: order.ship_to_address,
+        address2: order.ship_to_address2 || undefined,
+        city: order.ship_to_city,
+        state: order.ship_to_state,
+        zip: order.ship_to_zip,
+        phone: order.ship_to_phone || "",
+      },
+      items: order.items.map((item) => ({
+        qty: item.qty_requested,
+        description: item.product_name,
+        sku: item.sku,
+        weight: item.weight_lbs,
+        freightClass: item.freight_class,
+      })),
+      specialInstructions: order.notes || undefined,
+      isRush: order.is_rush,
+    };
+  };
+
+  const handleDownloadBOL = async () => {
+    setGeneratingBOL(true);
+    try {
+      const bolData = await buildBOLData();
+      if (bolData) downloadBOL(bolData);
+    } catch (err) {
+      console.error("Failed to generate BOL:", err);
+    } finally {
+      setGeneratingBOL(false);
+    }
+  };
+
+  const handlePrintBOL = async () => {
+    setGeneratingBOL(true);
+    try {
+      const bolData = await buildBOLData();
+      if (bolData) printBOL(bolData);
+    } catch (err) {
+      console.error("Failed to generate BOL:", err);
+    } finally {
+      setGeneratingBOL(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -415,12 +534,35 @@ export default function OrderDetailPage() {
               Requested on {formatDateTime(order.created_at)}
             </p>
           </div>
-          <span
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${statusConfig.bgColor} ${statusConfig.color}`}
-          >
-            <StatusIcon className="w-4 h-4" />
-            {statusConfig.label}
-          </span>
+          <div className="flex items-center gap-3">
+            <span
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium ${statusConfig.bgColor} ${statusConfig.color}`}
+            >
+              <StatusIcon className="w-4 h-4" />
+              {statusConfig.label}
+            </span>
+            {order.status !== "cancelled" && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handleDownloadBOL}
+                  disabled={generatingBOL}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 transition-colors disabled:opacity-50"
+                  title="Download BOL"
+                >
+                  <Download className="w-4 h-4" />
+                  <span className="hidden sm:inline">BOL</span>
+                </button>
+                <button
+                  onClick={handlePrintBOL}
+                  disabled={generatingBOL}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 transition-colors disabled:opacity-50"
+                  title="Print BOL"
+                >
+                  <Printer className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

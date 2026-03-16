@@ -18,6 +18,8 @@ export interface Product {
   container_type: string | null;
   units_per_case: number | null;
   size: string | null;
+  weight_lbs: number | null;
+  freight_class: string | null;
   active: boolean;
   created_at: string;
   workflow_profile_id: string | null; // Product-level workflow override

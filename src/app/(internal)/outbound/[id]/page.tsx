@@ -82,6 +82,9 @@ import PickScanner from "@/components/internal/PickScanner";
 import { getWarehouseTasks, getPickListItems, WarehouseTaskWithRelations, PickListItemWithRelations } from "@/lib/api/warehouse-tasks";
 import { getDamageReports, createDamageReport, DamageReportWithProduct } from "@/lib/api/damage-reports";
 import type { DamageResolution } from "@/types/database";
+import { downloadBOL, printBOL, BOLData } from "@/lib/generate-bol";
+import { getSystemSetting } from "@/lib/api/settings";
+import { Download } from "lucide-react";
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: Clock },
@@ -676,6 +679,89 @@ export default function OutboundOrderDetailPage() {
     window.print();
   };
 
+  const buildBOLDataFromOrder = async (): Promise<BOLData | null> => {
+    if (!order) return null;
+
+    let shipperCompany = "7 Degrees Co";
+    let shipperAddress = "";
+    let shipperCity = "";
+    let shipperState = "";
+    let shipperZip = "";
+    let shipperPhone = "";
+
+    try {
+      const companyName = await getSystemSetting("general", "company_name");
+      if (companyName?.setting_value) shipperCompany = String(companyName.setting_value);
+
+      const companyAddress = await getSystemSetting("general", "company_address");
+      if (companyAddress?.setting_value) {
+        const addr = String(companyAddress.setting_value);
+        const parts = addr.split(",").map((p: string) => p.trim());
+        if (parts.length >= 3) {
+          shipperAddress = parts[0];
+          shipperCity = parts[1];
+          const stateZip = parts[2].split(" ");
+          shipperState = stateZip[0] || "";
+          shipperZip = stateZip.slice(1).join(" ") || "";
+        } else {
+          shipperAddress = addr;
+        }
+      }
+
+      const companyPhone = await getSystemSetting("general", "company_phone");
+      if (companyPhone?.setting_value) shipperPhone = String(companyPhone.setting_value);
+    } catch {
+      // Use defaults
+    }
+
+    return {
+      orderNumber: order.order_number,
+      date: new Date(order.created_at).toLocaleDateString("en-US"),
+      carrier: order.carrier || order.preferred_carrier || "TBD",
+      trackingNumber: order.tracking_number || undefined,
+      shipper: {
+        company: shipperCompany,
+        address: shipperAddress,
+        city: shipperCity,
+        state: shipperState,
+        zip: shipperZip,
+        phone: shipperPhone,
+      },
+      consignee: {
+        name: order.ship_to_name || "",
+        company: order.ship_to_company || "",
+        address: order.ship_to_address || "",
+        address2: order.ship_to_address2 || undefined,
+        city: order.ship_to_city || "",
+        state: order.ship_to_state || "",
+        zip: order.ship_to_zip || "",
+        phone: order.ship_to_phone || "",
+      },
+      items: order.items.map((item: OutboundItemWithProduct) => {
+        const product = Array.isArray(item.product) ? item.product[0] : item.product;
+        return {
+          qty: item.qty_requested,
+          description: product?.name || "Unknown",
+          sku: product?.sku || "",
+          weight: (product as any)?.weight_lbs || null,
+          freightClass: (product as any)?.freight_class || null,
+        };
+      }),
+      specialInstructions: order.notes || undefined,
+      isRush: order.is_rush || false,
+    };
+  };
+
+  const handleDownloadBOL = async () => {
+    const bolData = await buildBOLDataFromOrder();
+    if (bolData) downloadBOL(bolData);
+  };
+
+  const handlePrintBOL = async () => {
+    const bolData = await buildBOLDataFromOrder();
+    if (bolData) printBOL(bolData);
+  };
+
   const handleAddSupply = async () => {
     if (!selectedSupplyId || supplyQty <= 0 || !order) return;
 
@@ -1067,6 +1153,16 @@ export default function OutboundOrderDetailPage() {
       label: "Print Packing Slip",
       icon: <FileText className="w-4 h-4" />,
       onClick: handlePrintPackingSlip,
+    },
+    {
+      label: "Download BOL",
+      icon: <Download className="w-4 h-4" />,
+      onClick: handleDownloadBOL,
+    },
+    {
+      label: "Print BOL",
+      icon: <Printer className="w-4 h-4" />,
+      onClick: handlePrintBOL,
     },
     {
       label: isEditingOrder ? "Cancel Edit" : "Edit Order",

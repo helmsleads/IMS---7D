@@ -34,6 +34,8 @@ export default function ProductForm({
   const [containerType, setContainerType] = useState<string>((product as any)?.container_type || "bottle");
   const [unitsPerCase, setUnitsPerCase] = useState<number>((product as any)?.units_per_case || 1);
   const [size, setSize] = useState(product?.size || "");
+  const [weightLbs, setWeightLbs] = useState<number | string>((product as any)?.weight_lbs || "");
+  const [freightClass, setFreightClass] = useState((product as any)?.freight_class || "");
   const [unitCost, setUnitCost] = useState(product?.unit_cost || 0);
   const [basePrice, setBasePrice] = useState(product?.base_price || 0);
   const [reorderPoint, setReorderPoint] = useState(product?.reorder_point || 0);
@@ -212,6 +214,8 @@ export default function ProductForm({
       container_type: containerType,
       units_per_case: unitsPerCase,
       size: showSizeField ? (size || null) : null,
+      weight_lbs: weightLbs ? parseFloat(String(weightLbs)) : null,
+      freight_class: freightClass || null,
       unit_cost: unitCost,
       base_price: basePrice,
       reorder_point: reorderPoint,
@@ -356,6 +360,51 @@ export default function ProductForm({
           hint="Volume or size of the individual unit"
         />
       )}
+
+      <div className="pt-4">
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Shipping</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <Input
+            label="Weight (lbs)"
+            name="weight_lbs"
+            type="number"
+            value={weightLbs}
+            onChange={(e) => setWeightLbs(e.target.value)}
+            min={0}
+            step={0.01}
+            placeholder="e.g., 25.5"
+            hint="Weight per unit/case in pounds"
+          />
+          <Select
+            label="Freight Class"
+            name="freight_class"
+            options={[
+              { value: "50", label: "50 - Clean Freight" },
+              { value: "55", label: "55" },
+              { value: "60", label: "60" },
+              { value: "65", label: "65" },
+              { value: "70", label: "70" },
+              { value: "77.5", label: "77.5" },
+              { value: "85", label: "85" },
+              { value: "92.5", label: "92.5" },
+              { value: "100", label: "100" },
+              { value: "110", label: "110" },
+              { value: "125", label: "125" },
+              { value: "150", label: "150" },
+              { value: "175", label: "175" },
+              { value: "200", label: "200" },
+              { value: "250", label: "250" },
+              { value: "300", label: "300" },
+              { value: "400", label: "400" },
+              { value: "500", label: "500 - Low Density" },
+            ]}
+            value={freightClass}
+            onChange={(e) => setFreightClass(e.target.value)}
+            placeholder="Select freight class"
+            hint="NMFC freight classification"
+          />
+        </div>
+      </div>
 
       <div className="pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Pricing</h3>
