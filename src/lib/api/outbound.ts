@@ -944,14 +944,14 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
           client_id: billingClientId,
           service_id: clientService.service_id,
           usage_type: "fulfillment",
-          quantity: qty,
+          quantity: counts.units + counts.barrels,
           unit_price: unitPrice,
-          total: qty * unitPrice,
+          total: (counts.units + counts.barrels) * unitPrice,
           reference_type: "outbound_order",
           reference_id: orderId,
           usage_date: usageDate,
           invoiced: false,
-          notes: `Order ${order.order_number} - ${qty} items`,
+          notes: `Order ${order.order_number} - ${counts.units + counts.barrels} items`,
         });
 
       if (usageError) {
