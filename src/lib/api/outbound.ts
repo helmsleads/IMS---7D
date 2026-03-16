@@ -855,7 +855,7 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
       *,
       items:outbound_items (
         qty_shipped,
-        product:products (id, sku, name, client_id)
+        product:products (id, sku, name, client_id, container_type)
       )
     `)
     .eq("id", orderId)
@@ -865,15 +865,21 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
     throw new Error(orderError.message);
   }
 
-  // Group shipped items by owning client
-  const clientShipped = new Map<string, number>();
+  // Group shipped items by owning client AND rate code (barrel vs unit)
+  const clientShipped = new Map<string, { units: number; barrels: number }>();
   for (const item of (order.items || []) as any[]) {
     const qty = item.qty_shipped || 0;
     if (qty === 0) continue;
     const product = Array.isArray(item.product) ? item.product[0] : item.product;
     const ownerClientId = product?.client_id || order.client_id;
     if (!ownerClientId) continue;
-    clientShipped.set(ownerClientId, (clientShipped.get(ownerClientId) || 0) + qty);
+    const entry = clientShipped.get(ownerClientId) || { units: 0, barrels: 0 };
+    if (product?.container_type === "keg") {
+      entry.barrels += qty;
+    } else {
+      entry.units += qty;
+    }
+    clientShipped.set(ownerClientId, entry);
   }
 
   if (clientShipped.size === 0) {
@@ -882,20 +888,37 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
 
   const usageDate = new Date().toISOString().split("T")[0];
 
-  // Record billable events per client
-  for (const [billingClientId, qty] of clientShipped) {
-    try {
-      await supabase.rpc("record_billable_event", {
-        p_client_id: billingClientId,
-        p_rate_code: "PICK_UNIT",
-        p_quantity: qty,
-        p_reference_type: "outbound_order",
-        p_reference_id: orderId,
-        p_usage_date: usageDate,
-        p_notes: `Order ${order.order_number} - Outgoing handling: ${qty} cases/bottles`,
-      });
-    } catch (billingError) {
-      console.error(`Failed to record billable events for client ${billingClientId}:`, billingError);
+  // Record billable events per client, split by unit type
+  for (const [billingClientId, counts] of clientShipped) {
+    if (counts.units > 0) {
+      try {
+        await supabase.rpc("record_billable_event", {
+          p_client_id: billingClientId,
+          p_rate_code: "PICK_UNIT",
+          p_quantity: counts.units,
+          p_reference_type: "outbound_order",
+          p_reference_id: orderId,
+          p_usage_date: usageDate,
+          p_notes: `Order ${order.order_number} - Outgoing handling: ${counts.units} cases/bottles`,
+        });
+      } catch (billingError) {
+        console.error(`Failed to record billable events for client ${billingClientId}:`, billingError);
+      }
+    }
+    if (counts.barrels > 0) {
+      try {
+        await supabase.rpc("record_billable_event", {
+          p_client_id: billingClientId,
+          p_rate_code: "PICK_BARREL",
+          p_quantity: counts.barrels,
+          p_reference_type: "outbound_order",
+          p_reference_id: orderId,
+          p_usage_date: usageDate,
+          p_notes: `Order ${order.order_number} - Outgoing barrel handling: ${counts.barrels} barrels`,
+        });
+      } catch (billingError) {
+        console.error(`Failed to record barrel billable events for client ${billingClientId}:`, billingError);
+      }
     }
 
     // Also record to legacy fulfillment service if configured

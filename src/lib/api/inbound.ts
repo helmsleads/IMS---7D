@@ -3,6 +3,7 @@ import { sendInternalAlert } from "@/lib/api/notifications";
 import { createLPN, addLPNContent, LPN } from "@/lib/api/lpns";
 import { updateInventoryWithTransaction } from "@/lib/api/inventory-transactions";
 import { getClientInboundRules } from "@/lib/api/workflow-profiles";
+import { getInboundRateCode } from "@/lib/api/billing-codes";
 
 export interface InboundOrder {
   id: string;
@@ -424,7 +425,7 @@ export async function updateInboundOrderStatus(
               try {
                 await supabase.rpc("record_billable_event", {
                   p_client_id: data.client_id,
-                  p_rate_code: "RECEIVE_UNIT",
+                  p_rate_code: await getInboundRateCode(item.product_id),
                   p_quantity: qtyToReceive,
                   p_reference_type: "inbound_order",
                   p_reference_id: id,
@@ -643,7 +644,7 @@ export async function reprocessInboundInventory(
       try {
         await supabase.rpc("record_billable_event", {
           p_client_id: order.client_id,
-          p_rate_code: "RECEIVE_UNIT",
+          p_rate_code: await getInboundRateCode(item.product_id),
           p_quantity: inventoryQty,
           p_reference_type: "inbound_order",
           p_reference_id: orderId,
@@ -759,7 +760,7 @@ export async function receiveInboundItem(
       try {
         await supabase.rpc("record_billable_event", {
           p_client_id: order.client_id,
-          p_rate_code: "RECEIVE_UNIT",
+          p_rate_code: await getInboundRateCode(item.product_id),
           p_quantity: inventoryDiff,
           p_reference_type: "inbound_order",
           p_reference_id: order.id,
@@ -1118,7 +1119,7 @@ export async function receiveWithLot(
     try {
       await supabase.rpc("record_billable_event", {
         p_client_id: order.client_id,
-        p_rate_code: "RECEIVE_UNIT",
+        p_rate_code: await getInboundRateCode(item.product_id),
         p_quantity: inventoryDiff,
         p_reference_type: "inbound_order",
         p_reference_id: order.id,
@@ -1366,7 +1367,7 @@ export async function receiveInboundItemToPallet(params: {
     try {
       await supabase.rpc("record_billable_event", {
         p_client_id: order.client_id,
-        p_rate_code: "RECEIVE_UNIT",
+        p_rate_code: await getInboundRateCode(item.product_id),
         p_quantity: inventoryDiff,
         p_reference_type: "inbound_order",
         p_reference_id: order.id,
