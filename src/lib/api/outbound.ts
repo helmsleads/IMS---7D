@@ -959,6 +959,44 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
       }
     }
   }
+
+  // Record shipping/freight cost split proportionally by brand
+  const shippingCost = order.client_shipping_cost || order.shipping_cost || 0;
+  if (shippingCost > 0 && clientShipped.size > 0) {
+    // Calculate total items across all brands for percentage split
+    let totalItems = 0;
+    for (const counts of clientShipped.values()) {
+      totalItems += counts.units + counts.barrels;
+    }
+
+    if (totalItems > 0) {
+      for (const [billingClientId, counts] of clientShipped) {
+        const clientItems = counts.units + counts.barrels;
+        const fraction = clientItems / totalItems;
+        const clientFreight = Math.round(shippingCost * fraction * 100) / 100;
+        if (clientFreight <= 0) continue;
+
+        try {
+          // Freight is a passthrough cost — record directly as usage
+          // (not via record_billable_event which would look up a $0 rate)
+          await supabase.from("usage_records").insert({
+            client_id: billingClientId,
+            usage_type: "FREIGHT",
+            quantity: 1,
+            unit_price: clientFreight,
+            total: clientFreight,
+            reference_type: "outbound_order",
+            reference_id: orderId,
+            usage_date: usageDate,
+            invoiced: false,
+            notes: `Order ${order.order_number} - Shipping: $${clientFreight.toFixed(2)} (${Math.round(fraction * 100)}% of $${shippingCost.toFixed(2)})`,
+          });
+        } catch (freightError) {
+          console.error(`Failed to record freight for client ${billingClientId}:`, freightError);
+        }
+      }
+    }
+  }
 }
 
 export async function getOutboundWithUsage(id: string): Promise<OutboundWithUsage | null> {
