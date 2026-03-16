@@ -5,9 +5,8 @@ export interface ClientArrival {
   orderNumber: string;
   status: string;
   createdAt: string;
-  updatedAt: string;
   expectedDate: string | null;
-  receivedAt: string | null;
+  receivedDate: string | null;
   carrier: string | null;
   trackingNumber: string | null;
   notes: string | null;
@@ -45,12 +44,11 @@ export async function getClientArrivals(
     .from("inbound_orders")
     .select(`
       id,
-      order_number,
+      po_number,
       status,
       created_at,
-      updated_at,
       expected_date,
-      received_at,
+      received_date,
       carrier,
       tracking_number,
       notes,
@@ -80,12 +78,11 @@ export async function getClientArrivals(
     const items = order.items as { qty_expected: number; qty_received: number }[];
     return {
       id: order.id,
-      orderNumber: order.order_number,
+      orderNumber: order.po_number,
       status: order.status,
       createdAt: order.created_at,
-      updatedAt: order.updated_at,
       expectedDate: order.expected_date,
-      receivedAt: order.received_at,
+      receivedDate: order.received_date,
       carrier: order.carrier,
       trackingNumber: order.tracking_number,
       notes: order.notes,
@@ -112,12 +109,11 @@ export async function getClientArrival(
     .from("inbound_orders")
     .select(`
       id,
-      order_number,
+      po_number,
       status,
       created_at,
-      updated_at,
       expected_date,
-      received_at,
+      received_date,
       carrier,
       tracking_number,
       notes,
@@ -167,12 +163,11 @@ export async function getClientArrival(
 
   return {
     id: data.id,
-    orderNumber: data.order_number,
+    orderNumber: data.po_number,
     status: data.status,
     createdAt: data.created_at,
-    updatedAt: data.updated_at,
     expectedDate: data.expected_date,
-    receivedAt: data.received_at,
+    receivedDate: data.received_date,
     carrier: data.carrier,
     trackingNumber: data.tracking_number,
     notes: data.notes,
@@ -201,7 +196,7 @@ export async function getClientRecentArrivalsCount(
     .select("id", { count: "exact", head: true })
     .eq("client_id", clientId)
     .eq("status", "received")
-    .gte("received_at", thirtyDaysAgo.toISOString());
+    .gte("received_date", thirtyDaysAgo.toISOString());
 
   if (error) {
     console.error("Error fetching recent arrivals count:", error);
@@ -225,12 +220,11 @@ export async function getClientPendingArrivals(
     .from("inbound_orders")
     .select(`
       id,
-      order_number,
+      po_number,
       status,
       created_at,
-      updated_at,
       expected_date,
-      received_at,
+      received_date,
       carrier,
       tracking_number,
       notes,
@@ -252,12 +246,11 @@ export async function getClientPendingArrivals(
     const items = order.items as { qty_expected: number; qty_received: number }[];
     return {
       id: order.id,
-      orderNumber: order.order_number,
+      orderNumber: order.po_number,
       status: order.status,
       createdAt: order.created_at,
-      updatedAt: order.updated_at,
       expectedDate: order.expected_date,
-      receivedAt: order.received_at,
+      receivedDate: order.received_date,
       carrier: order.carrier,
       trackingNumber: order.tracking_number,
       notes: order.notes,

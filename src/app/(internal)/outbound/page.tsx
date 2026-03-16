@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, PackageX, Eye, Truck, ExternalLink, Flag, AlertTriangle, ArrowUpDown, Globe, Building2, Zap } from "lucide-react";
+import { Plus, PackageX, Eye, Truck, ExternalLink, Flag, AlertTriangle, ArrowUpDown, Globe, Building2, Zap, Trash2 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -10,7 +10,8 @@ import Table from "@/components/ui/Table";
 import EmptyState from "@/components/ui/EmptyState";
 import FetchError from "@/components/ui/FetchError";
 import Pagination from "@/components/ui/Pagination";
-import { getOutboundOrders, OutboundOrderWithClient } from "@/lib/api/outbound";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { getOutboundOrders, deleteOutboundOrder, OutboundOrderWithClient } from "@/lib/api/outbound";
 import { handleApiError } from "@/lib/utils/error-handler";
 import { formatDate, formatStatus } from "@/lib/utils/formatting";
 import StatusBadge from "@/components/ui/StatusBadge";
@@ -57,6 +58,8 @@ export default function OutboundPage() {
   const [selectedSource, setSelectedSource] = useState<SourceFilter>("all");
   const [sortOldestFirst, setSortOldestFirst] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [deleteOrder, setDeleteOrder] = useState<OutboundOrderWithCount | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -68,6 +71,21 @@ export default function OutboundPage() {
       setError(handleApiError(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteOrder) return;
+    setDeleting(true);
+    try {
+      await deleteOutboundOrder(deleteOrder.id);
+      setDeleteOrder(null);
+      await fetchOrders();
+    } catch (err) {
+      setError(handleApiError(err));
+      setDeleteOrder(null);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -274,6 +292,19 @@ export default function OutboundPage() {
               <Truck className="w-4 h-4 text-blue-600" />
             </Button>
           )}
+          {(order.status === "pending" || order.status === "processing") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteOrder(order);
+              }}
+              title="Delete order"
+            >
+              <Trash2 className="w-4 h-4 text-red-500" />
+            </Button>
+          )}
         </div>
       ),
     },
@@ -446,6 +477,17 @@ export default function OutboundPage() {
           onPageChange={setCurrentPage}
         />
       </Card>
+
+      <ConfirmDialog
+        isOpen={!!deleteOrder}
+        onClose={() => setDeleteOrder(null)}
+        onConfirm={handleDelete}
+        title="Delete Outbound Order"
+        description={`Are you sure you want to delete this order? This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleting}
+      />
     </AppShell>
   );
 }

@@ -42,6 +42,12 @@ export default function Modal({
     if (isOpen) {
       setVisible(true);
       setAnimating(false);
+    } else if (visible) {
+      setAnimating(true);
+      setTimeout(() => {
+        setAnimating(false);
+        setVisible(false);
+      }, 150);
     }
   }, [isOpen]);
 

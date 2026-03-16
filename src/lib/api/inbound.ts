@@ -33,6 +33,9 @@ export interface InboundItem {
   qty_received: number;
   qty_rejected?: number;
   rejection_reason?: string | null;
+  uom?: string;
+  pallet_count?: number | null;
+  units_per_case?: number | null;
 }
 
 export type RejectionReason = "damaged" | "wrong_item" | "expired" | "quality_issue" | "other";
@@ -69,6 +72,9 @@ export interface CreateInboundOrderData {
 export interface CreateInboundItemData {
   product_id: string;
   qty_expected: number;
+  uom?: string;
+  pallet_count?: number | null;
+  units_per_case?: number | null;
 }
 
 export async function getInboundOrders(): Promise<(InboundOrder & { item_count: number })[]> {
@@ -109,6 +115,10 @@ export async function getInboundOrder(id: string): Promise<InboundOrderWithItems
         product_id,
         qty_expected,
         qty_received,
+        qty_rejected,
+        uom,
+        pallet_count,
+        units_per_case,
         product:products (
           id,
           sku,
@@ -171,6 +181,9 @@ export async function createInboundOrder(
       product_id: item.product_id,
       qty_expected: item.qty_expected,
       qty_received: 0,
+      uom: item.uom || "units",
+      pallet_count: item.pallet_count || null,
+      units_per_case: item.units_per_case || null,
     }));
 
     const { error: itemsError } = await supabase
@@ -198,6 +211,73 @@ export async function createInboundOrder(
   });
 
   return inboundOrder;
+}
+
+export async function updateInboundOrder(
+  id: string,
+  updates: Partial<Pick<InboundOrder, "supplier" | "notes" | "expected_date" | "carrier" | "tracking_number">>,
+  itemUpdates?: { added: CreateInboundItemData[]; removed: string[]; changed: { id: string; qty_expected: number; uom?: string; pallet_count?: number | null; units_per_case?: number | null }[] }
+): Promise<InboundOrder> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Update order fields
+  const { data, error } = await supabase
+    .from("inbound_orders")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  // Handle item changes
+  if (itemUpdates) {
+    // Remove items
+    if (itemUpdates.removed.length > 0) {
+      const { error: delErr } = await supabase
+        .from("inbound_items")
+        .delete()
+        .in("id", itemUpdates.removed)
+        .eq("qty_received", 0); // Safety: only delete unreceived items
+      if (delErr) throw new Error(delErr.message);
+    }
+
+    // Update existing items
+    for (const item of itemUpdates.changed) {
+      const { error: updErr } = await supabase
+        .from("inbound_items")
+        .update({ qty_expected: item.qty_expected, uom: item.uom || "units", pallet_count: item.pallet_count || null, units_per_case: item.units_per_case || null })
+        .eq("id", item.id);
+      if (updErr) throw new Error(updErr.message);
+    }
+
+    // Add new items
+    if (itemUpdates.added.length > 0) {
+      const newItems = itemUpdates.added.map((item) => ({
+        order_id: id,
+        product_id: item.product_id,
+        qty_expected: item.qty_expected,
+        qty_received: 0,
+        uom: item.uom || "units",
+        pallet_count: item.pallet_count || null,
+        units_per_case: item.units_per_case || null,
+      }));
+      const { error: addErr } = await supabase.from("inbound_items").insert(newItems);
+      if (addErr) throw new Error(addErr.message);
+    }
+  }
+
+  // Log activity
+  await supabase.from("activity_log").insert({
+    entity_type: "inbound_order",
+    entity_id: id,
+    action: "edited",
+    user_id: user?.id || null,
+    details: { updated_fields: Object.keys(updates) },
+  });
+
+  return data;
 }
 
 export async function updateInboundOrderStatus(
@@ -235,33 +315,351 @@ export async function updateInboundOrderStatus(
     details: { new_status: status },
   });
 
-  // Send internal alert when inbound order is received
+  // When marking as received, verify inventory for all items
   if (status === "received") {
-    // Fetch order details for alert
+    // Fetch items with product info
+    const { data: items } = await supabase
+      .from("inbound_items")
+      .select(`
+        id,
+        product_id,
+        qty_expected,
+        qty_received,
+        uom,
+        units_per_case
+      `)
+      .eq("order_id", id);
+
+    if (items && items.length > 0) {
+      // Find a receiving location to use for any missing inventory updates
+      const { data: receivingLocations } = await supabase
+        .from("locations")
+        .select("id")
+        .eq("location_type", "receiving")
+        .eq("active", true)
+        .limit(1);
+
+      let locationId = receivingLocations?.[0]?.id;
+
+      if (!locationId) {
+        const { data: anyLocations } = await supabase
+          .from("locations")
+          .select("id")
+          .eq("active", true)
+          .limit(1);
+
+        locationId = anyLocations?.[0]?.id;
+      }
+
+      if (locationId) {
+        for (const item of items) {
+          const qtyToReceive = item.qty_received || item.qty_expected;
+
+          if (qtyToReceive <= 0) continue;
+
+          // Convert cases to individual units if applicable
+          const inventoryQty =
+            item.uom === "cases" && item.units_per_case
+              ? qtyToReceive * item.units_per_case
+              : qtyToReceive;
+
+          // Check current inventory for this product
+          const { data: inventoryRecords } = await supabase
+            .from("inventory")
+            .select("qty_on_hand")
+            .eq("product_id", item.product_id);
+
+          const currentTotal = (inventoryRecords || []).reduce(
+            (sum, rec) => sum + (rec.qty_on_hand || 0),
+            0
+          );
+
+          // Check if inventory was already updated by receiveInboundItem
+          // by looking for activity_log entries for this item
+          const { count: receiveLogCount } = await supabase
+            .from("activity_log")
+            .select("id", { count: "exact", head: true })
+            .eq("entity_type", "inbound_item")
+            .eq("entity_id", item.id)
+            .eq("action", "received");
+
+          // If item was never individually received, update inventory now
+          if (!receiveLogCount || receiveLogCount === 0) {
+            // Set qty_received on the item if it wasn't set
+            if (!item.qty_received) {
+              await supabase
+                .from("inbound_items")
+                .update({ qty_received: item.qty_expected })
+                .eq("id", item.id);
+            }
+
+            const { error: inventoryError } = await supabase.rpc("update_inventory", {
+              p_product_id: item.product_id,
+              p_location_id: locationId,
+              p_qty_change: inventoryQty,
+            });
+
+            if (inventoryError) {
+              console.error(`Failed to update inventory for item ${item.id}:`, inventoryError);
+              continue;
+            }
+
+            // Log activity for the inventory update
+            await supabase.from("activity_log").insert({
+              entity_type: "inbound_item",
+              entity_id: item.id,
+              action: "received",
+              user_id: user?.id || null,
+              details: {
+                product_id: item.product_id,
+                qty_received: qtyToReceive,
+                qty_diff: qtyToReceive,
+                location_id: locationId,
+                source: "order_status_receive",
+              },
+            });
+
+            // Record billable event
+            if (data.client_id) {
+              try {
+                await supabase.rpc("record_billable_event", {
+                  p_client_id: data.client_id,
+                  p_rate_code: "RECEIVE_UNIT",
+                  p_quantity: qtyToReceive,
+                  p_reference_type: "inbound_order",
+                  p_reference_id: id,
+                  p_usage_date: new Date().toISOString().split("T")[0],
+                  p_notes: `Received ${qtyToReceive} units (order-level receive)`,
+                });
+              } catch (billingError) {
+                console.error("Failed to record billable event:", billingError);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Send internal alert
     const { data: orderData } = await supabase
       .from("inbound_orders")
       .select(`
-        order_number,
-        received_at,
+        po_number,
+        received_date,
         items:inbound_items (qty_received)
       `)
       .eq("id", id)
       .single();
 
     if (orderData) {
-      const items = orderData.items as { qty_received: number }[];
-      const totalUnits = items.reduce((sum, item) => sum + (item.qty_received || 0), 0);
+      const alertItems = orderData.items as { qty_received: number }[];
+      const totalUnits = alertItems.reduce((sum, item) => sum + (item.qty_received || 0), 0);
 
       sendInternalAlert("inbound_arrived", {
-        orderNumber: orderData.order_number,
-        receivedAt: orderData.received_at || new Date().toISOString(),
-        itemCount: items.length,
+        orderNumber: orderData.po_number,
+        receivedAt: orderData.received_date || new Date().toISOString(),
+        itemCount: alertItems.length,
         totalUnits,
       }).catch((err) => console.error("Failed to send inbound arrived alert:", err));
     }
   }
 
   return data;
+}
+
+/**
+ * Re-process inventory for a received inbound order.
+ * Checks each item and updates inventory for any that were missed.
+ * Returns the number of items that were fixed.
+ */
+export async function reprocessInboundInventory(
+  orderId: string
+): Promise<{ itemsFixed: number; totalUnitsAdded: number }> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Verify order exists and is received
+  const { data: order, error: orderError } = await supabase
+    .from("inbound_orders")
+    .select("id, client_id, status")
+    .eq("id", orderId)
+    .single();
+
+  if (orderError || !order) {
+    throw new Error("Order not found");
+  }
+
+  if (order.status !== "received") {
+    throw new Error("Order must be in received status to reprocess");
+  }
+
+  // Fetch all items
+  const { data: items, error: itemsError } = await supabase
+    .from("inbound_items")
+    .select("id, product_id, qty_expected, qty_received, uom, units_per_case")
+    .eq("order_id", orderId);
+
+  if (itemsError || !items) {
+    throw new Error("Failed to fetch items");
+  }
+
+  // Find receiving location
+  const { data: receivingLocations } = await supabase
+    .from("locations")
+    .select("id")
+    .eq("location_type", "receiving")
+    .eq("active", true)
+    .limit(1);
+
+  let locationId = receivingLocations?.[0]?.id;
+
+  if (!locationId) {
+    // Fall back to any active location
+    const { data: anyLocations } = await supabase
+      .from("locations")
+      .select("id")
+      .eq("active", true)
+      .limit(1);
+
+    locationId = anyLocations?.[0]?.id;
+  }
+
+  if (!locationId) {
+    throw new Error("No active location found for receiving");
+  }
+
+  let itemsFixed = 0;
+  let totalUnitsAdded = 0;
+
+  for (const item of items) {
+    const qtyToReceive = item.qty_received || item.qty_expected;
+    if (qtyToReceive <= 0) continue;
+
+    // Convert cases to individual units if applicable
+    const inventoryQty =
+      item.uom === "cases" && item.units_per_case
+        ? qtyToReceive * item.units_per_case
+        : qtyToReceive;
+
+    // Check if this item was already individually received
+    const { count: receiveLogCount } = await supabase
+      .from("activity_log")
+      .select("id", { count: "exact", head: true })
+      .eq("entity_type", "inbound_item")
+      .eq("entity_id", item.id)
+      .eq("action", "received");
+
+    if (receiveLogCount && receiveLogCount > 0) {
+      // Already received — but check if case conversion was missed
+      // (items received before the conversion fix would have raw case count in inventory)
+      if (item.uom === "cases" && item.units_per_case && item.units_per_case > 1) {
+        // Check if a case conversion correction was already applied
+        const { count: correctionLogCount } = await supabase
+          .from("activity_log")
+          .select("id", { count: "exact", head: true })
+          .eq("entity_type", "inbound_item")
+          .eq("entity_id", item.id)
+          .eq("action", "case_conversion_correction");
+
+        if (!correctionLogCount || correctionLogCount === 0) {
+          const correctionQty = qtyToReceive * (item.units_per_case - 1);
+
+          const { error: correctionError } = await supabase.rpc("update_inventory", {
+            p_product_id: item.product_id,
+            p_location_id: locationId,
+            p_qty_change: correctionQty,
+          });
+
+          if (correctionError) {
+            console.error(`Failed to correct case conversion for item ${item.id}:`, correctionError);
+            continue;
+          }
+
+          // Log the correction so it won't run again
+          await supabase.from("activity_log").insert({
+            entity_type: "inbound_item",
+            entity_id: item.id,
+            action: "case_conversion_correction",
+            user_id: user?.id || null,
+            details: {
+              product_id: item.product_id,
+              correction: true,
+              old_qty: qtyToReceive,
+              new_qty: inventoryQty,
+              qty_added: correctionQty,
+              uom: item.uom,
+              units_per_case: item.units_per_case,
+              location_id: locationId,
+              source: "reprocess_case_conversion",
+            },
+          });
+
+          itemsFixed++;
+          totalUnitsAdded += correctionQty;
+        }
+      }
+      continue;
+    }
+
+    // Set qty_received if not set
+    if (!item.qty_received) {
+      await supabase
+        .from("inbound_items")
+        .update({ qty_received: item.qty_expected })
+        .eq("id", item.id);
+    }
+
+    // Update inventory (in individual units)
+    const { error: inventoryError } = await supabase.rpc("update_inventory", {
+      p_product_id: item.product_id,
+      p_location_id: locationId,
+      p_qty_change: inventoryQty,
+    });
+
+    if (inventoryError) {
+      console.error(`Failed to update inventory for item ${item.id}:`, inventoryError);
+      continue;
+    }
+
+    // Log activity
+    await supabase.from("activity_log").insert({
+      entity_type: "inbound_item",
+      entity_id: item.id,
+      action: "received",
+      user_id: user?.id || null,
+      details: {
+        product_id: item.product_id,
+        qty_received: qtyToReceive,
+        qty_units: inventoryQty,
+        uom: item.uom || "units",
+        units_per_case: item.units_per_case || null,
+        location_id: locationId,
+        source: "reprocess_inventory",
+      },
+    });
+
+    // Record billable event
+    if (order.client_id) {
+      try {
+        await supabase.rpc("record_billable_event", {
+          p_client_id: order.client_id,
+          p_rate_code: "RECEIVE_UNIT",
+          p_quantity: inventoryQty,
+          p_reference_type: "inbound_order",
+          p_reference_id: orderId,
+          p_usage_date: new Date().toISOString().split("T")[0],
+          p_notes: `Reprocessed ${inventoryQty} units${item.uom === "cases" ? ` (${qtyToReceive} cases × ${item.units_per_case})` : ""}`,
+        });
+      } catch (billingError) {
+        console.error("Failed to record billable event:", billingError);
+      }
+    }
+
+    itemsFixed++;
+    totalUnitsAdded += inventoryQty;
+  }
+
+  return { itemsFixed, totalUnitsAdded };
 }
 
 export async function receiveInboundItem(
@@ -315,12 +713,18 @@ export async function receiveInboundItem(
   // Calculate the difference to add to inventory
   const qtyDiff = qtyReceived - item.qty_received;
 
+  // Convert cases to individual units if applicable
+  const inventoryDiff =
+    item.uom === "cases" && item.units_per_case
+      ? qtyDiff * item.units_per_case
+      : qtyDiff;
+
   if (qtyDiff !== 0) {
-    // Update inventory
+    // Update inventory (in individual units)
     const { error: inventoryError } = await supabase.rpc("update_inventory", {
       p_product_id: item.product_id,
       p_location_id: locationId,
-      p_qty_change: qtyDiff,
+      p_qty_change: inventoryDiff,
     });
 
     if (inventoryError) {
@@ -342,7 +746,9 @@ export async function receiveInboundItem(
       details: {
         product_id: item.product_id,
         qty_received: qtyReceived,
-        qty_diff: qtyDiff,
+        qty_units: inventoryDiff,
+        uom: item.uom || "units",
+        units_per_case: item.units_per_case || null,
         location_id: locationId,
       },
     });
@@ -354,7 +760,7 @@ export async function receiveInboundItem(
         await supabase.rpc("record_billable_event", {
           p_client_id: order.client_id,
           p_rate_code: "RECEIVE_UNIT",
-          p_quantity: qtyDiff,
+          p_quantity: inventoryDiff,
           p_reference_type: "inbound_order",
           p_reference_id: order.id,
           p_usage_date: new Date().toISOString().split("T")[0],
@@ -612,7 +1018,18 @@ export async function receiveWithLot(
     lotId = newLot.id;
   }
 
-  // Update lot inventory
+  // Convert cases to individual units if applicable
+  const qtyDiffRaw = qtyReceived - item.qty_received;
+  const inventoryDiff =
+    item.uom === "cases" && item.units_per_case
+      ? qtyDiffRaw * item.units_per_case
+      : qtyDiffRaw;
+  const inventoryQtyReceived =
+    item.uom === "cases" && item.units_per_case
+      ? qtyReceived * item.units_per_case
+      : qtyReceived;
+
+  // Update lot inventory (in individual units)
   const { data: existingLotInv } = await supabase
     .from("lot_inventory")
     .select("id, qty_on_hand")
@@ -624,7 +1041,7 @@ export async function receiveWithLot(
     // Update existing lot inventory
     const { error: lotInvError } = await supabase
       .from("lot_inventory")
-      .update({ qty_on_hand: existingLotInv.qty_on_hand + qtyReceived })
+      .update({ qty_on_hand: existingLotInv.qty_on_hand + inventoryDiff })
       .eq("id", existingLotInv.id);
 
     if (lotInvError) {
@@ -637,7 +1054,7 @@ export async function receiveWithLot(
       .insert({
         lot_id: lotId,
         location_id: locationId,
-        qty_on_hand: qtyReceived,
+        qty_on_hand: inventoryQtyReceived,
         qty_reserved: 0,
       });
 
@@ -646,11 +1063,11 @@ export async function receiveWithLot(
     }
   }
 
-  // Update main inventory
+  // Update main inventory (in individual units)
   const { error: inventoryError } = await supabase.rpc("update_inventory", {
     p_product_id: item.product_id,
     p_location_id: locationId,
-    p_qty_change: qtyReceived - item.qty_received,
+    p_qty_change: inventoryDiff,
   });
 
   if (inventoryError) {
@@ -686,6 +1103,9 @@ export async function receiveWithLot(
     details: {
       product_id: item.product_id,
       qty_received: qtyReceived,
+      qty_units: inventoryDiff,
+      uom: item.uom || "units",
+      units_per_case: item.units_per_case || null,
       lot_id: lotId,
       lot_number: lotNumber,
       expiration_date: calculatedExpiration,
@@ -694,17 +1114,16 @@ export async function receiveWithLot(
   });
 
   // Record billable event for receiving (if client is set)
-  const qtyDiff = qtyReceived - item.qty_received;
-  if (order?.client_id && qtyDiff > 0) {
+  if (order?.client_id && qtyDiffRaw > 0) {
     try {
       await supabase.rpc("record_billable_event", {
         p_client_id: order.client_id,
         p_rate_code: "RECEIVE_UNIT",
-        p_quantity: qtyDiff,
+        p_quantity: inventoryDiff,
         p_reference_type: "inbound_order",
         p_reference_id: order.id,
         p_usage_date: new Date().toISOString().split("T")[0],
-        p_notes: `Received ${qtyDiff} units of ${product?.sku || item.product_id} (Lot: ${lotNumber})`,
+        p_notes: `Received ${inventoryDiff} units of ${product?.sku || item.product_id} (Lot: ${lotNumber})${item.uom === "cases" ? ` (${qtyDiffRaw} cases × ${item.units_per_case})` : ""}`,
       });
     } catch (billingError) {
       // Log billing error but don't fail the receive operation
@@ -713,7 +1132,7 @@ export async function receiveWithLot(
   }
 
   // Auto-create inspection or putaway task
-  if (order?.client_id && qtyDiff > 0) {
+  if (order?.client_id && qtyDiffRaw > 0) {
     try {
       const rules = await getClientInboundRules(order.client_id);
       if (rules?.requiresInspection) {
@@ -731,7 +1150,7 @@ export async function receiveWithLot(
             orderType: "inbound",
             clientId: order.client_id,
             sourceLocationId: locationId,
-            qtyRequested: qtyDiff,
+            qtyRequested: qtyDiffRaw,
             priority: 7,
             metadata: { inboundItemId: itemId, lotId, lotNumber },
           }).catch((err) => console.error("Failed to create inspection task:", err));
@@ -744,7 +1163,7 @@ export async function receiveWithLot(
             orderType: "inbound",
             clientId: order.client_id,
             sourceLocationId: locationId,
-            qtyRequested: qtyDiff,
+            qtyRequested: qtyDiffRaw,
             metadata: { inboundItemId: itemId, lotId, lotNumber },
           }).catch((err) => console.error("Failed to create putaway task:", err));
         });
@@ -879,6 +1298,12 @@ export async function receiveInboundItemToPallet(params: {
     throw new Error("No additional quantity to receive");
   }
 
+  // Convert cases to individual units if applicable
+  const inventoryDiff =
+    item.uom === "cases" && item.units_per_case
+      ? qtyDiff * item.units_per_case
+      : qtyDiff;
+
   // 1. Update the inbound item's received quantity
   const { data: updatedItem, error: updateError } = await supabase
     .from("inbound_items")
@@ -894,18 +1319,18 @@ export async function receiveInboundItemToPallet(params: {
     throw new Error(updateError.message);
   }
 
-  // 2. Add product to pallet contents
+  // 2. Add product to pallet contents (in individual units)
   await addLPNContent({
     lpnId: params.palletId,
     productId: item.product_id,
-    qty: qtyDiff,
+    qty: inventoryDiff,
   });
 
-  // 3. Update inventory at location
+  // 3. Update inventory at location (in individual units)
   const { error: inventoryError } = await supabase.rpc("update_inventory", {
     p_product_id: item.product_id,
     p_location_id: params.locationId,
-    p_qty_change: qtyDiff,
+    p_qty_change: inventoryDiff,
   });
 
   if (inventoryError) {
@@ -927,7 +1352,9 @@ export async function receiveInboundItemToPallet(params: {
     details: {
       product_id: item.product_id,
       qty_received: params.qtyReceived,
-      qty_diff: qtyDiff,
+      qty_units: inventoryDiff,
+      uom: item.uom || "units",
+      units_per_case: item.units_per_case || null,
       location_id: params.locationId,
       pallet_id: params.palletId,
     },
@@ -940,11 +1367,11 @@ export async function receiveInboundItemToPallet(params: {
       await supabase.rpc("record_billable_event", {
         p_client_id: order.client_id,
         p_rate_code: "RECEIVE_UNIT",
-        p_quantity: qtyDiff,
+        p_quantity: inventoryDiff,
         p_reference_type: "inbound_order",
         p_reference_id: order.id,
         p_usage_date: new Date().toISOString().split("T")[0],
-        p_notes: `Received ${qtyDiff} units of ${item.product?.sku || item.product_id} to pallet`,
+        p_notes: `Received ${inventoryDiff} units of ${item.product?.sku || item.product_id} to pallet${item.uom === "cases" ? ` (${qtyDiff} cases × ${item.units_per_case})` : ""}`,
       });
     } catch (billingError) {
       console.error("Failed to record billable event:", billingError);

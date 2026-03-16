@@ -33,6 +33,7 @@ export default function ProductForm({
   const [clientId, setClientId] = useState(product?.client_id || "");
   const [containerType, setContainerType] = useState<string>((product as any)?.container_type || "bottle");
   const [unitsPerCase, setUnitsPerCase] = useState<number>((product as any)?.units_per_case || 1);
+  const [size, setSize] = useState(product?.size || "");
   const [unitCost, setUnitCost] = useState(product?.unit_cost || 0);
   const [basePrice, setBasePrice] = useState(product?.base_price || 0);
   const [reorderPoint, setReorderPoint] = useState(product?.reorder_point || 0);
@@ -150,6 +151,9 @@ export default function ProductForm({
 
   const allowsWorkflowOverride = selectedClient?.allow_product_workflow_override ?? false;
 
+  // Show size field for bottled/canned products
+  const showSizeField = ["bottle", "can", "empty_bottle", "sample", "bag_in_box"].includes(containerType);
+
   // Build subcategory options based on selected category
   const subcategoryOptions = useMemo(() => {
     if (!categoryId) return [];
@@ -207,6 +211,7 @@ export default function ProductForm({
       client_id: clientId || null,
       container_type: containerType,
       units_per_case: unitsPerCase,
+      size: showSizeField ? (size || null) : null,
       unit_cost: unitCost,
       base_price: basePrice,
       reorder_point: reorderPoint,
@@ -340,6 +345,17 @@ export default function ProductForm({
           onChange={(e) => setUnitsPerCase(parseInt(e.target.value) || 1)}
         />
       </div>
+
+      {showSizeField && (
+        <Input
+          label="Bottle / Container Size"
+          name="size"
+          value={size}
+          onChange={(e) => setSize(e.target.value)}
+          placeholder="e.g., 750ml, 12oz, 1L, 375ml"
+          hint="Volume or size of the individual unit"
+        />
+      )}
 
       <div className="pt-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Pricing</h3>

@@ -41,7 +41,6 @@ interface OrderDetail {
   order_number: string;
   status: string;
   created_at: string;
-  updated_at: string;
   ship_to_address: string;
   ship_to_address2: string | null;
   ship_to_city: string;
@@ -52,8 +51,8 @@ interface OrderDetail {
   is_rush: boolean;
   preferred_carrier: string | null;
   tracking_number: string | null;
-  shipped_at: string | null;
-  delivered_at: string | null;
+  shipped_date: string | null;
+  delivered_date: string | null;
   client_shipping_cost: number | null;
   items: OrderItem[];
 }
@@ -203,7 +202,6 @@ export default function OrderDetailPage() {
           order_number,
           status,
           created_at,
-          updated_at,
           ship_to_address,
           ship_to_address2,
           ship_to_city,
@@ -214,8 +212,8 @@ export default function OrderDetailPage() {
           is_rush,
           preferred_carrier,
           tracking_number,
-          shipped_at,
-          delivered_at,
+          shipped_date,
+          delivered_date,
           client_shipping_cost,
           client_id,
           is_multi_client,
@@ -272,7 +270,6 @@ export default function OrderDetailPage() {
         order_number: data.order_number,
         status: data.status,
         created_at: data.created_at,
-        updated_at: data.updated_at,
         ship_to_address: data.ship_to_address,
         ship_to_address2: data.ship_to_address2,
         ship_to_city: data.ship_to_city,
@@ -283,8 +280,8 @@ export default function OrderDetailPage() {
         is_rush: data.is_rush || false,
         preferred_carrier: data.preferred_carrier,
         tracking_number: data.tracking_number,
-        shipped_at: data.shipped_at,
-        delivered_at: data.delivered_at,
+        shipped_date: data.shipped_date,
+        delivered_date: data.delivered_date,
         client_shipping_cost: data.client_shipping_cost ?? null,
         items: visibleItems.map((item: {
           id: string;
@@ -444,10 +441,10 @@ export default function OrderDetailPage() {
               let stepDate: string | null = null;
               if (step.key === "requested") {
                 stepDate = order.created_at;
-              } else if (step.key === "shipped" && order.shipped_at) {
-                stepDate = order.shipped_at;
-              } else if (step.key === "delivered" && order.delivered_at) {
-                stepDate = order.delivered_at;
+              } else if (step.key === "shipped" && order.shipped_date) {
+                stepDate = order.shipped_date;
+              } else if (step.key === "delivered" && order.delivered_date) {
+                stepDate = order.delivered_date;
               }
 
               return (
@@ -576,14 +573,14 @@ export default function OrderDetailPage() {
                     </div>
 
                     {/* Dates */}
-                    {order.shipped_at && (
+                    {order.shipped_date && (
                       <p className="text-sm text-cyan-700">
-                        Shipped: <span className="font-medium text-cyan-900">{formatDateTime(order.shipped_at)}</span>
+                        Shipped: <span className="font-medium text-cyan-900">{formatDateTime(order.shipped_date)}</span>
                       </p>
                     )}
-                    {order.delivered_at && (
+                    {order.delivered_date && (
                       <p className="text-sm text-cyan-700">
-                        Delivered: <span className="font-medium text-cyan-900">{formatDateTime(order.delivered_at)}</span>
+                        Delivered: <span className="font-medium text-cyan-900">{formatDateTime(order.delivered_date)}</span>
                       </p>
                     )}
                     {order.client_shipping_cost != null && (
@@ -757,7 +754,7 @@ export default function OrderDetailPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Last Updated</span>
-                <span className="text-slate-900">{formatDate(order.updated_at)}</span>
+                <span className="text-slate-900">{formatDate(order.created_at)}</span>
               </div>
               {order.preferred_carrier && (
                 <div className="flex justify-between">

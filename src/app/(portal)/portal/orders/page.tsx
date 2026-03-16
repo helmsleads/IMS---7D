@@ -24,7 +24,6 @@ interface Order {
   order_number: string;
   status: string;
   created_at: string;
-  updated_at: string;
   ship_to_city: string;
   ship_to_state: string;
   is_rush: boolean;
@@ -82,7 +81,6 @@ export default function PortalOrdersPage() {
           order_number,
           status,
           created_at,
-          updated_at,
           ship_to_city,
           ship_to_state,
           is_rush,
@@ -104,7 +102,6 @@ export default function PortalOrdersPage() {
           order_number: order.order_number,
           status: order.status,
           created_at: order.created_at,
-          updated_at: order.updated_at,
           ship_to_city: order.ship_to_city,
           ship_to_state: order.ship_to_state,
           is_rush: order.is_rush || false,
@@ -295,7 +292,7 @@ export default function PortalOrdersPage() {
                 {/* Card Footer */}
                 <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
                   <span className="text-xs text-slate-500">
-                    Last updated {formatDate(order.updated_at, "short")}
+                    Created {formatDate(order.created_at, "short")}
                   </span>
                   <Link href={`/portal/orders/${order.id}`}>
                     <Button variant="ghost" size="sm" className="gap-1 text-cyan-600 hover:text-cyan-700 hover:bg-transparent">

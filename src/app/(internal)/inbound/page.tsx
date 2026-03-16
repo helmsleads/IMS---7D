@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, PackageCheck, Eye, Truck, Calendar, AlertCircle, Clock } from "lucide-react";
+import { Plus, PackageCheck, Eye, Truck, Calendar, AlertCircle, Clock, Trash2 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -10,7 +10,8 @@ import Table from "@/components/ui/Table";
 import EmptyState from "@/components/ui/EmptyState";
 import FetchError from "@/components/ui/FetchError";
 import Pagination from "@/components/ui/Pagination";
-import { getInboundOrders, InboundOrder } from "@/lib/api/inbound";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { getInboundOrders, deleteInboundOrder, InboundOrder } from "@/lib/api/inbound";
 import { getPendingAppointmentCount } from "@/lib/api/dock-appointments";
 import { handleApiError } from "@/lib/utils/error-handler";
 import { formatDate, formatStatus } from "@/lib/utils/formatting";
@@ -58,6 +59,8 @@ export default function InboundPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [showPendingApproval, setShowPendingApproval] = useState(false);
+  const [deleteOrder, setDeleteOrder] = useState<InboundOrderWithCount | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -73,6 +76,21 @@ export default function InboundPage() {
       setError(handleApiError(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteOrder) return;
+    setDeleting(true);
+    try {
+      await deleteInboundOrder(deleteOrder.id);
+      setDeleteOrder(null);
+      await fetchOrders();
+    } catch (err) {
+      setError(handleApiError(err));
+      setDeleteOrder(null);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -250,6 +268,19 @@ export default function InboundPage() {
               title={order.status === "ordered" ? "Mark in transit" : "Receive items"}
             >
               <Truck className="w-4 h-4 text-green-600" />
+            </Button>
+          )}
+          {(order.status === "ordered" || order.status === "in_transit") && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteOrder(order);
+              }}
+              title="Delete order"
+            >
+              <Trash2 className="w-4 h-4 text-red-500" />
             </Button>
           )}
         </div>
@@ -433,6 +464,17 @@ export default function InboundPage() {
           onPageChange={setCurrentPage}
         />
       </Card>
+
+      <ConfirmDialog
+        isOpen={!!deleteOrder}
+        onClose={() => setDeleteOrder(null)}
+        onConfirm={handleDelete}
+        title="Delete Inbound Order"
+        description={`Are you sure you want to delete order ${deleteOrder?.po_number || ""}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleting}
+      />
     </AppShell>
   );
 }

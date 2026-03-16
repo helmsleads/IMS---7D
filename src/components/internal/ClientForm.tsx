@@ -51,6 +51,7 @@ export default function ClientForm({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const [workflowProfiles, setWorkflowProfiles] = useState<WorkflowProfile[]>([]);
   const [staffUsers, setStaffUsers] = useState<InternalUser[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(true);
@@ -140,10 +141,12 @@ export default function ClientForm({
     if (!validate()) return;
 
     setSubmitting(true);
+    setSubmitError("");
     try {
       await onSubmit(formData);
     } catch (error) {
       console.error("Form submission failed:", error);
+      setSubmitError(error instanceof Error ? error.message : "Failed to save client. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -151,6 +154,12 @@ export default function ClientForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {submitError && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          {submitError}
+        </div>
+      )}
+
       {/* Company Info */}
       <Card>
         <h2 className="text-lg font-semibold text-gray-900 mb-4">

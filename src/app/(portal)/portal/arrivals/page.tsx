@@ -36,9 +36,8 @@ interface InboundOrder {
   order_number: string;
   status: string;
   created_at: string;
-  updated_at: string;
+  received_date: string | null;
   expected_date: string | null;
-  received_at: string | null;
   carrier: string | null;
   tracking_number: string | null;
   item_count: number;
@@ -52,7 +51,7 @@ interface ArrivalDetail {
   order_number: string;
   status: string;
   created_at: string;
-  received_at: string | null;
+  received_date: string | null;
   expected_date: string | null;
   carrier: string | null;
   tracking_number: string | null;
@@ -209,7 +208,7 @@ export default function PortalArrivalsPage() {
         order_number,
         status,
         created_at,
-        received_at,
+        received_date,
         expected_date,
         carrier,
         tracking_number,
@@ -242,7 +241,7 @@ export default function PortalArrivalsPage() {
       order_number: data.order_number,
       status: data.status,
       created_at: data.created_at,
-      received_at: data.received_at,
+      received_date: data.received_date,
       expected_date: data.expected_date,
       carrier: data.carrier,
       tracking_number: data.tracking_number,
@@ -294,9 +293,8 @@ export default function PortalArrivalsPage() {
         order_number,
         status,
         created_at,
-        updated_at,
+        received_date,
         expected_date,
-        received_at,
         carrier,
         tracking_number,
         appointment_status,
@@ -323,9 +321,8 @@ export default function PortalArrivalsPage() {
         order_number: order.order_number,
         status: order.status,
         created_at: order.created_at,
-        updated_at: order.updated_at,
+        received_date: order.received_date,
         expected_date: order.expected_date,
-        received_at: order.received_at,
         carrier: order.carrier,
         tracking_number: order.tracking_number,
         item_count: items.length,
@@ -356,11 +353,11 @@ export default function PortalArrivalsPage() {
       matchesStatus = order.status === "received";
     }
 
-    // Date filter - use received_at for received orders, created_at for others
+    // Date filter - use received_date for received orders, created_at for others
     let matchesDate = true;
     const dateRangeStart = getDateFilterRange(dateFilter);
     if (dateRangeStart) {
-      const orderDate = order.received_at ? new Date(order.received_at) : new Date(order.created_at);
+      const orderDate = order.received_date ? new Date(order.received_date) : new Date(order.created_at);
       matchesDate = orderDate >= dateRangeStart;
     }
 
@@ -571,12 +568,12 @@ export default function PortalArrivalsPage() {
                         </div>
                       )}
 
-                      {order.received_at && (
+                      {order.received_date && (
                         <div>
                           <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Received</p>
                           <div className="flex items-center gap-1.5">
                             <CheckCircle2 className="w-4 h-4 text-green-500" />
-                            <span className="font-medium text-slate-900">{formatDate(order.received_at)}</span>
+                            <span className="font-medium text-slate-900">{formatDate(order.received_date)}</span>
                           </div>
                         </div>
                       )}
@@ -599,7 +596,7 @@ export default function PortalArrivalsPage() {
                   {/* Card Footer */}
                   <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
                     <span className="text-xs text-slate-500">
-                      Last updated {formatDate(order.updated_at)}
+                      Created {formatDate(order.created_at)}
                     </span>
                     <Button
                       variant="ghost"
@@ -720,7 +717,7 @@ export default function PortalArrivalsPage() {
 
             <p className="text-sm text-slate-500">
               {selectedArrival.status === "received"
-                ? `Received on ${formatDate(selectedArrival.received_at!)}`
+                ? `Received on ${formatDate(selectedArrival.received_date!)}`
                 : `Created on ${formatDate(selectedArrival.created_at)}`}
             </p>
 

@@ -19,6 +19,7 @@ import {
   ClipboardList,
   Clock,
   CalendarCheck,
+  RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 import AppShell from "@/components/internal/AppShell";
@@ -32,6 +33,7 @@ import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import {
   getInboundOrder,
+  updateInboundOrder,
   updateInboundOrderStatus,
   receiveInboundItem,
   rejectInboundItem,
@@ -41,11 +43,15 @@ import {
   getInboundWorkflowRulesForOrder,
   generateLotNumber,
   placeOnInspectionHold,
+  reprocessInboundInventory,
   InboundOrderWithItems,
   InboundItemWithProduct,
   InboundWorkflowRules,
   RejectionReason,
+  CreateInboundItemData,
 } from "@/lib/api/inbound";
+import { getProducts, Product } from "@/lib/api/products";
+import SearchSelect from "@/components/ui/SearchSelect";
 import { getLocations, Location } from "@/lib/api/locations";
 import { getWarehouseTasks, WarehouseTaskWithRelations } from "@/lib/api/warehouse-tasks";
 import {
@@ -132,6 +138,8 @@ export default function InboundOrderDetailPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
+  const [reprocessResult, setReprocessResult] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   // Receiving state
@@ -195,6 +203,33 @@ export default function InboundOrderDetailPage() {
   const [sublocations, setSublocations] = useState<SublocationWithLocation[]>([]);
   const [confirmingPutAway, setConfirmingPutAway] = useState<string | null>(null);
   const [showPutAwaySection, setShowPutAwaySection] = useState(false);
+
+  // Edit order state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editSupplier, setEditSupplier] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editExpectedDate, setEditExpectedDate] = useState("");
+  const [editCarrier, setEditCarrier] = useState("");
+  const [editTracking, setEditTracking] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+  const canEdit = order && ["ordered", "in_transit"].includes(order.status);
+
+  // Edit line items state
+  type UOM = "units" | "cases";
+  interface EditLineItem {
+    id: string;
+    product_id: string;
+    qty_entered: number;
+    uom: UOM;
+    pallet_count: number | "";
+    units_per_case: number | "";
+    isNew: boolean;
+    qty_received: number;
+  }
+  const [editItems, setEditItems] = useState<EditLineItem[]>([]);
+  const [originalItemIds, setOriginalItemIds] = useState<string[]>([]);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
 
   // Workflow rules state
   const [workflowRules, setWorkflowRules] = useState<InboundWorkflowRules | null>(null);
@@ -343,12 +378,13 @@ export default function InboundOrderDetailPage() {
     const items: PutAwayItem[] = [];
 
     for (const item of order.items) {
-      if (item.qty_received > 0 && item.product) {
+      const qty = item.qty_received || item.qty_expected;
+      if (qty > 0 && item.product) {
         // Get suggestion for this product
         const suggestion = await getSuggestedPutAway(
           item.product_id,
           locationId,
-          item.qty_received
+          qty
         );
 
         items.push({
@@ -356,7 +392,7 @@ export default function InboundOrderDetailPage() {
           productId: item.product_id,
           productName: item.product.name,
           productSku: item.product.sku,
-          qtyReceived: item.qty_received,
+          qtyReceived: qty,
           locationId,
           suggestion,
           selectedSublocationId: suggestion.suggestedSublocationId || "",
@@ -430,6 +466,176 @@ export default function InboundOrderDetailPage() {
       console.error("Failed to update status:", err);
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const handleReprocessInventory = async () => {
+    if (!order) return;
+    setReprocessing(true);
+    setReprocessResult(null);
+    try {
+      const result = await reprocessInboundInventory(order.id);
+      if (result.itemsFixed === 0) {
+        setReprocessResult("All items already in inventory — nothing to fix.");
+      } else {
+        setReprocessResult(
+          `Fixed ${result.itemsFixed} item${result.itemsFixed > 1 ? "s" : ""}, added ${result.totalUnitsAdded} units to inventory.`
+        );
+      }
+      await fetchOrder();
+    } catch (err: unknown) {
+      console.error("Failed to reprocess inventory:", err);
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setReprocessResult(`Failed: ${message}`);
+    } finally {
+      setReprocessing(false);
+    }
+  };
+
+  const openEditModal = async () => {
+    if (!order) return;
+    setEditSupplier(order.supplier || "");
+    setEditNotes(order.notes || "");
+    setEditExpectedDate(order.expected_date?.split("T")[0] || "");
+    setEditCarrier(order.carrier || "");
+    setEditTracking(order.tracking_number || "");
+    setEditError("");
+
+    // Fetch products first so we can reverse-convert base units back to entered qty
+    let prods = allProducts;
+    if (prods.length === 0) {
+      try {
+        const fetched = await getProducts();
+        prods = fetched.filter((p) => p.active);
+        setAllProducts(prods);
+      } catch {
+        // Non-critical
+      }
+    }
+
+    // Populate line items from current order (qty_expected is stored as entered value)
+    const items: EditLineItem[] = order.items.map((item) => {
+      const prod = prods.find((p) => p.id === item.product_id);
+      return {
+        id: item.id,
+        product_id: item.product_id,
+        qty_entered: item.qty_expected,
+        uom: (item.uom as UOM) || "units",
+        pallet_count: item.pallet_count ?? "",
+        units_per_case: item.units_per_case ?? prod?.units_per_case ?? "",
+        isNew: false,
+        qty_received: item.qty_received,
+      };
+    });
+    setEditItems(items);
+    setOriginalItemIds(order.items.map((i) => i.id));
+
+    setShowEditModal(true);
+  };
+
+  const editGetProductInfo = (productId: string) => allProducts.find((p) => p.id === productId);
+
+  const editGetBaseUnits = (item: EditLineItem): number => {
+    const upc = item.units_per_case || editGetProductInfo(item.product_id)?.units_per_case || 1;
+    return item.uom === "cases" ? item.qty_entered * upc : item.qty_entered;
+  };
+
+  const editAvailableProducts = allProducts.filter(
+    (p) => !editItems.some((item) => item.product_id === p.id)
+  );
+
+  const editProductOptions = editAvailableProducts.map((p) => ({
+    value: p.id,
+    label: `${p.sku} - ${p.name}`,
+  }));
+
+  const addEditItem = () => {
+    setEditItems([
+      ...editItems,
+      {
+        id: crypto.randomUUID(),
+        product_id: "",
+        qty_entered: 1,
+        uom: "cases" as UOM,
+        pallet_count: "",
+        units_per_case: "",
+        isNew: true,
+        qty_received: 0,
+      },
+    ]);
+  };
+
+  const removeEditItem = (id: string) => {
+    setEditItems(editItems.filter((item) => item.id !== id));
+  };
+
+  const updateEditItem = (id: string, field: keyof EditLineItem, value: string | number | boolean) => {
+    setEditItems(
+      editItems.map((item) =>
+        item.id === id ? { ...item, [field]: value } : item
+      )
+    );
+  };
+
+  const handleSaveEdit = async () => {
+    if (!order) return;
+
+    // Validate: all items need a product and qty > 0
+    const invalidItems = editItems.filter((i) => !i.product_id || i.qty_entered <= 0);
+    if (invalidItems.length > 0) {
+      setEditError("All line items must have a product selected and quantity greater than 0.");
+      return;
+    }
+    if (editItems.length === 0) {
+      setEditError("At least one line item is required.");
+      return;
+    }
+
+    setEditSaving(true);
+    setEditError("");
+    try {
+      // Compute item diffs
+      const added: CreateInboundItemData[] = editItems
+        .filter((i) => i.isNew && i.product_id)
+        .map((i) => ({
+          product_id: i.product_id,
+          qty_expected: i.qty_entered,
+          uom: i.uom,
+          pallet_count: i.pallet_count === "" ? null : Number(i.pallet_count),
+          units_per_case: i.units_per_case === "" ? null : Number(i.units_per_case),
+        }));
+
+      const removed = originalItemIds.filter(
+        (origId) => !editItems.some((i) => i.id === origId)
+      );
+
+      const changed = editItems
+        .filter((i) => !i.isNew && originalItemIds.includes(i.id))
+        .map((i) => ({
+          id: i.id,
+          qty_expected: i.qty_entered,
+          uom: i.uom,
+          pallet_count: i.pallet_count === "" ? null : Number(i.pallet_count),
+          units_per_case: i.units_per_case === "" ? null : Number(i.units_per_case),
+        }));
+
+      await updateInboundOrder(
+        order.id,
+        {
+          supplier: editSupplier || null,
+          notes: editNotes || null,
+          expected_date: editExpectedDate || null,
+          carrier: editCarrier || null,
+          tracking_number: editTracking || null,
+        },
+        { added, removed, changed }
+      );
+      await fetchOrder();
+      setShowEditModal(false);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to save changes");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -783,8 +989,14 @@ export default function InboundOrderDetailPage() {
   }
 
   const currentStatusIndex = getStatusIndex(order.status);
-  const totalExpected = order.items.reduce((sum, item) => sum + item.qty_expected, 0);
-  const totalReceived = order.items.reduce((sum, item) => sum + item.qty_received, 0);
+  const totalExpected = order.items.reduce((sum, item) => {
+    const qty = item.qty_expected;
+    return sum + (item.uom === "cases" && item.units_per_case ? qty * item.units_per_case : qty);
+  }, 0);
+  const totalReceived = order.items.reduce((sum, item) => {
+    const qty = item.qty_received;
+    return sum + (item.uom === "cases" && item.units_per_case ? qty * item.units_per_case : qty);
+  }, 0);
 
   return (
     <AppShell
@@ -851,7 +1063,13 @@ export default function InboundOrderDetailPage() {
             </div>
 
             {/* Status Action */}
-            <div className="mt-8 pt-6 border-t border-gray-200">
+            <div className="mt-8 pt-6 border-t border-gray-200 flex gap-3">
+              {canEdit && (
+                <Button variant="secondary" onClick={openEditModal}>
+                  <ClipboardList className="w-4 h-4 mr-2" />
+                  Edit Order
+                </Button>
+              )}
               {order.status === "ordered" && (
                 <Button
                   onClick={() => handleStatusUpdate("in_transit")}
@@ -895,9 +1113,25 @@ export default function InboundOrderDetailPage() {
               )}
 
               {order.status === "received" && (
-                <div className="flex items-center gap-2 text-green-600">
-                  <CheckCircle2 className="w-5 h-5" />
-                  <span className="font-medium">Order Complete</span>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-green-600">
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span className="font-medium">Order Complete</span>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleReprocessInventory}
+                    loading={reprocessing}
+                  >
+                    <RefreshCw className="w-4 h-4 mr-1" />
+                    Re-process Inventory
+                  </Button>
+                  {reprocessResult && (
+                    <span className={`text-sm ${reprocessResult.includes("Failed") ? "text-red-600" : "text-green-600"}`}>
+                      {reprocessResult}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -1028,7 +1262,12 @@ export default function InboundOrderDetailPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className="text-gray-900">{item.qty_expected}</span>
+                          <span className="text-gray-900">
+                            {item.qty_expected.toLocaleString()}
+                            {item.uom === "cases" && (
+                              <span className="text-gray-500 text-xs ml-1">cases</span>
+                            )}
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <span
@@ -2161,6 +2400,165 @@ export default function InboundOrderDetailPage() {
               <XCircle className="w-4 h-4 mr-1" />
               Reject Appointment
             </Button>
+          </div>
+        </div>
+      </Modal>
+      {/* Edit Order Modal */}
+      <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Inbound Order" size="xl">
+        <div className="space-y-4">
+          {editError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{editError}</div>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Ship From" name="edit_supplier" value={editSupplier} onChange={(e) => setEditSupplier(e.target.value)} />
+            <Input label="Expected Date" name="edit_expected_date" type="date" value={editExpectedDate} onChange={(e) => setEditExpectedDate(e.target.value)} />
+            <Input label="Carrier" name="edit_carrier" value={editCarrier} onChange={(e) => setEditCarrier(e.target.value)} placeholder="e.g., FedEx, UPS" />
+            <Input label="Tracking Number" name="edit_tracking" value={editTracking} onChange={(e) => setEditTracking(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <textarea name="edit_notes" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+          </div>
+
+          {/* Line Items Section */}
+          <div className="border-t border-gray-200 pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900">Line Items</h3>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={addEditItem}
+                disabled={editAvailableProducts.length === 0}
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                Add Item
+              </Button>
+            </div>
+
+            {editItems.length === 0 ? (
+              <div className="border border-dashed border-gray-300 rounded-lg p-6 text-center">
+                <p className="text-gray-500 text-sm">No line items. Click "Add Item" to add products.</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-1">
+                {editItems.map((item) => {
+                  const product = editGetProductInfo(item.product_id) ||
+                    (order?.items.find((oi) => oi.product_id === item.product_id)?.product);
+                  const upc = item.units_per_case || (product as Product)?.units_per_case || 1;
+                  const baseUnits = editGetBaseUnits(item);
+                  const hasReceived = item.qty_received > 0;
+
+                  // Build product options for this item's dropdown
+                  const itemProductOptions = item.product_id
+                    ? [
+                        {
+                          value: item.product_id,
+                          label: product
+                            ? `${product.sku} - ${product.name}`
+                            : item.product_id,
+                        },
+                        ...editProductOptions,
+                      ]
+                    : editProductOptions;
+
+                  return (
+                    <div key={item.id} className="border border-gray-200 rounded-lg p-3 space-y-2">
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1">
+                          {item.isNew ? (
+                            <SearchSelect
+                              name={`edit-product-${item.id}`}
+                              options={itemProductOptions}
+                              value={item.product_id}
+                              onChange={(val) => updateEditItem(item.id, "product_id", val)}
+                              placeholder="Search by SKU or name..."
+                            />
+                          ) : (
+                            <div className="text-sm font-medium text-gray-900 py-1">
+                              {product ? `${product.sku} - ${product.name}` : "Unknown Product"}
+                            </div>
+                          )}
+                        </div>
+                        {!hasReceived ? (
+                          <button
+                            type="button"
+                            onClick={() => removeEditItem(item.id)}
+                            className="mt-1 p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                            title="Remove item"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <span className="mt-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
+                            {item.qty_received} received
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-4 gap-3">
+                        <Input
+                          label="Qty"
+                          name={`edit-qty-${item.id}`}
+                          type="number"
+                          min={hasReceived ? item.qty_received : 1}
+                          value={item.qty_entered}
+                          onChange={(e) =>
+                            updateEditItem(item.id, "qty_entered", parseInt(e.target.value) || 0)
+                          }
+                        />
+                        <Select
+                          label="UOM"
+                          name={`edit-uom-${item.id}`}
+                          options={[
+                            { value: "cases", label: "Cases" },
+                            { value: "units", label: "Units / Eaches" },
+                          ]}
+                          value={item.uom}
+                          onChange={(e) => updateEditItem(item.id, "uom", e.target.value)}
+                        />
+                        {item.uom === "cases" && (
+                          <Input
+                            label="Units/Case"
+                            name={`edit-upc-${item.id}`}
+                            type="number"
+                            min={1}
+                            value={item.units_per_case}
+                            onChange={(e) =>
+                              updateEditItem(item.id, "units_per_case", e.target.value === "" ? "" : parseInt(e.target.value) || 0)
+                            }
+                            placeholder={`${(product as Product)?.units_per_case || 1}`}
+                          />
+                        )}
+                        <Input
+                          label="Pallets"
+                          name={`edit-pallets-${item.id}`}
+                          type="number"
+                          min={0}
+                          value={item.pallet_count}
+                          onChange={(e) =>
+                            updateEditItem(item.id, "pallet_count", e.target.value === "" ? "" : parseInt(e.target.value) || 0)
+                          }
+                          placeholder="0"
+                        />
+                      </div>
+                      {item.product_id && item.qty_entered > 0 && (
+                        <p className="text-xs text-gray-500">
+                          {item.uom === "cases"
+                            ? `${item.qty_entered} cases × ${upc}/case = ${baseUnits.toLocaleString()} units`
+                            : `${baseUnits.toLocaleString()} units`}
+                          {item.pallet_count ? ` · ${item.pallet_count} pallet${Number(item.pallet_count) !== 1 ? "s" : ""}` : ""}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="secondary" onClick={() => setShowEditModal(false)} disabled={editSaving}>Cancel</Button>
+            <Button onClick={handleSaveEdit} loading={editSaving} disabled={editSaving}>Save Changes</Button>
           </div>
         </div>
       </Modal>
