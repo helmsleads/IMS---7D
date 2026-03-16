@@ -1555,15 +1555,28 @@ export default function OutboundOrderDetailPage() {
                       Scan to Pick
                     </Button>
                   )}
-                  <Button
-                    variant="secondary"
-                    onClick={() => handleStatusUpdate("packed")}
-                    loading={updating}
-                    disabled={updating}
-                  >
-                    <PackageCheck className="w-4 h-4 mr-2" />
-                    Mark Packed
-                  </Button>
+                  {(() => {
+                    const pickingComplete = !pickTask || pickTask.status === "completed" ||
+                      (pickListItems.length > 0 && pickListItems.every(i => i.status === "picked" || i.status === "short" || i.status === "skipped"));
+                    return (
+                      <div className="relative group">
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleStatusUpdate("packed")}
+                          loading={updating}
+                          disabled={updating || !pickingComplete}
+                        >
+                          <PackageCheck className="w-4 h-4 mr-2" />
+                          Mark Packed
+                        </Button>
+                        {!pickingComplete && (
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 bg-slate-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                            Complete picking before packing
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

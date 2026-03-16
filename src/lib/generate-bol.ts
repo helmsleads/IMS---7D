@@ -90,59 +90,54 @@ export function generateBOL(data: BOLData): jsPDF {
   // === SHIPPER & CONSIGNEE (side by side) ===
   const shipperX = margin;
   const consigneeX = margin + halfWidth + 4;
+  const partyBoxHeight = 38;
 
   // Shipper
   drawSectionHeader(doc, shipperX, y, halfWidth, "SHIPPER (FROM)");
-  drawBox(doc, shipperX, y, halfWidth, 32);
+  drawBox(doc, shipperX, y, halfWidth, partyBoxHeight);
   doc.setFontSize(9);
+  let sy = y + 12;
   doc.setFont("helvetica", "bold");
-  doc.text(data.shipper.company, shipperX + 2, y + 12);
+  doc.text(data.shipper.company, shipperX + 2, sy);
   doc.setFont("helvetica", "normal");
-  doc.text(data.shipper.address, shipperX + 2, y + 17);
-  doc.text(
-    `${data.shipper.city}, ${data.shipper.state} ${data.shipper.zip}`,
-    shipperX + 2,
-    y + 22
-  );
-  if (data.shipper.phone) {
-    doc.text(`Phone: ${data.shipper.phone}`, shipperX + 2, y + 27);
-  }
+  if (data.shipper.address) { sy += 5; doc.text(data.shipper.address, shipperX + 2, sy); }
+  const shipperCityLine = [data.shipper.city, data.shipper.state].filter(Boolean).join(", ") + (data.shipper.zip ? ` ${data.shipper.zip}` : "");
+  if (shipperCityLine.trim()) { sy += 5; doc.text(shipperCityLine, shipperX + 2, sy); }
+  if (data.shipper.phone) { sy += 5; doc.text(`Phone: ${data.shipper.phone}`, shipperX + 2, sy); }
 
   // Consignee
   drawSectionHeader(doc, consigneeX, y, halfWidth, "CONSIGNEE (TO)");
-  drawBox(doc, consigneeX, y, halfWidth, 32);
+  drawBox(doc, consigneeX, y, halfWidth, partyBoxHeight);
   doc.setFontSize(9);
-  doc.setFont("helvetica", "bold");
-  const consigneeName = data.consignee.company || data.consignee.name;
-  doc.text(consigneeName, consigneeX + 2, y + 12);
-  doc.setFont("helvetica", "normal");
-  if (data.consignee.company && data.consignee.name) {
-    doc.text(`Attn: ${data.consignee.name}`, consigneeX + 2, y + 17);
-    doc.text(data.consignee.address, consigneeX + 2, y + 22);
-    doc.text(
-      `${data.consignee.city}, ${data.consignee.state} ${data.consignee.zip}`,
-      consigneeX + 2,
-      y + 27
-    );
-  } else {
-    doc.text(data.consignee.address, consigneeX + 2, y + 17);
-    if (data.consignee.address2) {
-      doc.text(data.consignee.address2, consigneeX + 2, y + 22);
-      doc.text(
-        `${data.consignee.city}, ${data.consignee.state} ${data.consignee.zip}`,
-        consigneeX + 2,
-        y + 27
-      );
-    } else {
-      doc.text(
-        `${data.consignee.city}, ${data.consignee.state} ${data.consignee.zip}`,
-        consigneeX + 2,
-        y + 22
-      );
+  let cy = y + 12;
+
+  // Name first (recipient), then company if different
+  const recipientName = data.consignee.name || "";
+  const recipientCompany = data.consignee.company || "";
+
+  if (recipientName) {
+    doc.setFont("helvetica", "bold");
+    doc.text(recipientName, consigneeX + 2, cy);
+    cy += 5;
+    if (recipientCompany && recipientCompany !== recipientName) {
+      doc.setFont("helvetica", "normal");
+      doc.text(recipientCompany, consigneeX + 2, cy);
+      cy += 5;
     }
+  } else if (recipientCompany) {
+    doc.setFont("helvetica", "bold");
+    doc.text(recipientCompany, consigneeX + 2, cy);
+    cy += 5;
   }
 
-  y += 36;
+  doc.setFont("helvetica", "normal");
+  if (data.consignee.address) { doc.text(data.consignee.address, consigneeX + 2, cy); cy += 5; }
+  if (data.consignee.address2) { doc.text(data.consignee.address2, consigneeX + 2, cy); cy += 5; }
+  const consigneeCityLine = [data.consignee.city, data.consignee.state].filter(Boolean).join(", ") + (data.consignee.zip ? ` ${data.consignee.zip}` : "");
+  if (consigneeCityLine.trim()) { doc.text(consigneeCityLine, consigneeX + 2, cy); cy += 5; }
+  if (data.consignee.phone) { doc.text(`Phone: ${data.consignee.phone}`, consigneeX + 2, cy); }
+
+  y += partyBoxHeight + 4;
 
   // === CARRIER INFO ===
   drawSectionHeader(doc, margin, y, contentWidth, "CARRIER INFORMATION");
