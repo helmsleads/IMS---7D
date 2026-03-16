@@ -83,6 +83,7 @@ import { getWarehouseTasks, getPickListItems, WarehouseTaskWithRelations, PickLi
 import { getDamageReports, createDamageReport, DamageReportWithProduct } from "@/lib/api/damage-reports";
 import type { DamageResolution } from "@/types/database";
 import { downloadBOL, printBOL, BOLData } from "@/lib/generate-bol";
+import { formatStreetAddress, formatCity, formatState, formatName, formatZip } from "@/lib/format-address";
 import { getSystemSetting } from "@/lib/api/settings";
 import { Download } from "lucide-react";
 
@@ -2578,6 +2579,7 @@ export default function OutboundOrderDetailPage() {
                     name="edit-recipient"
                     value={editForm.recipient_name}
                     onChange={(e) => setEditForm({ ...editForm, recipient_name: e.target.value })}
+                    onBlur={() => setEditForm(f => ({ ...f, recipient_name: formatName(f.recipient_name) }))}
                     placeholder="Recipient name"
                   />
                 </div>
@@ -2588,6 +2590,7 @@ export default function OutboundOrderDetailPage() {
                     name="edit-requestor"
                     value={editForm.requestor}
                     onChange={(e) => setEditForm({ ...editForm, requestor: e.target.value })}
+                    onBlur={() => setEditForm(f => ({ ...f, requestor: formatName(f.requestor) }))}
                     placeholder="Requestor name"
                   />
                 </div>
@@ -2598,6 +2601,7 @@ export default function OutboundOrderDetailPage() {
                     name="edit-address"
                     value={editForm.ship_to_address}
                     onChange={(e) => setEditForm({ ...editForm, ship_to_address: e.target.value })}
+                    onBlur={() => setEditForm(f => ({ ...f, ship_to_address: formatStreetAddress(f.ship_to_address) }))}
                     placeholder="Street address"
                   />
                 </div>
@@ -2608,6 +2612,7 @@ export default function OutboundOrderDetailPage() {
                     name="edit-address2"
                     value={editForm.ship_to_address2}
                     onChange={(e) => setEditForm({ ...editForm, ship_to_address2: e.target.value })}
+                    onBlur={() => setEditForm(f => ({ ...f, ship_to_address2: formatStreetAddress(f.ship_to_address2) }))}
                     placeholder="Suite, unit, etc."
                   />
                 </div>
@@ -2619,6 +2624,7 @@ export default function OutboundOrderDetailPage() {
                       name="edit-city"
                       value={editForm.ship_to_city}
                       onChange={(e) => setEditForm({ ...editForm, ship_to_city: e.target.value })}
+                      onBlur={() => setEditForm(f => ({ ...f, ship_to_city: formatCity(f.ship_to_city) }))}
                       placeholder="City"
                     />
                   </div>
@@ -2628,6 +2634,7 @@ export default function OutboundOrderDetailPage() {
                       name="edit-state"
                       value={editForm.ship_to_state}
                       onChange={(e) => setEditForm({ ...editForm, ship_to_state: e.target.value })}
+                      onBlur={() => setEditForm(f => ({ ...f, ship_to_state: formatState(f.ship_to_state) }))}
                       placeholder="State"
                     />
                   </div>
@@ -2637,6 +2644,7 @@ export default function OutboundOrderDetailPage() {
                       name="edit-zip"
                       value={editForm.ship_to_zip}
                       onChange={(e) => setEditForm({ ...editForm, ship_to_zip: e.target.value })}
+                      onBlur={() => setEditForm(f => ({ ...f, ship_to_zip: formatZip(f.ship_to_zip) }))}
                       placeholder="Zip"
                     />
                   </div>

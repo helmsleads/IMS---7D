@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase";
 import { getMyTemplate, getMyTemplates, PortalTemplate } from "@/lib/api/portal-templates";
 import { getMyServices } from "@/lib/api/portal-services";
 import { handleApiError } from "@/lib/utils/error-handler";
+import { formatStreetAddress, formatCity, formatState, formatZip } from "@/lib/format-address";
 
 interface ShippingAddress {
   id: string;
@@ -1059,6 +1060,7 @@ function StepShippingDetails({
                 type="text"
                 value={shippingAddress.address_line1}
                 onChange={(e) => handleFieldChange("address_line1", e.target.value)}
+                onBlur={() => handleFieldChange("address_line1", formatStreetAddress(shippingAddress.address_line1))}
                 placeholder="Street address"
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
               />
@@ -1072,6 +1074,7 @@ function StepShippingDetails({
                 type="text"
                 value={shippingAddress.address_line2}
                 onChange={(e) => handleFieldChange("address_line2", e.target.value)}
+                onBlur={() => handleFieldChange("address_line2", formatStreetAddress(shippingAddress.address_line2))}
                 placeholder="Apt, suite, unit, etc. (optional)"
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
               />
@@ -1085,6 +1088,7 @@ function StepShippingDetails({
                 type="text"
                 value={shippingAddress.city}
                 onChange={(e) => handleFieldChange("city", e.target.value)}
+                onBlur={() => handleFieldChange("city", formatCity(shippingAddress.city))}
                 placeholder="City"
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
               />
@@ -1098,6 +1102,7 @@ function StepShippingDetails({
                 type="text"
                 value={shippingAddress.state}
                 onChange={(e) => handleFieldChange("state", e.target.value)}
+                onBlur={() => handleFieldChange("state", formatState(shippingAddress.state))}
                 placeholder="State"
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
               />
@@ -1111,6 +1116,7 @@ function StepShippingDetails({
                 type="text"
                 value={shippingAddress.postal_code}
                 onChange={(e) => handleFieldChange("postal_code", e.target.value)}
+                onBlur={() => handleFieldChange("postal_code", formatZip(shippingAddress.postal_code))}
                 placeholder="ZIP / Postal code"
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
               />

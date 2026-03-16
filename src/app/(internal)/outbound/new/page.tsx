@@ -20,6 +20,7 @@ import {
   CreateOutboundItemData,
 } from "@/lib/api/outbound";
 import { getContainerBadge, getUnitLabel } from "@/lib/labels";
+import { formatStreetAddress, formatCity, formatState, formatName, formatZip } from "@/lib/format-address";
 interface OrderItem {
   id: string;
   product_id: string;
@@ -449,6 +450,7 @@ export default function NewOutboundOrderPage() {
                     name="recipient_name"
                     value={recipientName}
                     onChange={(e) => setRecipientName(e.target.value)}
+                    onBlur={() => setRecipientName(formatName(recipientName))}
                     placeholder="Who is this being shipped to?"
                   />
                   <Input
@@ -468,12 +470,14 @@ export default function NewOutboundOrderPage() {
                       name="ship_to_address"
                       value={shipToAddress}
                       onChange={(e) => setShipToAddress(e.target.value)}
+                      onBlur={() => setShipToAddress(formatStreetAddress(shipToAddress))}
                       placeholder="Street address"
                     />
                     <Input
                       name="ship_to_address2"
                       value={shipToAddress2}
                       onChange={(e) => setShipToAddress2(e.target.value)}
+                      onBlur={() => setShipToAddress2(formatStreetAddress(shipToAddress2))}
                       placeholder="Apt, suite, unit, etc. (optional)"
                     />
                     <div className="grid grid-cols-6 gap-3">
@@ -483,6 +487,7 @@ export default function NewOutboundOrderPage() {
                           name="ship_to_city"
                           value={shipToCity}
                           onChange={(e) => setShipToCity(e.target.value)}
+                          onBlur={() => setShipToCity(formatCity(shipToCity))}
                           placeholder="City"
                         />
                       </div>
@@ -492,6 +497,7 @@ export default function NewOutboundOrderPage() {
                           name="ship_to_state"
                           value={shipToState}
                           onChange={(e) => setShipToState(e.target.value)}
+                          onBlur={() => setShipToState(formatState(shipToState))}
                           placeholder="ST"
                         />
                       </div>
@@ -501,6 +507,7 @@ export default function NewOutboundOrderPage() {
                           name="ship_to_zip"
                           value={shipToZip}
                           onChange={(e) => setShipToZip(e.target.value)}
+                          onBlur={() => setShipToZip(formatZip(shipToZip))}
                           placeholder="Zip code"
                         />
                       </div>
