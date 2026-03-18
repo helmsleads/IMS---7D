@@ -43,7 +43,11 @@ Plans:
   1. User can open `.planning/audit/components.md` and find a finding entry for each of the 15+ shared components (Button, Card, Modal, Table, Input, Select, Badge, etc.)
   2. User can see each finding rated as Blocking, High, Medium, or Low severity
   3. User can identify which components have accessibility gaps — missing focus states, failing contrast ratios, or absent ARIA attributes
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Audit 27 shared UI components (5 dimensions each) and create components.md with root-cause taxonomy
+- [ ] 02-02-PLAN.md — Audit 10 scanner components with warehouse floor rubric, add cross-cutting findings, finalize summary counts
 
 ### Phase 3: Page Audits
 **Goal**: Every admin and portal page has been evaluated against the design system with findings that classify each issue as either page-specific or tracing back to a shared component
@@ -75,6 +79,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Tool Setup and Design System | 2/2 | Complete    | 2026-03-18 |
-| 2. Component Library Audit | 0/TBD | Not started | - |
+| 2. Component Library Audit | 0/2 | Not started | - |
 | 3. Page Audits | 0/TBD | Not started | - |
 | 4. Action Plan Compilation | 0/TBD | Not started | - |
