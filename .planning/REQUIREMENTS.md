@@ -9,10 +9,10 @@ Requirements for UI/UX audit milestone. Each maps to roadmap phases.
 
 ### Tool Setup
 
-- [ ] **SETUP-01**: User can install uipro-cli globally and initialize it for Claude Code integration
+- [x] **SETUP-01**: User can install uipro-cli globally and initialize it for Claude Code integration
 - [ ] **SETUP-02**: User can configure dual-brand constraints (admin indigo, portal cyan) as hard rules before audit
-- [ ] **SETUP-03**: User can verify Python 3.x availability and test uipro-cli connection
-- [ ] **SETUP-04**: User can compile scanner-facing route inventory and dashboard grid cell dimensions as audit inputs
+- [x] **SETUP-03**: User can verify Python 3.x availability and test uipro-cli connection
+- [x] **SETUP-04**: User can compile scanner-facing route inventory and dashboard grid cell dimensions as audit inputs
 
 ### Design System
 
@@ -71,10 +71,10 @@ Deferred to implementation milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SETUP-01 | Phase 1 | Pending |
+| SETUP-01 | Phase 1 | Complete |
 | SETUP-02 | Phase 1 | Pending |
-| SETUP-03 | Phase 1 | Pending |
-| SETUP-04 | Phase 1 | Pending |
+| SETUP-03 | Phase 1 | Complete |
+| SETUP-04 | Phase 1 | Complete |
 | DSYS-01 | Phase 1 | Pending |
 | DSYS-02 | Phase 1 | Pending |
 | DSYS-03 | Phase 1 | Pending |
