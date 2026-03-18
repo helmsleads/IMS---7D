@@ -71,32 +71,32 @@ Deferred to implementation milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SETUP-01 | — | Pending |
-| SETUP-02 | — | Pending |
-| SETUP-03 | — | Pending |
-| SETUP-04 | — | Pending |
-| DSYS-01 | — | Pending |
-| DSYS-02 | — | Pending |
-| DSYS-03 | — | Pending |
-| COMP-01 | — | Pending |
-| COMP-02 | — | Pending |
-| COMP-03 | — | Pending |
-| PADM-01 | — | Pending |
-| PADM-02 | — | Pending |
-| PADM-03 | — | Pending |
-| PPRT-01 | — | Pending |
-| PPRT-02 | — | Pending |
-| PPRT-03 | — | Pending |
-| PLAN-01 | — | Pending |
-| PLAN-02 | — | Pending |
-| PLAN-03 | — | Pending |
-| PLAN-04 | — | Pending |
+| SETUP-01 | Phase 1 | Pending |
+| SETUP-02 | Phase 1 | Pending |
+| SETUP-03 | Phase 1 | Pending |
+| SETUP-04 | Phase 1 | Pending |
+| DSYS-01 | Phase 1 | Pending |
+| DSYS-02 | Phase 1 | Pending |
+| DSYS-03 | Phase 1 | Pending |
+| COMP-01 | Phase 2 | Pending |
+| COMP-02 | Phase 2 | Pending |
+| COMP-03 | Phase 2 | Pending |
+| PADM-01 | Phase 3 | Pending |
+| PADM-02 | Phase 3 | Pending |
+| PADM-03 | Phase 3 | Pending |
+| PPRT-01 | Phase 3 | Pending |
+| PPRT-02 | Phase 3 | Pending |
+| PPRT-03 | Phase 3 | Pending |
+| PLAN-01 | Phase 4 | Pending |
+| PLAN-02 | Phase 4 | Pending |
+| PLAN-03 | Phase 4 | Pending |
+| PLAN-04 | Phase 4 | Pending |
 
 **Coverage:**
 - v1.0 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20 (pending roadmap)
+- Mapped to phases: 20
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-18*
-*Last updated: 2026-03-18 after initial definition*
+*Last updated: 2026-03-18 after roadmap creation*
