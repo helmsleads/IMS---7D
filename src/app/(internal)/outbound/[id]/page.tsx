@@ -1891,7 +1891,7 @@ export default function OutboundOrderDetailPage() {
                     const isPartial = item.qty_shipped > 0 && remaining > 0;
                     const isShipped = order.status === "shipped" || order.status === "delivered";
                     const isEditing = editingItems[item.id] !== undefined;
-                    const minQty = Math.max(item.qty_shipped, 1);
+                    const minQty = 1;
 
                     return (
                       <tr key={item.id} className={isComplete ? "bg-green-50/50" : ""}>
@@ -2025,9 +2025,9 @@ export default function OutboundOrderDetailPage() {
                               </button>
                               <button
                                 onClick={() => handleDeleteItem(item.id)}
-                                disabled={item.qty_shipped > 0 || savingItems}
+                                disabled={savingItems}
                                 className="p-1.5 text-gray-400 hover:text-red-600 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                title={item.qty_shipped > 0 ? "Cannot delete shipped items" : "Delete item"}
+                                title="Delete item"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
