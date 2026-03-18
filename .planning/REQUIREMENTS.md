@@ -22,9 +22,9 @@ Requirements for UI/UX audit milestone. Each maps to roadmap phases.
 
 ### Component Audit
 
-- [ ] **COMP-01**: User can audit all shared UI components (Button, Card, Modal, Table, Input, Select, Badge, etc.) against the generated design system
-- [ ] **COMP-02**: User can review component findings with severity ratings (blocking, high, medium, low)
-- [ ] **COMP-03**: User can identify accessibility gaps in shared components (focus states, contrast ratios, ARIA)
+- [x] **COMP-01**: User can audit all shared UI components (Button, Card, Modal, Table, Input, Select, Badge, etc.) against the generated design system
+- [x] **COMP-02**: User can review component findings with severity ratings (blocking, high, medium, low)
+- [x] **COMP-03**: User can identify accessibility gaps in shared components (focus states, contrast ratios, ARIA)
 
 ### Page Audit — Admin
 
@@ -78,9 +78,9 @@ Deferred to implementation milestone.
 | DSYS-01 | Phase 1 | Complete |
 | DSYS-02 | Phase 1 | Complete |
 | DSYS-03 | Phase 1 | Complete |
-| COMP-01 | Phase 2 | Pending |
-| COMP-02 | Phase 2 | Pending |
-| COMP-03 | Phase 2 | Pending |
+| COMP-01 | Phase 2 | Complete |
+| COMP-02 | Phase 2 | Complete |
+| COMP-03 | Phase 2 | Complete |
 | PADM-01 | Phase 3 | Pending |
 | PADM-02 | Phase 3 | Pending |
 | PADM-03 | Phase 3 | Pending |
