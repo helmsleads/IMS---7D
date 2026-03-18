@@ -29,7 +29,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User can see scanner-facing routes explicitly listed and tagged before any audit runs
   4. User can verify the generated design tokens reference the same CSS custom property names as `src/app/globals.css`
   5. User can confirm dashboard widget minimum grid cell dimensions are recorded in the design system before component auditing begins
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Install uipro-cli, verify Python + skill connectivity, compile scanner routes and dashboard grid constraints
+- [ ] 01-02-PLAN.md — Generate dual-brand MASTER.md design system and validate tokens against globals.css
 
 ### Phase 2: Component Library Audit
 **Goal**: Every shared UI component has been evaluated against MASTER.md with severity-rated findings, establishing a root-cause taxonomy that prevents the same component defect appearing as dozens of separate page findings
@@ -70,7 +74,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Tool Setup and Design System | 0/TBD | Not started | - |
+| 1. Tool Setup and Design System | 0/2 | Planning complete | - |
 | 2. Component Library Audit | 0/TBD | Not started | - |
 | 3. Page Audits | 0/TBD | Not started | - |
 | 4. Action Plan Compilation | 0/TBD | Not started | - |
