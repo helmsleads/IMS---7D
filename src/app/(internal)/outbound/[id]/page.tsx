@@ -1260,7 +1260,7 @@ export default function OutboundOrderDetailPage() {
   const shippedBreakdown = buildUnitBreakdown((item) => item.qty_shipped);
   const allItemsShipped = order.items.every((item) => item.qty_shipped >= item.qty_requested);
   const canPick = order.status === "confirmed" || order.status === "processing";
-  const canEdit = ["pending", "confirmed", "processing", "packed"].includes(order.status);
+  const canEdit = order.status !== "shipped";
 
   const handleStartAddItem = async () => {
     setAddingItem(true);
