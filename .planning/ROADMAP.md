@@ -39,7 +39,9 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   1. The `globals.css` file contains a `@media (prefers-reduced-motion: reduce)` block that disables all custom keyframes (modal-scale-up/down, widget-enter, chart-enter)
   2. CSS custom properties `--shadow-card`, `--shadow-modal`, and `--shadow-elevated` are defined and available site-wide
   3. All custom keyframe animations defined in `globals.css` have corresponding reduced-motion fallbacks
-**Plans**: TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 05-01-PLAN.md — Add reduced-motion media query block and verify shadow tokens
 
 ### Phase 6: Shared UI Components
 **Goal**: Every shared UI component is brand-correct, accessible, and portal-capable — portal variant components exist for Button/Input/Select/Textarea/Toggle, color tokens are applied, ARIA attributes are present, and the gray→slate migration is complete.
@@ -99,7 +101,7 @@ Phases execute in dependency order: 5 → 6 → 7 (parallel with 8) → 8 → 9
 | 2. Component Library Audit | v1.0 | 2/2 | Complete | 2026-03-19 |
 | 3. Page Audits | v1.0 | 3/3 | Complete | 2026-03-19 |
 | 4. Action Plan Compilation | v1.0 | 2/2 | Complete | 2026-03-19 |
-| 5. Design Tokens | v2.0 | 0/? | Not started | - |
+| 5. Design Tokens | v2.0 | 0/1 | Planning | - |
 | 6. Shared UI Components | v2.0 | 0/? | Not started | - |
 | 7. Scanner Components | v2.0 | 0/? | Not started | - |
 | 8. Admin Pages | v2.0 | 0/? | Not started | - |
