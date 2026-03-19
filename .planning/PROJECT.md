@@ -22,11 +22,15 @@ The platform must look and feel purpose-built for 3PL warehouse management — p
 
 ### Active
 
-- [ ] Apply design system tokens to globals.css and Tailwind config
-- [ ] Update shared UI components to match design system (20 Blocking + 40 High items)
-- [ ] Update scanner components for 44px+ tap targets and accessibility
-- [ ] Update admin pages per action plan priorities
-- [ ] Update portal pages per action plan priorities and add portal brand variants
+- [ ] Apply design system tokens to globals.css (reduced-motion, CSS custom properties)
+- [ ] Add portal variants to Button, Input, Select, Textarea, Toggle components
+- [ ] Fix scanner tap targets (44px minimum) across 7 scanner components + Pagination
+- [ ] Fix scanner text sizes (text-base minimum) across 5 scanner components
+- [ ] Add ARIA attributes to Modal, SearchSelect, Breadcrumbs, Card, charts
+- [ ] Migrate gray→slate across all shared UI components (~19 components)
+- [ ] Fix admin page inline color corrections (blue→indigo, yellow→amber)
+- [ ] Fix portal page inline color corrections (blue→cyan, indigo→cyan)
+- [ ] Add prefers-reduced-motion guards to animations and charts
 - [ ] Validate all changes against MASTER.md rubric
 
 ### Out of Scope
@@ -60,10 +64,16 @@ Key finding: component-layer fixes have enormous multiplier effects — Button p
 | Per-component granularity for portal variants | Each component variant is a separate Blocking item | ✓ Good — clear implementation scope |
 | 5-wave implementation structure | Dependency-ordered: globals → components → scanner → pages | -- Pending (v2.0) |
 
-## Current State
+## Current Milestone: v2.0 UI/UX Implementation
 
-**v1.0 shipped:** Full UI/UX audit complete with tiered action plan.
-**Next:** v2.0 UI/UX Implementation — execute the action plan from PRIORITIES.md and IMPLEMENTATION.md.
+**Goal:** Execute the severity-tiered action plan — apply design system tokens, fix all 20 Blocking items, resolve 40 High-Value items, and bring the platform to visual/UX production quality across all 91 pages.
+
+**Target features:**
+- Apply design system tokens to globals.css and Tailwind config (Wave 0)
+- Update shared UI components — portal variants, color corrections, accessibility fixes (Wave 1)
+- Fix scanner components for tap targets, text sizes, and color corrections (Wave 2)
+- Update admin pages per action plan priorities (Wave 3)
+- Update portal pages per action plan priorities (Wave 4)
 
 ---
-*Last updated: 2026-03-19 after v1.0 milestone*
+*Last updated: 2026-03-19 after v2.0 milestone start*
