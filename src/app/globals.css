@@ -189,3 +189,122 @@
   animation: chart-grow 0.6s ease-out forwards;
   transform-origin: bottom;
 }
+
+/* ============================================================
+   REDUCED MOTION — prefers-reduced-motion: reduce
+   All custom keyframes are redefined here without spatial
+   transforms (no translateX, translateY, scale, scaleY).
+   Opacity transitions are preserved for visual continuity.
+   Stagger delay classes are NOT overridden — timing is not motion.
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  /* Toast: remove translateX, keep fade */
+  @keyframes slide-in-from-right {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Modal backdrop: already opacity-only — no change needed */
+  @keyframes modal-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes modal-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  /* Modal dialog: remove scale(0.95) and translateY(8px), keep fade */
+  @keyframes modal-scale-up {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes modal-scale-down {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  /* Page transitions: remove translateY(8px), keep fade */
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Dashboard widgets: remove translateY(12px), keep fade */
+  @keyframes widget-enter {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Chart entrance: remove scaleY(0.8), replace with fade (~200ms) */
+  @keyframes chart-grow {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Utility class overrides */
+  .animate-in {
+    animation: slide-in-from-right 0.2s ease-out;
+  }
+
+  .slide-in-from-right-full {
+    animation: slide-in-from-right 0.2s ease-out;
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.2s ease-out;
+  }
+
+  .animate-modal-scale-up {
+    animation: modal-scale-up 0.2s ease-out forwards;
+  }
+
+  .animate-modal-scale-down {
+    animation: modal-scale-down 0.15s ease-in forwards;
+  }
+
+  .animate-widget-enter {
+    animation: widget-enter 0.3s ease-out forwards;
+  }
+
+  /* Chart: remove transform-origin (no scaleY), reduce duration */
+  .animate-chart-enter {
+    animation: chart-grow 0.2s ease-out forwards;
+    transform-origin: unset;
+  }
+}
