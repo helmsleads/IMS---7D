@@ -62,6 +62,7 @@ import {
   UpdateOutboundOrderData,
 } from "@/lib/api/outbound";
 import { getProducts, ProductWithCategory } from "@/lib/api/products";
+import { getClients, Client } from "@/lib/api/clients";
 import { createClient } from "@/lib/supabase";
 import { getContainerBadge, getUnitLabel } from "@/lib/labels";
 import { getLocations, Location } from "@/lib/api/locations";
@@ -381,6 +382,10 @@ export default function OutboundOrderDetailPage() {
   const [newItemPrice, setNewItemPrice] = useState(0);
   const [availableProducts, setAvailableProducts] = useState<ProductWithCategory[]>([]);
   const [itemError, setItemError] = useState("");
+
+  // Brand management for multi-client orders
+  const [allClients, setAllClients] = useState<Client[]>([]);
+  const [additionalBrandIds, setAdditionalBrandIds] = useState<string[]>([]);
 
   // Damage report state
   const [damageReports, setDamageReports] = useState<DamageReportWithProduct[]>([]);
@@ -1262,17 +1267,45 @@ export default function OutboundOrderDetailPage() {
   const canPick = order.status === "confirmed" || order.status === "processing";
   const canEdit = order.status !== "shipped";
 
+  // Derive brand IDs from existing order items + the order's primary client + any added brands
+  const orderBrandIds = (() => {
+    const ids = new Set<string>();
+    if (order.client_id) ids.add(order.client_id);
+    for (const item of order.items) {
+      if (item.product?.client_id) ids.add(item.product.client_id);
+    }
+    for (const id of additionalBrandIds) {
+      ids.add(id);
+    }
+    return Array.from(ids);
+  })();
+
   const handleStartAddItem = async () => {
     setAddingItem(true);
     setItemError("");
-    if (availableProducts.length === 0) {
-      try {
-        const products = await getProducts(order.client_id || undefined);
-        setAvailableProducts(products.filter((p) => p.active));
-      } catch {
-        setItemError("Failed to load products");
-      }
+    try {
+      const [products, clients] = await Promise.all([
+        getProducts(),
+        allClients.length === 0 ? getClients() : Promise.resolve(allClients),
+      ]);
+      setAvailableProducts(products.filter((p) => p.active));
+      if (allClients.length === 0) setAllClients(clients.filter((c) => c.active));
+    } catch {
+      setItemError("Failed to load products");
     }
+  };
+
+  const handleAddBrand = (brandId: string) => {
+    if (!brandId || orderBrandIds.includes(brandId)) return;
+    setAdditionalBrandIds((prev) => [...prev, brandId]);
+  };
+
+  const handleRemoveBrand = (brandId: string) => {
+    // Only allow removing brands that were added in this session (not from existing items)
+    if (brandId === order.client_id) return;
+    const hasItemsFromBrand = order.items.some((i) => i.product?.client_id === brandId);
+    if (hasItemsFromBrand) return;
+    setAdditionalBrandIds((prev) => prev.filter((id) => id !== brandId));
   };
 
   const handleSaveItemQty = async (itemId: string) => {
@@ -2044,10 +2077,14 @@ export default function OutboundOrderDetailPage() {
                       <td className="px-4 py-3">
                         <SearchSelect
                           options={availableProducts
-                            .filter((p) => !order.items.some((i) => i.product_id === p.id))
+                            .filter((p) =>
+                              !order.items.some((i) => i.product_id === p.id) &&
+                              p.client_id &&
+                              orderBrandIds.includes(p.client_id)
+                            )
                             .map((p) => ({
                               value: p.id,
-                              label: `${p.sku} — ${p.name}`,
+                              label: `${p.sku} — ${p.name}${orderBrandIds.length > 1 && p.client?.company_name ? ` [${p.client.company_name}]` : ""}`,
                             }))}
                           value={newItemProductId}
                           onChange={setNewItemProductId}
@@ -2816,6 +2853,70 @@ export default function OutboundOrderDetailPage() {
                     >
                       {order.client.company_name}
                     </Link>
+                  </div>
+                )}
+
+                {/* Additional Brands (for multi-client orders) */}
+                {canEdit && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Brands on Order</p>
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {orderBrandIds.map((id) => {
+                          const brand = allClients.find((c) => c.id === id) || (id === order.client_id ? order.client : null);
+                          const isFromItems = id === order.client_id || order.items.some((i) => i.product?.client_id === id);
+                          return (
+                            <span
+                              key={id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 border border-indigo-200 text-indigo-700"
+                            >
+                              {brand?.company_name || "Unknown"}
+                              {!isFromItems && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveBrand(id)}
+                                  className="ml-0.5 hover:text-indigo-900 transition-colors"
+                                >
+                                  &times;
+                                </button>
+                              )}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      {allClients.length > 0 && (
+                        <select
+                          className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) handleAddBrand(e.target.value);
+                          }}
+                        >
+                          <option value="">Add brand...</option>
+                          {allClients
+                            .filter((c) => !orderBrandIds.includes(c.id))
+                            .map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.company_name}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                      {allClients.length === 0 && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const clients = await getClients();
+                              setAllClients(clients.filter((c) => c.active));
+                            } catch {}
+                          }}
+                          className="text-xs text-indigo-600 hover:text-indigo-700"
+                        >
+                          + Add another brand
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
 
