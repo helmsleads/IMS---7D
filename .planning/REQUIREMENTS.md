@@ -42,8 +42,8 @@ Requirements for UI/UX audit milestone. Each maps to roadmap phases.
 
 - [x] **PLAN-01**: User can review a severity-tiered action plan with capped tiers (Blocking ≤20, High-value ≤40)
 - [x] **PLAN-02**: User can identify quick wins (high impact, low effort changes)
-- [ ] **PLAN-03**: User can review a sequenced implementation roadmap with effort estimates for each change
-- [ ] **PLAN-04**: User can use the action plan as direct input for the next milestone's implementation phases
+- [x] **PLAN-03**: User can review a sequenced implementation roadmap with effort estimates for each change
+- [x] **PLAN-04**: User can use the action plan as direct input for the next milestone's implementation phases
 
 ## v2 Requirements
 
@@ -89,8 +89,8 @@ Deferred to implementation milestone.
 | PPRT-03 | Phase 3 | Complete |
 | PLAN-01 | Phase 4 | Complete |
 | PLAN-02 | Phase 4 | Complete |
-| PLAN-03 | Phase 4 | Pending |
-| PLAN-04 | Phase 4 | Pending |
+| PLAN-03 | Phase 4 | Complete |
+| PLAN-04 | Phase 4 | Complete |
 
 **Coverage:**
 - v1.0 requirements: 20 total
