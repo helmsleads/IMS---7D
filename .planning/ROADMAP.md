@@ -58,14 +58,19 @@ Plans:
   2. User can open `.planning/audit/portal-pages.md` and find severity-rated findings for all portal pages evaluated against the cyan brand guidelines
   3. User can identify which portal pages have unintentionally diverged from portal brand (cyan) versus those with intentional design overrides
   4. User can see each page finding classified as either "source: component" (traces to Phase 2) or "source: inline override" (page-specific)
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Audit admin core pages (~30 pages: Dashboard, Inventory, Products, Inbound, Outbound, Clients, Billing)
+- [ ] 03-02-PLAN.md — Audit all portal pages (~29 pages) with brand divergence detection
+- [ ] 03-03-PLAN.md — Audit admin remaining pages (~32 pages: Reports, Tasks, Locations, Settings, etc.) and finalize summary
 
 ### Phase 4: Action Plan Compilation
 **Goal**: All component and page findings are synthesized into a tiered, sequenced implementation guide with capped tiers that the next milestone can execute without paralysis
 **Depends on**: Phase 3
 **Requirements**: PLAN-01, PLAN-02, PLAN-03, PLAN-04
 **Success Criteria** (what must be TRUE):
-  1. User can open `.planning/action-plan/PRIORITIES.md` and find a Blocking tier (≤20 items), a High-value tier (≤40 items), and a Polish backlog — with no tier exceeding its cap
+  1. User can open `.planning/action-plan/PRIORITIES.md` and find a Blocking tier (<=20 items), a High-value tier (<=40 items), and a Polish backlog — with no tier exceeding its cap
   2. User can identify quick wins: changes with high visual impact and low implementation effort, surfaced as a distinct list
   3. User can open `.planning/action-plan/IMPLEMENTATION.md` and find each action item with a specific file path, the exact change required, and an effort estimate
   4. User can hand the action plan directly to the next milestone as implementation input without needing further synthesis or re-prioritization
@@ -74,11 +79,11 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Tool Setup and Design System | 2/2 | Complete    | 2026-03-18 |
 | 2. Component Library Audit | 2/2 | Complete    | 2026-03-19 |
-| 3. Page Audits | 0/TBD | Not started | - |
+| 3. Page Audits | 0/3 | Not started | - |
 | 4. Action Plan Compilation | 0/TBD | Not started | - |
