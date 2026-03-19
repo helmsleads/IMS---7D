@@ -44,16 +44,68 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
 const ACTIVE_STATUSES = ["pending", "confirmed", "processing", "packed", "shipped"];
 
 export default function PortalOrdersPage() {
-  const { client } = useClient();
+  const { client, isStaffPreview, availableClients, switchClient } = useClient();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [staffSelectedClientId, setStaffSelectedClientId] = useState<string>("");
+  const [staffAllClients, setStaffAllClients] = useState<{ id: string; company_name: string }[]>([]);
+  const [staffClientsLoading, setStaffClientsLoading] = useState(false);
+  const [staffClientsError, setStaffClientsError] = useState<string>("");
+
+  const isUuid = (value: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+  const fetchStaffClients = async () => {
+    if (!isStaffPreview || !client || isUuid(client.id)) return;
+    if (availableClients.length > 0) return; // already have scoped list
+    setStaffClientsLoading(true);
+    setStaffClientsError("");
+    try {
+      const res = await fetch("/api/portal/staff-clients");
+      const data = await res.json();
+      if (!res.ok) {
+        setStaffClientsError(data.error || "Failed to load clients");
+        setStaffAllClients([]);
+      } else {
+        setStaffAllClients(data.clients || []);
+      }
+    } catch (e) {
+      setStaffClientsError(e instanceof Error ? e.message : "Failed to load clients");
+      setStaffAllClients([]);
+    } finally {
+      setStaffClientsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const loadStaffClients = async () => {
+      await fetchStaffClients();
+    };
+    loadStaffClients();
+  }, [isStaffPreview, client, availableClients]);
 
   const fetchOrders = async (isRefresh = false) => {
     if (!client) return;
+    if (!isUuid(client.id)) {
+      // Staff preview mode uses a non-UUID sentinel id (e.g. "staff-preview").
+      // Prevent invalid UUID errors from Supabase RPC.
+      if (isStaffPreview) {
+        setOrders([]);
+        setError(
+          "Staff preview mode: select a client to view their orders (use the client switcher), or open portal with ?view_user=...&view_client=... impersonation."
+        );
+      } else {
+        setOrders([]);
+        setError("Invalid client session. Please log in again.");
+      }
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
 
     if (isRefresh) {
       setRefreshing(true);
@@ -162,6 +214,70 @@ export default function PortalOrdersPage() {
     return (
       <div className="flex items-center justify-center py-12">
         <Spinner size="md" />
+      </div>
+    );
+  }
+
+  // Staff preview mode client picker (client.id is not a UUID)
+  if (error && isStaffPreview && client?.id && !isUuid(client.id)) {
+    const options =
+      availableClients.length > 0
+        ? availableClients.map((a) => ({
+            id: a.client_id,
+            label: a.client?.company_name || a.client_id,
+          }))
+        : staffAllClients.map((c) => ({
+            id: c.id,
+            label: c.company_name || c.id,
+          }));
+    const selected = staffSelectedClientId || options[0]?.id || "";
+
+    return (
+      <div className="max-w-xl mx-auto py-12 px-4 space-y-4">
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <p className="font-semibold text-amber-800">Staff Preview Mode</p>
+          <p className="text-sm text-amber-700 mt-1">{error}</p>
+        </div>
+
+        {staffClientsError ? (
+          <FetchError message={staffClientsError} onRetry={fetchStaffClients} />
+        ) : staffClientsLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Spinner size="md" />
+          </div>
+        ) : options.length > 0 ? (
+          <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+            <label className="block text-sm font-medium text-slate-700">
+              Select client to view orders
+            </label>
+            <select
+              className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+              aria-label="Select client"
+              value={selected}
+              onChange={(e) => setStaffSelectedClientId(e.target.value)}
+            >
+              {options.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="primary"
+              className="w-full"
+              onClick={() => {
+                if (!selected) return;
+                setError(null);
+                setLoading(true);
+                switchClient(selected);
+              }}
+            >
+              View Orders
+            </Button>
+          </div>
+        ) : (
+          <FetchError message="No clients available to preview for this user." />
+        )}
       </div>
     );
   }

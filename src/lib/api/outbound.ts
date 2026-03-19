@@ -1,9 +1,4 @@
 import { createClient } from "@/lib/supabase";
-import {
-  sendOrderConfirmedEmail,
-  sendOrderShippedEmail,
-  sendOrderDeliveredEmail,
-} from "@/lib/api/email";
 import { sendInternalAlert, sendPortalOrderNotification } from "@/lib/api/notifications";
 import { reserveOrderItems, releaseOrderReservations, releaseReservation } from "./reservations";
 import { updateInventoryWithTransaction } from "./inventory-transactions";
@@ -12,6 +7,20 @@ import { generateShipmentInvoice } from "./invoices";
 import { syncFulfillmentToShopify } from "./shopify/fulfillment-sync";
 
 export type OrderSource = 'portal' | 'internal' | 'api';
+
+async function fireAndForgetEmail(endpoint: string, orderId: string) {
+  try {
+    // Must be called from the browser so cookies/session are included
+    if (typeof window === "undefined") return;
+    fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId }),
+    }).catch(() => {});
+  } catch {
+    // no-op
+  }
+}
 
 export interface OutboundOrder {
   id: string;
@@ -52,6 +61,9 @@ export interface OutboundOrder {
   // Shipping cost tracking
   shipping_cost: number | null;
   client_shipping_cost: number | null;
+  // Tracking sync fields
+  tracking_status?: string | null;
+  tracking_status_updated_at?: string | null;
 }
 
 export interface OutboundItem {
@@ -469,6 +481,7 @@ export async function updateOutboundOrderStatus(
     updateData.shipped_date = new Date().toISOString();
     if (additionalFields?.carrier) {
       updateData.carrier = additionalFields.carrier;
+      updateData.preferred_carrier = additionalFields.carrier;
     }
     if (additionalFields?.tracking_number) {
       updateData.tracking_number = additionalFields.tracking_number;
@@ -523,9 +536,7 @@ export async function updateOutboundOrderStatus(
 
   // Send email notifications based on status
   if (status === "confirmed") {
-    sendOrderConfirmedEmail(id).catch((err) =>
-      console.error("Failed to send confirmation email:", err)
-    );
+    fireAndForgetEmail("/api/email/order-confirmed", id);
   } else if (status === "packed") {
     // Auto-assign boxes when order is packed based on products being shipped
     autoAssignBoxesForOrder(id).then((result) => {
@@ -538,9 +549,7 @@ export async function updateOutboundOrderStatus(
       console.error("Failed to auto-assign boxes:", err)
     );
   } else if (status === "shipped") {
-    sendOrderShippedEmail(id).catch((err) =>
-      console.error("Failed to send shipped email:", err)
-    );
+    fireAndForgetEmail("/api/email/order-shipped", id);
     // Record billable events for shipping
     recordOutboundUsage(id).catch((err) =>
       console.error("Failed to record outbound usage:", err)
@@ -606,9 +615,7 @@ export async function updateOutboundOrderStatus(
       );
     }
   } else if (status === "delivered") {
-    sendOrderDeliveredEmail(id).catch((err) =>
-      console.error("Failed to send delivered email:", err)
-    );
+    fireAndForgetEmail("/api/email/order-delivered", id);
   }
 
   // Send portal notification to all involved clients for status changes

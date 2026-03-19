@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { getAccessToken } from '@/lib/api/fedex'
+import { getAccessToken, getRates } from '@/lib/api/fedex'
 import type { FedExCredentials } from '@/types/database'
 
 /**
@@ -36,6 +36,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Optional override: force sandbox in local/dev environments
+    if (process.env.FEDEX_SANDBOX === 'true') {
+      body.environment = 'sandbox'
+    }
+
     // Don't test with masked secret
     if (body.client_secret === '****') {
       return NextResponse.json(
@@ -47,7 +52,44 @@ export async function POST(request: NextRequest) {
     // Attempt OAuth token acquisition
     await getAccessToken(body)
 
-    return NextResponse.json({ success: true, message: 'Successfully connected to FedEx API' })
+    // Optional: also test Rates API (catches "OAuth works but Ship/Rate permissions fail")
+    let ratesOk: boolean | null = null
+    let ratesError: string | null = null
+    try {
+      if (body.shipper_zip && body.shipper_country) {
+        await getRates(
+          {
+            shipDate: new Date().toISOString().split('T')[0],
+            weightLbs: 1,
+            shipperPostalCode: body.shipper_zip,
+            shipperCountryCode: body.shipper_country || 'US',
+            recipientPostalCode: '10001',
+            recipientCountryCode: 'US',
+          },
+          body
+        )
+        ratesOk = true
+      } else {
+        ratesOk = null
+      }
+    } catch (e) {
+      ratesOk = false
+      ratesError = e instanceof Error ? e.message : 'Rates test failed'
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Successfully connected to FedEx API',
+      checks: {
+        oauth: true,
+        rates: ratesOk,
+      },
+      ratesError,
+      note:
+        ratesOk === null
+          ? 'Rates check skipped (missing shipper_zip/shipper_country on credentials).'
+          : null,
+    })
   } catch (err) {
     console.error('FedEx connection test failed:', err)
     const message = err instanceof Error ? err.message : 'Connection test failed'

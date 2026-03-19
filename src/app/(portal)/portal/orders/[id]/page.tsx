@@ -220,9 +220,7 @@ export default function OrderDetailPage() {
           items:outbound_items (
             id,
             qty_requested,
-            qty_picked,
             qty_shipped,
-            status,
             product:products (
               id,
               name,
@@ -286,12 +284,11 @@ export default function OrderDetailPage() {
         items: visibleItems.map((item: {
           id: string;
           qty_requested: number;
-          qty_picked: number;
           qty_shipped: number;
-          status: string;
           product: { id: string; name: string; sku: string; image_url: string | null; client_id?: string | null; container_type?: string | null } | { id: string; name: string; sku: string; image_url: string | null; client_id?: string | null; container_type?: string | null }[];
         }) => {
           const product = Array.isArray(item.product) ? item.product[0] : item.product;
+          const qtyShipped = item.qty_shipped || 0;
           return {
             id: item.id,
             product_id: product?.id || "",
@@ -299,9 +296,9 @@ export default function OrderDetailPage() {
             sku: product?.sku || "",
             container_type: product?.container_type || null,
             qty_requested: item.qty_requested,
-            qty_picked: item.qty_picked || 0,
-            qty_shipped: item.qty_shipped || 0,
-            status: item.status,
+            qty_picked: qtyShipped,
+            qty_shipped: qtyShipped,
+            status: qtyShipped >= item.qty_requested ? "shipped" : qtyShipped > 0 ? "partial" : "pending",
             image_url: product?.image_url || null,
           };
         }),

@@ -63,8 +63,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { orderId, serviceType, packageWeight, packageLength, packageWidth, packageHeight, isAlcohol, shipDate } = body
 
-    if (!orderId || !serviceType || !packageWeight) {
-      return NextResponse.json({ error: 'Missing required fields: orderId, serviceType, packageWeight' }, { status: 400 })
+    // Small, safe validation
+    if (!orderId || typeof orderId !== 'string') {
+      return NextResponse.json({ error: 'Invalid or missing orderId' }, { status: 400 })
+    }
+    if (!serviceType || typeof serviceType !== 'string') {
+      return NextResponse.json({ error: 'Invalid or missing serviceType' }, { status: 400 })
+    }
+    const weightNumber = typeof packageWeight === 'number' ? packageWeight : Number(packageWeight)
+    if (!Number.isFinite(weightNumber) || weightNumber <= 0) {
+      return NextResponse.json({ error: 'Invalid packageWeight' }, { status: 400 })
     }
 
     // Load FedEx credentials
@@ -77,7 +85,7 @@ export async function POST(request: NextRequest) {
     const serviceSupabase = createServiceClient()
     const { data: order, error: orderError } = await serviceSupabase
       .from('outbound_orders')
-      .select('id, order_number, ship_to_name, ship_to_company, ship_to_address, ship_to_address2, ship_to_city, ship_to_state, ship_to_zip, ship_to_country, ship_to_phone')
+      .select('id, order_number, ship_to_name, ship_to_company, ship_to_address, ship_to_address2, ship_to_city, ship_to_state, ship_to_zip, ship_to_country, ship_to_phone, fedex_shipment_id, tracking_number, label_url, shipping_method')
       .eq('id', orderId)
       .single()
 
@@ -85,8 +93,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
-    if (!order.ship_to_address || !order.ship_to_city || !order.ship_to_state || !order.ship_to_zip) {
-      return NextResponse.json({ error: 'Order is missing ship-to address fields' }, { status: 400 })
+    const missingFields: string[] = []
+    if (!order.ship_to_address) missingFields.push('ship_to_address')
+    if (!order.ship_to_city) missingFields.push('ship_to_city')
+    if (!order.ship_to_state) missingFields.push('ship_to_state')
+    if (!order.ship_to_zip) missingFields.push('ship_to_zip')
+
+    if (missingFields.length > 0) {
+      return NextResponse.json(
+        { error: 'Order is missing ship-to address fields', missingFields },
+        { status: 400 }
+      )
+    }
+
+    // Idempotency: if shipment already created for this order, return existing
+    if (order.shipping_method === 'fedex_api' && order.fedex_shipment_id && order.tracking_number) {
+      return NextResponse.json({
+        trackingNumber: order.tracking_number,
+        labelUrl: order.label_url || null,
+        shipmentId: order.fedex_shipment_id,
+        actualCost: null,
+        listCost: null,
+      })
     }
 
     // Create FedEx shipment
@@ -94,7 +122,7 @@ export async function POST(request: NextRequest) {
       {
         orderId,
         serviceType,
-        packageWeight,
+        packageWeight: weightNumber,
         packageLength,
         packageWidth,
         packageHeight,
@@ -140,6 +168,8 @@ export async function POST(request: NextRequest) {
       fedex_shipment_id: result.shipmentId,
       label_url: labelUrl,
       shipping_method: 'fedex_api',
+      carrier: 'FedEx',
+      tracking_number: result.trackingNumber,
     }
     if (result.actualCost != null) orderUpdate.shipping_cost = result.actualCost
     if (result.listCost != null) orderUpdate.client_shipping_cost = result.listCost
@@ -148,6 +178,34 @@ export async function POST(request: NextRequest) {
       .from('outbound_orders')
       .update(orderUpdate)
       .eq('id', orderId)
+
+    // Audit log (best-effort; don't fail the request if log fails)
+    try {
+      await serviceSupabase.from('fedex_shipment_log').insert({
+        outbound_order_id: orderId,
+        action: 'create',
+        request_payload: {
+          orderId,
+          serviceType,
+          packageWeight: weightNumber,
+          packageLength: packageLength ?? null,
+          packageWidth: packageWidth ?? null,
+          packageHeight: packageHeight ?? null,
+          isAlcohol: isAlcohol ?? false,
+          shipDate: shipDate || new Date().toISOString().split('T')[0],
+        },
+        response_payload: {
+          trackingNumber: result.trackingNumber,
+          shipmentId: result.shipmentId,
+          labelUrl,
+          actualCost: result.actualCost ?? null,
+          listCost: result.listCost ?? null,
+        },
+        error_message: null,
+      })
+    } catch (_) {
+      // ignore audit log errors
+    }
 
     // Fire-and-forget: sync shipping cost to QuickBooks if connected
     if (result.actualCost != null && result.actualCost > 0) {
@@ -168,6 +226,21 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('FedEx shipment creation error:', err)
     const message = err instanceof Error ? err.message : 'Failed to create FedEx shipment'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const isAuth =
+      typeof message === 'string' &&
+      (message.toLowerCase().includes('authorize your credentials') ||
+        message.toLowerCase().includes('oauth failed') ||
+        message.toLowerCase().includes('authentication') ||
+        message.toLowerCase().includes('unauthorized'))
+
+    return NextResponse.json(
+      {
+        error: message,
+        hint: isAuth
+          ? 'FedEx rejected your credentials. Confirm Settings > System > FedEx credentials are correct and the environment matches (Sandbox vs Production). If running locally, you can set FEDEX_SANDBOX=true to force sandbox.'
+          : null,
+      },
+      { status: isAuth ? 400 : 502 }
+    )
   }
 }

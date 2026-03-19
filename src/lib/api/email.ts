@@ -1,5 +1,5 @@
 import { getResend } from "@/lib/email";
-import { createClient } from "@/lib/supabase";
+import { createServiceClient } from "@/lib/supabase-service";
 import { orderConfirmedEmail } from "@/lib/email-templates/order-confirmed";
 import { orderShippedEmail } from "@/lib/email-templates/order-shipped";
 import { orderDeliveredEmail } from "@/lib/email-templates/order-delivered";
@@ -45,7 +45,7 @@ export async function sendEmail(
 export async function sendOrderConfirmedEmail(
   orderId: string
 ): Promise<SendEmailResult> {
-  const supabase = createClient();
+  const supabase = createServiceClient();
 
   // Fetch order with client and items
   const { data: order, error: orderError } = await supabase
@@ -130,7 +130,7 @@ export async function sendOrderConfirmedEmail(
 export async function sendOrderShippedEmail(
   orderId: string
 ): Promise<SendEmailResult> {
-  const supabase = createClient();
+  const supabase = createServiceClient();
 
   // Fetch order with client and items
   const { data: order, error: orderError } = await supabase
@@ -138,7 +138,8 @@ export async function sendOrderShippedEmail(
     .select(`
       id,
       order_number,
-      shipped_at,
+      shipped_date,
+      carrier,
       preferred_carrier,
       tracking_number,
       ship_to_address,
@@ -154,7 +155,7 @@ export async function sendOrderShippedEmail(
         email
       ),
       items:outbound_items (
-        qty_picked,
+        qty_shipped,
         product:products (
           name,
           sku
@@ -174,27 +175,28 @@ export async function sendOrderShippedEmail(
     return { success: false, error: "Client email not found" };
   }
 
-  if (!order.tracking_number || !order.preferred_carrier) {
+  const effectiveCarrier = order.carrier || order.preferred_carrier;
+  if (!order.tracking_number || !effectiveCarrier) {
     return { success: false, error: "Missing tracking information" };
   }
 
   const items = (order.items || []).map((item: {
-    qty_picked: number;
+    qty_shipped: number;
     product: { name: string; sku: string } | { name: string; sku: string }[];
   }) => {
     const product = Array.isArray(item.product) ? item.product[0] : item.product;
     return {
       productName: product?.name || "Unknown",
       sku: product?.sku || "",
-      qtyShipped: item.qty_picked || 0,
+      qtyShipped: item.qty_shipped || 0,
     };
   });
 
   const { subject, html } = orderShippedEmail({
     order: {
       orderNumber: order.order_number,
-      shippedAt: order.shipped_at || new Date().toISOString(),
-      carrier: order.preferred_carrier,
+      shippedAt: order.shipped_date || new Date().toISOString(),
+      carrier: effectiveCarrier,
       trackingNumber: order.tracking_number,
       shipToAddress: order.ship_to_address,
       shipToAddress2: order.ship_to_address2,
@@ -219,7 +221,7 @@ export async function sendOrderShippedEmail(
 export async function sendOrderDeliveredEmail(
   orderId: string
 ): Promise<SendEmailResult> {
-  const supabase = createClient();
+  const supabase = createServiceClient();
 
   // Fetch order with client
   const { data: order, error: orderError } = await supabase
@@ -227,7 +229,7 @@ export async function sendOrderDeliveredEmail(
     .select(`
       id,
       order_number,
-      delivered_at,
+      delivered_date,
       client:clients (
         id,
         company_name,
@@ -251,7 +253,7 @@ export async function sendOrderDeliveredEmail(
   const { subject, html } = orderDeliveredEmail({
     order: {
       orderNumber: order.order_number,
-      deliveredAt: order.delivered_at || new Date().toISOString(),
+      deliveredAt: order.delivered_date || new Date().toISOString(),
     },
     client: {
       companyName: client.company_name,
