@@ -119,6 +119,8 @@ export interface UpdateOutboundOrderData {
   ship_to_zip?: string | null;
   ship_to_country?: string | null;
   preferred_carrier?: string | null;
+  carrier?: string | null;
+  tracking_number?: string | null;
   notes?: string | null;
   requires_repack?: boolean;
   requested_at?: string | null;

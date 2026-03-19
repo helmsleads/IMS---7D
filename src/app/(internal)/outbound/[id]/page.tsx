@@ -365,6 +365,8 @@ export default function OutboundOrderDetailPage() {
     ship_to_zip: "",
     ship_to_country: "",
     preferred_carrier: "",
+    carrier: "",
+    tracking_number: "",
     notes: "",
     requires_repack: true,
     requested_at: "",
@@ -1107,6 +1109,8 @@ export default function OutboundOrderDetailPage() {
       ship_to_zip: (order as any).ship_to_zip || "",
       ship_to_country: (order as any).ship_to_country || "",
       preferred_carrier: (order as any).preferred_carrier || "",
+      carrier: order.carrier || "",
+      tracking_number: order.tracking_number || "",
       notes: order.notes || "",
       requires_repack: (order as any).requires_repack !== false,
       requested_at: order.requested_at ? order.requested_at.split("T")[0] : "",
@@ -1131,6 +1135,8 @@ export default function OutboundOrderDetailPage() {
         ship_to_zip: editForm.ship_to_zip || null,
         ship_to_country: editForm.ship_to_country || null,
         preferred_carrier: editForm.preferred_carrier || null,
+        carrier: editForm.carrier || null,
+        tracking_number: editForm.tracking_number || null,
         notes: editForm.notes || null,
         requires_repack: editForm.requires_repack,
         requested_at: editForm.requested_at ? `${editForm.requested_at}T12:00:00${getTimezoneOffset(warehouseTimezone)}` : null,
@@ -2713,6 +2719,29 @@ export default function OutboundOrderDetailPage() {
                     ]}
                   />
                 </div>
+
+                {(order.carrier || order.tracking_number) && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Carrier</label>
+                      <Input
+                        name="edit-carrier"
+                        value={editForm.carrier}
+                        onChange={(e) => setEditForm({ ...editForm, carrier: e.target.value })}
+                        placeholder="e.g. FedEx, UPS"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tracking Number</label>
+                      <Input
+                        name="edit-tracking-number"
+                        value={editForm.tracking_number}
+                        onChange={(e) => setEditForm({ ...editForm, tracking_number: e.target.value })}
+                        placeholder="Enter tracking number"
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Requested Date</label>
