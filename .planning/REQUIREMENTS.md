@@ -28,9 +28,9 @@ Requirements for UI/UX audit milestone. Each maps to roadmap phases.
 
 ### Page Audit — Admin
 
-- [ ] **PADM-01**: User can audit all admin pages (dashboard, inventory, orders, billing, reports, settings) against design system
-- [ ] **PADM-02**: User can audit scanner/warehouse floor pages with warehouse-specific rubric (44x44px tap targets, high contrast, glove-friendly)
-- [ ] **PADM-03**: User can review per-page findings with inconsistency documentation
+- [x] **PADM-01**: User can audit all admin pages (dashboard, inventory, orders, billing, reports, settings) against design system
+- [x] **PADM-02**: User can audit scanner/warehouse floor pages with warehouse-specific rubric (44x44px tap targets, high contrast, glove-friendly)
+- [x] **PADM-03**: User can review per-page findings with inconsistency documentation
 
 ### Page Audit — Portal
 
@@ -81,9 +81,9 @@ Deferred to implementation milestone.
 | COMP-01 | Phase 2 | Complete |
 | COMP-02 | Phase 2 | Complete |
 | COMP-03 | Phase 2 | Complete |
-| PADM-01 | Phase 3 | Pending |
-| PADM-02 | Phase 3 | Pending |
-| PADM-03 | Phase 3 | Pending |
+| PADM-01 | Phase 3 | Complete |
+| PADM-02 | Phase 3 | Complete |
+| PADM-03 | Phase 3 | Complete |
 | PPRT-01 | Phase 3 | Pending |
 | PPRT-02 | Phase 3 | Pending |
 | PPRT-03 | Phase 3 | Pending |
