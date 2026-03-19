@@ -117,13 +117,68 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (Populated during roadmap creation) | | |
+| TOKN-01 | Phase 5 | Pending |
+| TOKN-02 | Phase 5 | Pending |
+| XCUT-02 | Phase 5 | Pending |
+| PRTL-01 | Phase 6 | Pending |
+| PRTL-02 | Phase 6 | Pending |
+| PRTL-03 | Phase 6 | Pending |
+| PRTL-04 | Phase 6 | Pending |
+| PRTL-05 | Phase 6 | Pending |
+| COMP-01 | Phase 6 | Pending |
+| COMP-02 | Phase 6 | Pending |
+| COMP-03 | Phase 6 | Pending |
+| COMP-04 | Phase 6 | Pending |
+| COMP-05 | Phase 6 | Pending |
+| COMP-06 | Phase 6 | Pending |
+| COMP-07 | Phase 6 | Pending |
+| COMP-08 | Phase 6 | Pending |
+| COMP-09 | Phase 6 | Pending |
+| COMP-10 | Phase 6 | Pending |
+| COMP-11 | Phase 6 | Pending |
+| COMP-12 | Phase 6 | Pending |
+| COMP-13 | Phase 6 | Pending |
+| COMP-14 | Phase 6 | Pending |
+| COMP-15 | Phase 6 | Pending |
+| COMP-16 | Phase 6 | Pending |
+| COMP-17 | Phase 6 | Pending |
+| XCUT-01 | Phase 6 | Pending |
+| SCAN-01 | Phase 7 | Pending |
+| SCAN-02 | Phase 7 | Pending |
+| SCAN-03 | Phase 7 | Pending |
+| SCAN-04 | Phase 7 | Pending |
+| SCAN-05 | Phase 7 | Pending |
+| SCAN-06 | Phase 7 | Pending |
+| SCAN-07 | Phase 7 | Pending |
+| SCAN-08 | Phase 7 | Pending |
+| ADMN-01 | Phase 8 | Pending |
+| ADMN-02 | Phase 8 | Pending |
+| ADMN-03 | Phase 8 | Pending |
+| ADMN-04 | Phase 8 | Pending |
+| ADMN-05 | Phase 8 | Pending |
+| ADMN-06 | Phase 8 | Pending |
+| ADMN-07 | Phase 8 | Pending |
+| ADMN-08 | Phase 8 | Pending |
+| ADMN-09 | Phase 8 | Pending |
+| ADMN-10 | Phase 8 | Pending |
+| SCAN-09 | Phase 8 | Pending |
+| SCAN-10 | Phase 8 | Pending |
+| SCAN-11 | Phase 8 | Pending |
+| PRTP-01 | Phase 9 | Pending |
+| PRTP-02 | Phase 9 | Pending |
+| PRTP-03 | Phase 9 | Pending |
+| PRTP-04 | Phase 9 | Pending |
+| PRTP-05 | Phase 9 | Pending |
+| PRTP-06 | Phase 9 | Pending |
+| PRTP-07 | Phase 9 | Pending |
+| PRTP-08 | Phase 9 | Pending |
+| PRTP-09 | Phase 9 | Pending |
 
 **Coverage:**
-- v2.0 requirements: 51 total
-- Mapped to phases: 0
-- Unmapped: 51 ⚠️
+- v2.0 requirements: 56 total
+- Mapped to phases: 56
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-19*
-*Last updated: 2026-03-19 after initial definition*
+*Last updated: 2026-03-19 — traceability populated after roadmap creation*
