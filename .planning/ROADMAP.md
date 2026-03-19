@@ -23,7 +23,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 **Milestone Goal:** Execute the severity-tiered action plan — apply design system tokens, fix all 20 Blocking items, resolve 40 High-Value items, and bring the platform to visual/UX production quality across all 91 pages.
 
-- [ ] **Phase 5: Design Tokens** — Apply globals.css tokens and reduced-motion foundations
+- [x] **Phase 5: Design Tokens** — Apply globals.css tokens and reduced-motion foundations (completed 2026-03-19)
 - [ ] **Phase 6: Shared UI Components** — Portal variants, color corrections, ARIA, gray→slate migration
 - [ ] **Phase 7: Scanner Components** — Tap target and text size fixes across all scanner components
 - [ ] **Phase 8: Admin Pages** — Inline color corrections and scanner page fixes for admin routes
@@ -39,7 +39,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   1. The `globals.css` file contains a `@media (prefers-reduced-motion: reduce)` block that disables all custom keyframes (modal-scale-up/down, widget-enter, chart-enter)
   2. CSS custom properties `--shadow-card`, `--shadow-modal`, and `--shadow-elevated` are defined and available site-wide
   3. All custom keyframe animations defined in `globals.css` have corresponding reduced-motion fallbacks
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 05-01-PLAN.md — Add reduced-motion media query block and verify shadow tokens
 
@@ -101,7 +101,7 @@ Phases execute in dependency order: 5 → 6 → 7 (parallel with 8) → 8 → 9
 | 2. Component Library Audit | v1.0 | 2/2 | Complete | 2026-03-19 |
 | 3. Page Audits | v1.0 | 3/3 | Complete | 2026-03-19 |
 | 4. Action Plan Compilation | v1.0 | 2/2 | Complete | 2026-03-19 |
-| 5. Design Tokens | v2.0 | 0/1 | Planning | - |
+| 5. Design Tokens | 1/1 | Complete   | 2026-03-19 | - |
 | 6. Shared UI Components | v2.0 | 0/? | Not started | - |
 | 7. Scanner Components | v2.0 | 0/? | Not started | - |
 | 8. Admin Pages | v2.0 | 0/? | Not started | - |

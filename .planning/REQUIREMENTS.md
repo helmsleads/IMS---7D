@@ -9,8 +9,8 @@ Requirements for UI/UX implementation milestone. Each maps to roadmap phases.
 
 ### Design Tokens
 
-- [ ] **TOKN-01**: globals.css contains `@media (prefers-reduced-motion: reduce)` block covering all custom keyframes (modal-scale-up/down, widget-enter, chart-enter)
-- [ ] **TOKN-02**: CSS custom properties for shadow tokens (--shadow-card, --shadow-modal, --shadow-elevated) are defined and available
+- [x] **TOKN-01**: globals.css contains `@media (prefers-reduced-motion: reduce)` block covering all custom keyframes (modal-scale-up/down, widget-enter, chart-enter)
+- [x] **TOKN-02**: CSS custom properties for shadow tokens (--shadow-card, --shadow-modal, --shadow-elevated) are defined and available
 
 ### Portal Variants
 
@@ -82,7 +82,7 @@ Requirements for UI/UX implementation milestone. Each maps to roadmap phases.
 ### Cross-Cutting
 
 - [ ] **XCUT-01**: StatCard useAnimatedNumber hook respects prefers-reduced-motion
-- [ ] **XCUT-02**: All custom keyframe animations in globals.css have reduced-motion fallbacks
+- [x] **XCUT-02**: All custom keyframe animations in globals.css have reduced-motion fallbacks
 
 ## Future Requirements
 
@@ -117,9 +117,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TOKN-01 | Phase 5 | Pending |
-| TOKN-02 | Phase 5 | Pending |
-| XCUT-02 | Phase 5 | Pending |
+| TOKN-01 | Phase 5 | Complete |
+| TOKN-02 | Phase 5 | Complete |
+| XCUT-02 | Phase 5 | Complete |
 | PRTL-01 | Phase 6 | Pending |
 | PRTL-02 | Phase 6 | Pending |
 | PRTL-03 | Phase 6 | Pending |
