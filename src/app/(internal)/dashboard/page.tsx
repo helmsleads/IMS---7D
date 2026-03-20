@@ -390,8 +390,7 @@ export default function DashboardPage() {
     >
       {/* Hero Banner */}
       <div className="relative mb-8 animate-widget-enter rounded-2xl bg-gradient-to-br from-indigo-50 via-white to-slate-50 border border-indigo-100/50 p-6 md:p-8 overflow-hidden">
-        <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-indigo-500/5" />
-        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-indigo-500/5" />
+        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle, #4F46E5 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
         <div className="relative">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
             <div>
@@ -426,14 +425,14 @@ export default function DashboardPage() {
           <div className="flex flex-wrap gap-3">
             <Link
               href="/inbound/new"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white font-medium rounded-lg hover:from-indigo-600 hover:to-indigo-700 transition-all shadow-sm text-sm"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white font-medium rounded-md hover:from-indigo-600 hover:to-indigo-700 transition-all shadow-sm text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
             >
               <ArrowDownToLine className="w-4 h-4" />
               New Inbound
             </Link>
             <Link
               href="/outbound/new"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-lg border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors text-sm"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-md border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
             >
               <Truck className="w-4 h-4" />
               New Outbound
@@ -454,7 +453,7 @@ export default function DashboardPage() {
         <div className="animate-widget-enter" style={{ animationDelay: "50ms" }}>
           <StatCard
             icon={<Package className="w-6 h-6" />}
-            iconColor="bg-blue-50 text-blue-600"
+            iconColor="bg-indigo-50 text-indigo-600"
             label="Total Products"
             value={loading ? "\u2014" : stats?.totalProducts || 0}
             loading={loading}

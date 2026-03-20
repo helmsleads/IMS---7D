@@ -53,9 +53,9 @@ function getInventoryStatusDisplay(status: InventoryStatus): {
   const statusMap: Record<InventoryStatus, { label: string; variant: "success" | "warning" | "error" | "info" | "default"; bgClass: string; textClass: string }> = {
     available: { label: "Available", variant: "success", bgClass: "bg-green-100", textClass: "text-green-700" },
     damaged: { label: "Damaged", variant: "error", bgClass: "bg-red-100", textClass: "text-red-700" },
-    quarantine: { label: "Quarantine", variant: "warning", bgClass: "bg-yellow-100", textClass: "text-yellow-700" },
-    reserved: { label: "Reserved", variant: "info", bgClass: "bg-blue-100", textClass: "text-blue-700" },
-    returned: { label: "Returned", variant: "default", bgClass: "bg-purple-100", textClass: "text-purple-700" },
+    quarantine: { label: "Quarantine", variant: "warning", bgClass: "bg-amber-50", textClass: "text-amber-700" },
+    reserved: { label: "Reserved", variant: "info", bgClass: "bg-indigo-50", textClass: "text-indigo-700" },
+    returned: { label: "Returned", variant: "default", bgClass: "bg-slate-100", textClass: "text-slate-700" },
   };
   return statusMap[status] || statusMap.available;
 }
@@ -608,7 +608,7 @@ export default function InventoryPage() {
             {item.sublocation ? (
               <div>
                 <div className="flex items-center gap-1.5">
-                  <Grid3X3 className="w-3.5 h-3.5 text-purple-500" />
+                  <Grid3X3 className="w-3.5 h-3.5 text-slate-500" />
                   <span className="font-mono text-sm font-medium text-gray-900">
                     {item.sublocation.code}
                   </span>
@@ -674,7 +674,7 @@ export default function InventoryPage() {
         header: "Reserved",
         hideOnMobile: true,
         render: (item: InventoryWithDetails) => (
-          <span className="text-yellow-600">{item.qty_reserved}</span>
+          <span className="text-amber-600">{item.qty_reserved}</span>
         ),
       },
       {
@@ -844,8 +844,8 @@ export default function InventoryPage() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <Card>
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Package className="w-5 h-5 text-blue-600" />
+            <div className="p-2 bg-indigo-100 rounded-lg">
+              <Package className="w-5 h-5 text-indigo-600" />
             </div>
             <div>
               <p className="text-sm text-gray-500">Total SKUs</p>
@@ -857,8 +857,8 @@ export default function InventoryPage() {
         </Card>
         <Card>
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <Boxes className="w-5 h-5 text-purple-600" />
+            <div className="p-2 bg-slate-100 rounded-lg">
+              <Boxes className="w-5 h-5 text-slate-600" />
             </div>
             <div>
               <p className="text-sm text-gray-500">Total Units</p>
@@ -883,12 +883,12 @@ export default function InventoryPage() {
         </Card>
         <Card>
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <AlertTriangle className="w-5 h-5 text-yellow-600" />
+            <div className="p-2 bg-amber-100 rounded-lg">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
             </div>
             <div>
               <p className="text-sm text-gray-500">Low Stock</p>
-              <p className="text-xl font-semibold text-yellow-600">
+              <p className="text-xl font-semibold text-amber-600">
                 {formatNumber(summaryStats.lowStockCount)}
               </p>
             </div>
@@ -930,22 +930,22 @@ export default function InventoryPage() {
               onClick={() => setActiveTab(tab.key)}
               className={`flex items-center gap-2 py-3 px-1 border-b-2 text-sm font-medium transition-colors ${
                 activeTab === tab.key
-                  ? "border-blue-500 text-blue-600"
+                  ? "border-indigo-500 text-indigo-600"
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
-              <span className={activeTab === tab.key ? "text-blue-500" : "text-gray-400"}>
+              <span className={activeTab === tab.key ? "text-indigo-500" : "text-gray-400"}>
                 {tab.icon}
               </span>
               {tab.label}
               {tab.count !== undefined && tab.count > 0 && (
                 <span className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
                   activeTab === tab.key
-                    ? "bg-blue-100 text-blue-600"
+                    ? "bg-indigo-100 text-indigo-600"
                     : tab.key === "damaged"
                     ? "bg-red-100 text-red-600"
                     : tab.key === "quarantine"
-                    ? "bg-yellow-100 text-yellow-700"
+                    ? "bg-amber-100 text-amber-700"
                     : "bg-gray-100 text-gray-600"
                 }`}>
                   {tab.count}
@@ -971,8 +971,8 @@ export default function InventoryPage() {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <MapPin className="w-5 h-5 text-blue-600" />
+                      <div className="p-2 bg-indigo-100 rounded-lg">
+                        <MapPin className="w-5 h-5 text-indigo-600" />
                       </div>
                       <div>
                         <h3 className="font-semibold text-gray-900">{location.name}</h3>
@@ -1086,7 +1086,7 @@ export default function InventoryPage() {
             {!showSublocationColumn && (
               <button
                 onClick={() => setShowSublocationColumn(true)}
-                className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
+                className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-800"
               >
                 <ChevronRight className="w-4 h-4" />
                 Show Sublocation Column
@@ -1152,21 +1152,21 @@ export default function InventoryPage() {
               </div>
 
               {/* Current Location/Sublocation Display */}
-              <div className="grid grid-cols-2 gap-4 p-3 bg-blue-50 rounded-lg">
+              <div className="grid grid-cols-2 gap-4 p-3 bg-indigo-50 rounded-lg">
                 <div>
-                  <label className="block text-xs font-medium text-blue-700 mb-1">
+                  <label className="block text-xs font-medium text-indigo-700 mb-1">
                     Current Location
                   </label>
                   <p className="text-sm text-gray-900 font-medium">{moveItem.location.name}</p>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-blue-700 mb-1">
+                  <label className="block text-xs font-medium text-indigo-700 mb-1">
                     Current Sublocation
                   </label>
                   <p className="text-sm text-gray-900">
                     {moveItem.sublocation ? (
                       <span className="flex items-center gap-1.5">
-                        <Grid3X3 className="w-3.5 h-3.5 text-purple-500" />
+                        <Grid3X3 className="w-3.5 h-3.5 text-slate-500" />
                         {moveItem.sublocation.code}
                         {moveItem.sublocation.zone && ` (Zone ${moveItem.sublocation.zone})`}
                       </span>
@@ -1432,8 +1432,8 @@ export default function InventoryPage() {
               </div>
 
               {/* Current Location */}
-              <div className="p-3 bg-blue-50 rounded-lg">
-                <label className="block text-xs font-medium text-blue-700 mb-1">
+              <div className="p-3 bg-indigo-50 rounded-lg">
+                <label className="block text-xs font-medium text-indigo-700 mb-1">
                   Current Location
                 </label>
                 <p className="text-sm text-gray-900 font-medium">{moveToDamagedItem.location.name}</p>
