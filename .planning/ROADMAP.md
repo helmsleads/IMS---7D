@@ -71,7 +71,7 @@ Plans:
   2. All instructional and status text in scanner components is at least text-base — nothing requires squinting to read on a handheld device
   3. The BarcodeScanner close button and instruction text meet the same 44px and text-base standards
   4. Pagination buttons are at least 44×44px, making them safe for use on Pick/Putaway/Inspection scanner routes
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 Plans:
 - [ ] 07-01-PLAN.md — Fix PickingScanner, PickScanner, BarcodeScanner tap targets and text sizes
 - [ ] 07-02-PLAN.md — Fix PackScanner, ShipScanner, ReceivingScanner tap targets and text sizes
@@ -114,6 +114,6 @@ Phases execute in dependency order: 5 → 6 → 7 (parallel with 8) → 8 → 9
 | 4. Action Plan Compilation | v1.0 | 2/2 | Complete | 2026-03-19 |
 | 5. Design Tokens | v2.0 | 1/1 | Complete | 2026-03-19 |
 | 6. Shared UI Components | v2.0 | 6/6 | Complete | 2026-03-20 |
-| 7. Scanner Components | 1/3 | In Progress|  | - |
+| 7. Scanner Components | 2/3 | In Progress|  | - |
 | 8. Admin Pages | v2.0 | 0/? | Not started | - |
 | 9. Portal Pages | v2.0 | 0/? | Not started | - |
