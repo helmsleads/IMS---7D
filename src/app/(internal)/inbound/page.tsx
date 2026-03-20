@@ -28,10 +28,10 @@ type StatusFilter = "all" | "ordered" | "in_transit" | "arrived" | "received";
 type DateFilter = "all" | "today" | "this_week" | "overdue";
 
 const STATUS_TABS: { key: StatusFilter; label: string; color: string }[] = [
-  { key: "all", label: "All", color: "bg-gray-100 text-gray-700" },
-  { key: "ordered", label: "Ordered", color: "bg-yellow-100 text-yellow-700" },
-  { key: "in_transit", label: "In Transit", color: "bg-blue-100 text-blue-700" },
-  { key: "arrived", label: "Arrived", color: "bg-purple-100 text-purple-700" },
+  { key: "all", label: "All", color: "bg-slate-100 text-slate-700" },
+  { key: "ordered", label: "Ordered", color: "bg-amber-100 text-amber-700" },
+  { key: "in_transit", label: "In Transit", color: "bg-indigo-100 text-indigo-700" },
+  { key: "arrived", label: "Arrived", color: "bg-slate-100 text-slate-700" },
   { key: "received", label: "Received", color: "bg-green-100 text-green-700" },
 ];
 
@@ -380,9 +380,9 @@ export default function InboundPage() {
                   inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors
                   ${isActive
                     ? tab.key === "all"
-                      ? "bg-gray-900 text-white"
+                      ? "bg-slate-900 text-white"
                       : tab.color.replace("100", "600").replace(/text-\w+-700/, "text-white")
-                    : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+                    : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
                   }
                 `}
               >
@@ -405,7 +405,7 @@ export default function InboundPage() {
 
         {/* Date Filters */}
         <div className="flex gap-2 flex-wrap items-center">
-          <span className="text-sm text-gray-500 mr-2">Expected:</span>
+          <span className="text-sm text-slate-500 mr-2">Expected:</span>
           {DATE_FILTERS.map((filter) => {
             const isActive = selectedDateFilter === filter.key;
             const count = dateCounts[filter.key];
@@ -419,10 +419,10 @@ export default function InboundPage() {
                   ${isActive
                     ? isOverdueFilter
                       ? "bg-red-600 text-white"
-                      : "bg-blue-600 text-white"
+                      : "bg-indigo-600 text-white"
                     : isOverdueFilter && count > 0
                       ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
-                      : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
+                      : "bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"
                   }
                 `}
               >
@@ -436,7 +436,7 @@ export default function InboundPage() {
                         ? "bg-white/20"
                         : isOverdueFilter && count > 0
                           ? "bg-red-200 text-red-800"
-                          : "bg-gray-200 text-gray-700"
+                          : "bg-slate-200 text-slate-700"
                       }
                     `}
                   >
