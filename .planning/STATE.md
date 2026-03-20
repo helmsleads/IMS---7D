@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: UI/UX Implementation
 status: planning
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-03-20T13:15:59.820Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-03-20T13:16:10.636Z"
 last_activity: 2026-03-19 — Roadmap created, phases 5-9 defined (56 requirements mapped)
 progress:
   total_phases: 5
@@ -64,6 +64,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 06-01]: focus:ring replaced with focus-visible:ring on all interactive elements for accessibility spec compliance
 - [Phase 06-02]: amber for warning, indigo for info — applied consistently across Alert, Badge, Toast components
 - [Phase 06-02]: Pagination tap targets upgraded to min-44px for scanner route touch compliance
+- [Phase 06-shared-ui-components]: useId() for stable ARIA ID generation in Modal and SearchSelect — no static IDs needed
+- [Phase 06-shared-ui-components]: Custom focus trap without external library — inline FOCUSABLE_SELECTORS query approach
+- [Phase 06-shared-ui-components]: SearchSelect options as div role=option (not button) for correct WAI-ARIA listbox semantics
 
 ### Pending Todos
 
@@ -75,6 +78,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20T13:15:32.195Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-03-20T13:16:10.634Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None

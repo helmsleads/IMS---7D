@@ -44,10 +44,10 @@ Requirements for UI/UX implementation milestone. Each maps to roadmap phases.
 - [x] **COMP-06**: Toggle admin checked state uses indigo-600, unchecked slate-200, focus-visible:ring-indigo-500
 - [x] **COMP-07**: Textarea admin uses focus-visible:ring-indigo-500, rounded-md, slate palette
 - [x] **COMP-08**: Pagination active page uses indigo-600, all buttons have focus-visible:ring, slate palette
-- [ ] **COMP-09**: Breadcrumbs has aria-label on nav, home icon link, and focus-visible:ring on all links
-- [ ] **COMP-10**: Card has role="button", tabIndex, onKeyDown when onClick present, focus-visible:ring on clickable
-- [ ] **COMP-11**: Modal has role="dialog", aria-modal="true", aria-labelledby, close button aria-label and focus-visible:ring
-- [ ] **COMP-12**: SearchSelect has ARIA combobox pattern (role="combobox", role="listbox", role="option")
+- [x] **COMP-09**: Breadcrumbs has aria-label on nav, home icon link, and focus-visible:ring on all links
+- [x] **COMP-10**: Card has role="button", tabIndex, onKeyDown when onClick present, focus-visible:ring on clickable
+- [x] **COMP-11**: Modal has role="dialog", aria-modal="true", aria-labelledby, close button aria-label and focus-visible:ring
+- [x] **COMP-12**: SearchSelect has ARIA combobox pattern (role="combobox", role="listbox", role="option")
 - [ ] **COMP-13**: All 12 chart components have aria-label prop and role="img" wrapper
 - [ ] **COMP-14**: All Recharts chart components respect prefers-reduced-motion via isAnimationActive
 - [ ] **COMP-15**: Gray→slate migration complete across all shared UI components (~19 components)
@@ -133,10 +133,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COMP-06 | Phase 6 | Complete |
 | COMP-07 | Phase 6 | Complete |
 | COMP-08 | Phase 6 | Complete |
-| COMP-09 | Phase 6 | Pending |
-| COMP-10 | Phase 6 | Pending |
-| COMP-11 | Phase 6 | Pending |
-| COMP-12 | Phase 6 | Pending |
+| COMP-09 | Phase 6 | Complete |
+| COMP-10 | Phase 6 | Complete |
+| COMP-11 | Phase 6 | Complete |
+| COMP-12 | Phase 6 | Complete |
 | COMP-13 | Phase 6 | Pending |
 | COMP-14 | Phase 6 | Pending |
 | COMP-15 | Phase 6 | Pending |
