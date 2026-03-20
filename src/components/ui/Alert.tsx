@@ -7,15 +7,15 @@ interface AlertProps {
 const typeStyles = {
   success: "bg-green-50 border-green-400 text-green-800",
   error: "bg-red-50 border-red-400 text-red-800",
-  warning: "bg-yellow-50 border-yellow-400 text-yellow-800",
-  info: "bg-blue-50 border-blue-400 text-blue-800",
+  warning: "bg-amber-50 border-amber-400 text-amber-800",
+  info: "bg-indigo-50 border-indigo-400 text-indigo-800",
 };
 
 const iconColors = {
   success: "text-green-500",
   error: "text-red-500",
-  warning: "text-yellow-500",
-  info: "text-blue-500",
+  warning: "text-amber-500",
+  info: "text-indigo-500",
 };
 
 function Icon({ type }: { type: AlertProps["type"] }) {
@@ -62,7 +62,8 @@ export default function Alert({ type, message, onClose }: AlertProps) {
       {onClose && (
         <button
           onClick={onClose}
-          className="ml-3 p-1 hover:opacity-70 transition-opacity"
+          aria-label="Dismiss"
+          className="ml-3 p-1 hover:opacity-70 transition-opacity rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-current"
         >
           <svg
             className="w-4 h-4"

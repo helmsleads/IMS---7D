@@ -8,11 +8,11 @@ interface BadgeProps {
 }
 
 const variantStyles = {
-  default: "bg-gray-100 text-gray-800",
-  success: "bg-green-100 text-green-800",
-  warning: "bg-yellow-100 text-yellow-800",
-  error: "bg-red-100 text-red-800",
-  info: "bg-blue-100 text-blue-800",
+  default: "bg-slate-100 text-slate-800 border border-slate-200",
+  success: "bg-green-50 text-green-800 border border-green-200",
+  warning: "bg-amber-50 text-amber-800 border border-amber-200",
+  error: "bg-red-50 text-red-800 border border-red-200",
+  info: "bg-indigo-50 text-indigo-800 border border-indigo-200",
 };
 
 const sizeStyles = {

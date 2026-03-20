@@ -1,5 +1,6 @@
 interface SpinnerProps {
   size?: "sm" | "md" | "lg";
+  label?: string;
 }
 
 const sizeStyles = {
@@ -8,11 +9,13 @@ const sizeStyles = {
   lg: "h-12 w-12",
 };
 
-export default function Spinner({ size = "md" }: SpinnerProps) {
+export default function Spinner({ size = "md", label = "Loading" }: SpinnerProps) {
   return (
     <div
+      role="status"
+      aria-label={label}
       className={`
-        animate-spin rounded-full border-2 border-gray-200 border-t-blue-600
+        motion-safe:animate-spin rounded-full border-2 border-slate-200 border-t-indigo-600
         ${sizeStyles[size]}
       `}
     />
