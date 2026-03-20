@@ -143,7 +143,8 @@ export default function ShippingModal({
 }: ShippingModalProps) {
   // Mode: "fedex" (API), "manual", or "pickup"
   const isPickupOrder = preferredCarrier?.toLowerCase() === "pickup" || preferredCarrier?.toLowerCase() === "customer pickup";
-  const defaultMode = isAlcoholOrder && fedexConfigured ? "fedex" : isPickupOrder ? "pickup" : "manual";
+  const canUseFedex = !!fedexConfigured;
+  const defaultMode = canUseFedex ? "fedex" : isPickupOrder ? "pickup" : "manual";
   const [mode, setMode] = useState<"fedex" | "manual" | "pickup">(defaultMode);
 
   // Manual mode state
@@ -162,6 +163,14 @@ export default function ShippingModal({
   const [packageWidth, setPackageWidth] = useState<number | "">("");
   const [packageHeight, setPackageHeight] = useState<number | "">("");
   const [fedexFlowState, setFedexFlowState] = useState<FedExFlowState>("idle");
+  const [fedexRatesLoading, setFedexRatesLoading] = useState(false);
+  const [fedexRatesError, setFedexRatesError] = useState("");
+  const [fedexRates, setFedexRates] = useState<
+    { serviceType: string; serviceName: string; accountRate?: number; listRate?: number; deliveryDate?: string }[]
+  >([]);
+  const [fedexTrackLoading, setFedexTrackLoading] = useState(false);
+  const [fedexTrackError, setFedexTrackError] = useState("");
+  const [fedexLatestStatus, setFedexLatestStatus] = useState<string>("");
   const [fedexResult, setFedexResult] = useState<{
     trackingNumber: string;
     labelUrl: string | null;
@@ -171,6 +180,10 @@ export default function ShippingModal({
   } | null>(null);
   const [fedexError, setFedexError] = useState("");
   const [manualShippingCost, setManualShippingCost] = useState<number | "">("");
+
+  // Demo flag: disable tracking refresh until FedEx tracking credentials are fixed.
+  // Rates + label/ship creation can still work.
+  const ENABLE_FEDEX_TRACKING_REFRESH = false;
 
   // Tracking URL and validation (manual mode)
   const finalCarrier = carrier === "Other" ? customCarrier : carrier;
@@ -254,6 +267,16 @@ export default function ShippingModal({
     setFedexError("");
 
     try {
+      console.log("📦 FedEx create shipment request", {
+        orderId,
+        serviceType: fedexService,
+        packageWeight,
+        packageLength: packageLength || undefined,
+        packageWidth: packageWidth || undefined,
+        packageHeight: packageHeight || undefined,
+        isAlcohol: isAlcoholOrder ?? false,
+        shipDate,
+      });
       const res = await fetch("/api/shipping/fedex", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -272,16 +295,29 @@ export default function ShippingModal({
       const data = await res.json();
 
       if (!res.ok) {
+        console.error("❌ FedEx create shipment failed", { status: res.status, data });
         setFedexFlowState("error");
-        setFedexError(data.error || "Failed to create FedEx shipment");
+        if (data?.missingFields?.length) {
+          const pretty = (data.missingFields as string[])
+            .map((f) => f.replace(/^ship_to_/, "").replace(/_/g, " "))
+            .join(", ");
+          setFedexError(
+            `Missing Ship-To fields on this order: ${pretty}. Click "Edit Order" on the order page, fill the Shipping Address, then Save.`
+          );
+        } else {
+          setFedexError(data.error || "Failed to create FedEx shipment");
+        }
+        setFedexRates([]);
         return;
       }
 
+      console.log("✅ FedEx create shipment success", data);
       setFedexResult({
         ...data,
         actualCost: data.actualCost ?? null,
         listCost: data.listCost ?? null,
       });
+      setFedexRates([]);
       setFedexFlowState("success");
     } catch (err) {
       setFedexFlowState("error");
@@ -295,6 +331,15 @@ export default function ShippingModal({
 
     setSubmitting(true);
     try {
+      console.log("✅ FedEx complete shipment → ship order", {
+        orderId,
+        trackingNumber: fedexResult.trackingNumber,
+        shipmentId: fedexResult.shipmentId,
+        labelUrl: fedexResult.labelUrl || null,
+        actualCost: fedexResult.actualCost ?? null,
+        listCost: fedexResult.listCost ?? null,
+        shipDate,
+      });
       await onSubmit({
         carrier: "FedEx",
         trackingNumber: fedexResult.trackingNumber,
@@ -315,8 +360,42 @@ export default function ShippingModal({
 
   const handleDownloadLabel = () => {
     if (!fedexResult?.labelUrl) return;
+    console.log("🏷️ FedEx label download requested", { labelUrl: fedexResult.labelUrl });
     // Generate a signed URL for the label
     window.open(`/api/shipping/fedex/label?path=${encodeURIComponent(fedexResult.labelUrl)}`, "_blank");
+  };
+
+  const handleFedExTrack = async () => {
+    if (!ENABLE_FEDEX_TRACKING_REFRESH) return; // demo safety: avoid calling FedEx tracking
+    if (!fedexResult?.trackingNumber) return;
+    console.log("📍 FedEx tracking request", { trackingNumber: fedexResult.trackingNumber });
+    setFedexTrackLoading(true);
+    setFedexTrackError("");
+    try {
+      const url =
+        `/api/shipping/fedex/track?trackingNumber=${encodeURIComponent(fedexResult.trackingNumber)}` +
+        (orderId ? `&orderId=${encodeURIComponent(orderId)}` : '') +
+        (shipDate ? `&shipDate=${encodeURIComponent(shipDate)}` : '');
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) {
+        console.error("❌ FedEx tracking failed", { status: res.status, data });
+        const hint = typeof data?.hint === "string" && data.hint.trim()
+          ? ` (${data.hint})`
+          : "";
+        setFedexTrackError(`${data.error || "Failed to fetch tracking"}${hint}`);
+        setFedexLatestStatus("");
+      } else {
+        console.log("✅ FedEx tracking success", data);
+        setFedexLatestStatus(data.statusDescription || data.statusCode || "");
+      }
+    } catch (err) {
+      console.error("❌ FedEx tracking network error", err);
+      setFedexTrackError(err instanceof Error ? err.message : "Network error while tracking");
+      setFedexLatestStatus("");
+    } finally {
+      setFedexTrackLoading(false);
+    }
   };
 
   const resetForm = () => {
@@ -329,6 +408,12 @@ export default function ShippingModal({
     setFedexFlowState("idle");
     setFedexResult(null);
     setFedexError("");
+    setFedexRates([]);
+    setFedexRatesError("");
+    setFedexRatesLoading(false);
+    setFedexTrackLoading(false);
+    setFedexTrackError("");
+    setFedexLatestStatus("");
     setPackageWeight(1);
     setPackageLength("");
     setPackageWidth("");
@@ -360,9 +445,9 @@ export default function ShippingModal({
         )}
 
         {/* Mode switcher — shown when multiple modes are available */}
-        {(isPickupOrder || (isAlcoholOrder && fedexConfigured)) && (
+        {(isPickupOrder || canUseFedex) && (
           <div className="flex rounded-lg bg-slate-100 p-1 gap-1">
-            {isAlcoholOrder && fedexConfigured && (
+            {canUseFedex && (
               <button
                 type="button"
                 onClick={() => setMode("fedex")}
@@ -477,6 +562,59 @@ export default function ShippingModal({
                   />
                 </div>
 
+                {/* FedEx Rates */}
+                {fedexRatesError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-red-700">{fedexRatesError}</p>
+                  </div>
+                )}
+                {fedexRates.length > 0 && (
+                  <div className="border border-slate-200 rounded-lg">
+                    <div className="px-3 py-2 border-b border-slate-200 flex items-center justify-between">
+                      <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">FedEx Rates</p>
+                      <p className="text-[11px] text-slate-400">Select a service</p>
+                    </div>
+                    <div className="divide-y divide-slate-200">
+                      {fedexRates.map((rate, idx) => {
+                        const isSelected = fedexService === rate.serviceType;
+                        return (
+                          <button
+                            key={`${rate.serviceType}-${idx}`}
+                            type="button"
+                            onClick={() => setFedexService(rate.serviceType)}
+                            className={`w-full text-left px-3 py-2.5 text-sm flex items-center justify-between gap-3 ${
+                              isSelected ? "bg-blue-50" : "hover:bg-slate-50"
+                            }`}
+                          >
+                            <div>
+                              <div className="font-medium text-slate-900">
+                                {rate.serviceName || rate.serviceType}
+                                {isSelected && (
+                                  <span className="ml-2 inline-flex items-center rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                                    Selected
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-500 mt-0.5 space-x-2">
+                                {rate.accountRate != null && (
+                                  <span>Our cost: ${rate.accountRate.toFixed(2)}</span>
+                                )}
+                                {rate.listRate != null && (
+                                  <span>Client rate: ${rate.listRate.toFixed(2)}</span>
+                                )}
+                                {rate.deliveryDate && (
+                                  <span>ETA: {rate.deliveryDate}</span>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-3 gap-3">
                   <Input
                     label="Length (in)"
@@ -531,6 +669,65 @@ export default function ShippingModal({
                     className="flex-1"
                   >
                     Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={async () => {
+                      if (!orderId || packageWeight <= 0) return;
+                      console.log("💲 FedEx rates request", {
+                        orderId,
+                        packageWeight,
+                        shipDate,
+                      });
+                      setFedexRatesLoading(true);
+                      setFedexRatesError("");
+                      try {
+                        const res = await fetch("/api/shipping/fedex/rates", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            orderId,
+                            packageWeight,
+                            shipDate,
+                          }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok) {
+                          console.error("❌ FedEx rates failed", { status: res.status, data });
+                          setFedexRates([]);
+                          const message = data?.error || "Failed to fetch FedEx rates";
+                          const hint = typeof data?.hint === "string" && data.hint.trim() ? ` (${data.hint})` : "";
+                          setFedexRatesError(`${message}${hint}`);
+                        } else {
+                          console.log("✅ FedEx rates success", data);
+                          setFedexRates(data.options || []);
+                          if (data.options && data.options.length > 0) {
+                            setFedexService(data.options[0].serviceType);
+                          }
+                        }
+                      } catch (err) {
+                        console.error("❌ FedEx rates network error", err);
+                        setFedexRates([]);
+                        setFedexRatesError(err instanceof Error ? err.message : "Network error while fetching rates");
+                      } finally {
+                        setFedexRatesLoading(false);
+                      }
+                    }}
+                    disabled={packageWeight <= 0 || fedexRatesLoading}
+                    className="flex-1"
+                  >
+                    {fedexRatesLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Getting Rates...
+                      </>
+                    ) : (
+                      <>
+                        <Info className="w-4 h-4 mr-2" />
+                        Get FedEx Rates
+                      </>
+                    )}
                   </Button>
                   <Button
                     type="button"
@@ -611,6 +808,32 @@ export default function ShippingModal({
                     Download Shipping Label (PDF)
                   </button>
                 )}
+
+                <div className="space-y-2">
+                  {ENABLE_FEDEX_TRACKING_REFRESH && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={handleFedExTrack}
+                      loading={fedexTrackLoading}
+                      disabled={fedexTrackLoading}
+                      className="w-full"
+                    >
+                      <RotateCcw className="w-4 h-4 mr-2" />
+                      Refresh Tracking Status
+                    </Button>
+                  )}
+                  {fedexLatestStatus && (
+                    <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      Latest status: <span className="font-medium text-slate-800">{fedexLatestStatus}</span>
+                    </div>
+                  )}
+                  {fedexTrackError && (
+                    <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                      {fedexTrackError}
+                    </div>
+                  )}
+                </div>
 
                 <div className="flex gap-3 pt-4 border-t border-gray-200">
                   <Button

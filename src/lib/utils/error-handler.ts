@@ -16,7 +16,17 @@ interface ApiErrorResponse {
  */
 export function handleApiError(error: unknown): string {
   // Log full error for debugging
-  console.error("API Error:", error);
+  try {
+    console.error("API Error:", error);
+    if (typeof error === "object" && error !== null) {
+      // Many libraries (including Supabase/PostgREST) use non-enumerable properties.
+      // This helps surface them in console logs.
+      console.error("API Error (keys):", Object.keys(error as Record<string, unknown>));
+      console.error("API Error (stringified):", JSON.stringify(error));
+    }
+  } catch {
+    // ignore logging failures
+  }
 
   // Handle null/undefined
   if (!error) {
@@ -71,7 +81,9 @@ export function handleApiError(error: unknown): string {
   }
 
   // Handle API response objects
-  if (typeof error === "object") {
+  if (typeof error === "object" && error !== null) {
+    // Supabase/PostgREST error objects often look like {} when logged,
+    // but may still have message fields accessible.
     const apiError = error as ApiErrorResponse;
 
     if (apiError.message) {
@@ -84,6 +96,19 @@ export function handleApiError(error: unknown): string {
 
     if (apiError.details) {
       return apiError.details;
+    }
+
+    // Best-effort fallbacks for odd shapes / non-enumerable properties
+    const anyErr = error as any;
+    if (typeof anyErr.error_description === "string") return anyErr.error_description;
+    if (typeof anyErr.hint === "string" && typeof anyErr.code === "string") {
+      return `${anyErr.hint} (${anyErr.code})`;
+    }
+    if (typeof anyErr.code === "string" && typeof anyErr.message === "string") {
+      return `${anyErr.message} (${anyErr.code})`;
+    }
+    if (typeof anyErr.status === "number" && typeof anyErr.statusText === "string") {
+      return `${anyErr.status} ${anyErr.statusText}`;
     }
   }
 

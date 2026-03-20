@@ -1622,7 +1622,16 @@ export default function OutboundOrderDetailPage() {
 
               {order.status === "packed" && (
                 <Button
-                  onClick={() => setShowShipModal(true)}
+                  onClick={() => {
+                    console.log("🚚 Ship Order clicked", {
+                      orderId: order.id,
+                      orderNumber: order.order_number,
+                      status: order.status,
+                      carrier: order.carrier,
+                      trackingNumber: order.tracking_number,
+                    });
+                    setShowShipModal(true);
+                  }}
                   loading={updating}
                   disabled={updating}
                 >

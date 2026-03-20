@@ -880,6 +880,10 @@ export interface OutboundOrder {
   // Shipping cost tracking
   shipping_cost: number | null
   client_shipping_cost: number | null
+
+  // FedEx tracking sync (optional)
+  tracking_status?: string | null
+  tracking_status_updated_at?: string | null
 }
 
 // FedEx Credentials stored in system_settings

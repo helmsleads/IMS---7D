@@ -160,8 +160,7 @@ export async function getClientOrder(
       items:outbound_items (
         id,
         qty_requested,
-        qty_picked,
-        status,
+        qty_shipped,
         product:products (
           id,
           name,
@@ -199,12 +198,11 @@ export async function getClientOrder(
       })
     : allItems;
 
-  // Transform the data
+  // Transform the data (outbound_items has qty_shipped, not qty_picked; no status column)
   const items = visibleItems.map((item: {
     id: string;
     qty_requested: number;
-    qty_picked: number;
-    status: string;
+    qty_shipped: number;
     product: { id: string; name: string; sku: string; client_id?: string | null } | { id: string; name: string; sku: string; client_id?: string | null }[];
   }) => {
     const product = Array.isArray(item.product) ? item.product[0] : item.product;
@@ -214,8 +212,8 @@ export async function getClientOrder(
       productName: product?.name || "Unknown",
       sku: product?.sku || "",
       qtyRequested: item.qty_requested,
-      qtyPicked: item.qty_picked || 0,
-      status: item.status,
+      qtyPicked: item.qty_shipped || 0,
+      status: item.qty_shipped >= item.qty_requested ? "shipped" : item.qty_shipped > 0 ? "partial" : "pending",
     };
   });
 

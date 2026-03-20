@@ -16,7 +16,7 @@ interface OutboundOrder {
   order_number: string;
   status: string;
   requested_at: string | null;
-  shipped_at: string | null;
+  shipped_date: string | null;
   carrier: string | null;
   tracking_number: string | null;
   client: {
@@ -25,7 +25,7 @@ interface OutboundOrder {
   } | null;
   outbound_items: {
     id: string;
-    qty: number;
+    qty_requested: number;
   }[];
 }
 
@@ -87,7 +87,7 @@ export default function OrderHistoryReportPage() {
           order_number,
           status,
           requested_at,
-          shipped_at,
+          shipped_date,
           carrier,
           tracking_number,
           client:clients (
@@ -96,7 +96,7 @@ export default function OrderHistoryReportPage() {
           ),
           outbound_items (
             id,
-            qty
+            qty_requested
           )
         `)
         .order("requested_at", { ascending: false });
@@ -153,7 +153,7 @@ export default function OrderHistoryReportPage() {
     const headers = ["Order #", "Client", "Date", "Status", "Items", "Total Qty", "Carrier", "Tracking"];
     const rows = filteredOrders.map((order) => {
       const itemCount = order.outbound_items?.length || 0;
-      const totalQty = order.outbound_items?.reduce((sum, item) => sum + (item.qty || 0), 0) || 0;
+      const totalQty = order.outbound_items?.reduce((sum, item) => sum + (item.qty_requested || 0), 0) || 0;
       return [
         order.order_number || "",
         order.client?.company_name || "",
@@ -241,7 +241,7 @@ export default function OrderHistoryReportPage() {
       header: "Items",
       render: (order: OutboundOrder) => {
         const itemCount = order.outbound_items?.length || 0;
-        const totalQty = order.outbound_items?.reduce((sum, item) => sum + (item.qty || 0), 0) || 0;
+        const totalQty = order.outbound_items?.reduce((sum, item) => sum + (item.qty_requested || 0), 0) || 0;
         return (
           <span className="text-gray-600">
             {itemCount} item{itemCount !== 1 ? "s" : ""} ({totalQty} units)
