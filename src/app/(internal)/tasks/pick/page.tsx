@@ -176,7 +176,7 @@ export default function PickListQueuePage() {
         <div className="flex items-center gap-2">
           <span className="text-slate-700">{getOrderNumber(task)}</span>
           {isRushOrder(task) && (
-            <Badge variant="error" size="sm">
+            <Badge variant="error">
               <AlertTriangle className="w-3 h-3 mr-1" />
               RUSH
             </Badge>
@@ -249,7 +249,6 @@ export default function PickListQueuePage() {
       header: "Actions",
       render: (task) => (
         <Button
-          size="sm"
           onClick={() => handleClaimAndStart(task)}
           loading={actionLoading === task.id}
           className="whitespace-nowrap"

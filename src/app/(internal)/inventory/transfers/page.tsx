@@ -103,7 +103,7 @@ export default function TransfersPage() {
       key: "transfer_number",
       header: "Transfer #",
       render: (transfer: StockTransferWithDetails) => (
-        <span className="font-medium text-gray-900">{transfer.transfer_number}</span>
+        <span className="font-medium text-slate-900">{transfer.transfer_number}</span>
       ),
     },
     {
@@ -111,9 +111,9 @@ export default function TransfersPage() {
       header: "Route",
       render: (transfer: StockTransferWithDetails) => (
         <div className="flex items-center gap-2">
-          <span className="text-gray-900">{transfer.from_location.name}</span>
-          <ArrowRight className="w-4 h-4 text-gray-400" />
-          <span className="text-gray-900">{transfer.to_location.name}</span>
+          <span className="text-slate-900">{transfer.from_location.name}</span>
+          <ArrowRight className="w-4 h-4 text-slate-400" />
+          <span className="text-slate-900">{transfer.to_location.name}</span>
         </div>
       ),
     },
@@ -121,7 +121,7 @@ export default function TransfersPage() {
       key: "items",
       header: "Items",
       render: (transfer: StockTransferWithDetails) => (
-        <span className="text-gray-600">
+        <span className="text-slate-600">
           {transfer.items.length} product{transfer.items.length !== 1 ? "s" : ""}
         </span>
       ),
@@ -139,7 +139,7 @@ export default function TransfersPage() {
       key: "created_at",
       header: "Created",
       render: (transfer: StockTransferWithDetails) => (
-        <span className="text-gray-500 text-sm">{formatDate(transfer.created_at)}</span>
+        <span className="text-slate-500 text-base">{formatDate(transfer.created_at)}</span>
       ),
     },
     {
@@ -152,7 +152,6 @@ export default function TransfersPage() {
           <div className="flex gap-2 justify-end">
             <Button
               variant="primary"
-              size="sm"
               onClick={(e) => {
                 e.stopPropagation();
                 handleComplete(transfer);
@@ -165,7 +164,6 @@ export default function TransfersPage() {
             </Button>
             <Button
               variant="ghost"
-              size="sm"
               onClick={(e) => {
                 e.stopPropagation();
                 handleCancel(transfer);

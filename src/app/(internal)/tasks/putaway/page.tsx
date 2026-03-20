@@ -219,7 +219,6 @@ export default function PutawayQueuePage() {
           {(task.status === 'pending' || task.status === 'assigned') && (
             <Button
               variant="primary"
-              size="sm"
               onClick={() => handleClaimAndStart(task)}
             >
               <Play className="w-4 h-4 mr-1.5" />
@@ -229,7 +228,6 @@ export default function PutawayQueuePage() {
           {task.status === 'in_progress' && (
             <Button
               variant="secondary"
-              size="sm"
               onClick={() => {
                 setSelectedTask(task);
                 setScannerOpen(true);

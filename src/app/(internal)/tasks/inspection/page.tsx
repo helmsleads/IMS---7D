@@ -209,7 +209,6 @@ export default function InspectionQueuePage() {
             {canClaim && (
               <Button
                 variant="primary"
-                size="sm"
                 onClick={() => handleClaimAndStart(task)}
                 loading={actionLoading === task.id}
               >
@@ -220,7 +219,6 @@ export default function InspectionQueuePage() {
             {canContinue && (
               <Button
                 variant="primary"
-                size="sm"
                 onClick={() => handleContinue(task)}
               >
                 <Play className="w-4 h-4" />
@@ -308,7 +306,6 @@ export default function InspectionQueuePage() {
                 </div>
                 <Button
                   variant="secondary"
-                  size="sm"
                   onClick={loadTasks}
                   disabled={loading}
                 >
