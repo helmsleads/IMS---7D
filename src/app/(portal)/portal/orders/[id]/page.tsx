@@ -306,7 +306,27 @@ export default function OrderDetailPage() {
           id: string;
           qty_requested: number;
           qty_shipped: number;
-          product: { id: string; name: string; sku: string; image_url: string | null; client_id?: string | null; container_type?: string | null } | { id: string; name: string; sku: string; image_url: string | null; client_id?: string | null; container_type?: string | null }[];
+          product:
+            | {
+                id: string;
+                name: string;
+                sku: string;
+                image_url: string | null;
+                client_id?: string | null;
+                container_type?: string | null;
+                weight_lbs?: number | null;
+                freight_class?: string | null;
+              }
+            | {
+                id: string;
+                name: string;
+                sku: string;
+                image_url: string | null;
+                client_id?: string | null;
+                container_type?: string | null;
+                weight_lbs?: number | null;
+                freight_class?: string | null;
+              }[];
         }) => {
           const product = Array.isArray(item.product) ? item.product[0] : item.product;
           const qtyShipped = item.qty_shipped || 0;
