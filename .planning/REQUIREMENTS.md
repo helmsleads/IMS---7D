@@ -51,7 +51,7 @@ Requirements for UI/UX implementation milestone. Each maps to roadmap phases.
 - [ ] **COMP-13**: All 12 chart components have aria-label prop and role="img" wrapper
 - [ ] **COMP-14**: All Recharts chart components respect prefers-reduced-motion via isAnimationActive
 - [ ] **COMP-15**: Gray→slate migration complete across all shared UI components (~19 components)
-- [ ] **COMP-16**: Dark mode classes removed from 5 scanner components (outside MASTER.md scope)
+- [x] **COMP-16**: Dark mode classes removed from 5 scanner components (outside MASTER.md scope)
 - [ ] **COMP-17**: StatusBadge refactored from Tailwind class key to semantic status→variant mapping
 
 ### Admin Pages
@@ -140,7 +140,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COMP-13 | Phase 6 | Pending |
 | COMP-14 | Phase 6 | Pending |
 | COMP-15 | Phase 6 | Pending |
-| COMP-16 | Phase 6 | Pending |
+| COMP-16 | Phase 6 | Complete |
 | COMP-17 | Phase 6 | Pending |
 | XCUT-01 | Phase 6 | Pending |
 | SCAN-01 | Phase 7 | Pending |
