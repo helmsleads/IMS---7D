@@ -327,7 +327,7 @@ export default function ReceivingScanner({
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-gray-900">Receiving Progress</h3>
-            <p className="text-sm text-gray-500">
+            <p className="text-base text-slate-500">
               {runningTotal} of {totalExpected} units
               {pendingQty > 0 && (
                 <span className="text-blue-600 ml-1">(+{pendingQty} pending)</span>
@@ -335,15 +335,14 @@ export default function ReceivingScanner({
             </p>
           </div>
           <div className="flex items-center gap-4">
-            <button
+            <Button
+              variant="ghost"
               onClick={() => setAudioEnabled(!audioEnabled)}
-              className={`p-2 rounded-lg transition-colors ${
-                audioEnabled ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-400"
-              }`}
-              title={audioEnabled ? "Sound on" : "Sound off"}
+              className={`min-h-[44px] min-w-[44px] ${audioEnabled ? "text-blue-600" : "text-slate-400"}`}
+              aria-label={audioEnabled ? "Sound on" : "Sound off"}
             >
-              <Volume2 className="w-4 h-4" />
-            </button>
+              <Volume2 className="w-5 h-5" />
+            </Button>
             <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
               <div
                 className="h-full bg-green-500 transition-all"
@@ -351,7 +350,7 @@ export default function ReceivingScanner({
               />
             </div>
             {allReceived && (
-              <span className="flex items-center gap-1 text-green-600 text-sm font-medium">
+              <span className="flex items-center gap-1 text-green-600 text-base font-medium">
                 <CheckCircle className="w-4 h-4" />
                 Complete
               </span>
@@ -393,7 +392,7 @@ export default function ReceivingScanner({
               <X className="w-6 h-6 text-red-600" />
             </div>
             <p className="font-medium text-gray-900">Product Not Found</p>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-base text-slate-500 mt-1">
               No product matches code: <span className="font-mono">{scannedCode}</span>
             </p>
             <Button variant="secondary" onClick={handleScanAgain} className="mt-4">
@@ -409,7 +408,7 @@ export default function ReceivingScanner({
               <AlertTriangle className="w-6 h-6 text-amber-600" />
             </div>
             <p className="font-medium text-gray-900">Not in This Order</p>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-base text-slate-500 mt-1">
               This product is not expected in this inbound order
             </p>
             <Button variant="secondary" onClick={handleScanAgain} className="mt-4">
@@ -443,13 +442,13 @@ export default function ReceivingScanner({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="font-semibold text-gray-900">{scannedItem.product.name}</p>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 rounded">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-base font-medium bg-purple-100 text-purple-700 rounded">
                       <Layers className="w-3 h-3" />
                       Lot Tracked
                     </span>
                   </div>
-                  <p className="text-sm text-gray-500 font-mono">{scannedItem.product.sku}</p>
-                  <p className="text-sm text-gray-600 mt-1">
+                  <p className="text-base text-slate-500 font-mono">{scannedItem.product.sku}</p>
+                  <p className="text-base text-slate-600 mt-1">
                     Remaining: <strong>{scannedItem.qty_expected - scannedItem.qty_received}</strong>
                   </p>
                 </div>
@@ -465,7 +464,7 @@ export default function ReceivingScanner({
 
               {/* Lot Number - with scan option */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-base font-medium text-slate-700 mb-1">
                   Lot Number <span className="text-red-500">*</span>
                 </label>
                 {lotScannerActive ? (
@@ -477,7 +476,6 @@ export default function ReceivingScanner({
                     />
                     <Button
                       variant="secondary"
-                      size="sm"
                       onClick={() => setLotScannerActive(false)}
                       className="w-full"
                     >
@@ -497,6 +495,7 @@ export default function ReceivingScanner({
                       variant="secondary"
                       onClick={() => setLotScannerActive(true)}
                       title="Scan lot barcode"
+                      className="min-h-[44px]"
                     >
                       <ScanLine className="w-4 h-4" />
                     </Button>
@@ -506,7 +505,7 @@ export default function ReceivingScanner({
 
               {/* Expiration Date */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-base font-medium text-slate-700 mb-1">
                   Expiration Date
                   {scannedItem.product.default_expiration_days && (
                     <span className="text-gray-400 font-normal ml-1">
@@ -515,26 +514,27 @@ export default function ReceivingScanner({
                   )}
                 </label>
                 <div className="flex gap-2">
-                  <input
+                  <Input
                     type="date"
                     value={expirationDate}
                     onChange={(e) => setExpirationDate(e.target.value)}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="flex-1"
                   />
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     onClick={() => setExpirationDate(getDefaultExpirationDate(scannedItem))}
-                    className="px-3 py-2 text-sm text-purple-600 hover:bg-purple-50 rounded-md"
-                    title="Reset to default"
+                    className="min-h-[44px] min-w-[44px]"
+                    aria-label="Reset to default date"
                   >
                     <Calendar className="w-4 h-4" />
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               {/* Quantity */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-base font-medium text-slate-700 mb-1">
                   Quantity <span className="text-red-500">*</span>
                 </label>
                 <div className="flex items-center gap-2">
@@ -549,8 +549,8 @@ export default function ReceivingScanner({
                   />
                   <Button
                     variant="secondary"
-                    size="sm"
                     onClick={() => setPendingQty(scannedItem.qty_expected - scannedItem.qty_received)}
+                    className="min-h-[44px]"
                   >
                     Max
                   </Button>
@@ -560,7 +560,7 @@ export default function ReceivingScanner({
 
             {/* Summary */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center justify-between text-base">
                 <div className="space-y-1">
                   <p className="text-gray-600">
                     Lot: <span className="font-medium text-gray-900">{lotNumber || "—"}</span>
@@ -620,10 +620,10 @@ export default function ReceivingScanner({
                 {/* Product Info */}
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-900 text-lg">{scannedItem.product.name}</p>
-                  <p className="text-sm text-gray-500 font-mono">{scannedItem.product.sku}</p>
+                  <p className="text-base text-slate-500 font-mono">{scannedItem.product.sku}</p>
 
                   {/* Quantity Stats */}
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-base">
                     <div className="bg-white rounded px-2 py-1">
                       <span className="text-gray-500">Expected:</span>
                       <span className="font-bold text-gray-900 ml-1">{scannedItem.qty_expected}</span>
@@ -639,7 +639,7 @@ export default function ReceivingScanner({
 
             {/* Quick Add Buttons */}
             <div className="space-y-3">
-              <p className="text-sm font-medium text-gray-700">Add to received quantity:</p>
+              <p className="text-base font-medium text-slate-700">Add to received quantity:</p>
               <div className="flex gap-2">
                 <Button
                   variant="secondary"
@@ -674,16 +674,16 @@ export default function ReceivingScanner({
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-blue-600 font-medium">Pending to Add</p>
+                  <p className="text-base text-blue-600 font-medium">Pending to Add</p>
                   <p className="text-3xl font-bold text-blue-700">{pendingQty}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm text-gray-500">New Total</p>
+                  <p className="text-base text-slate-500">New Total</p>
                   <p className="text-xl font-semibold text-gray-900">
                     {scannedItem.qty_received + pendingQty} / {scannedItem.qty_expected}
                   </p>
                   {scannedItem.qty_received + pendingQty >= scannedItem.qty_expected && (
-                    <span className="text-xs text-green-600 font-medium">Complete</span>
+                    <span className="text-base text-green-600 font-medium">Complete</span>
                   )}
                 </div>
               </div>
@@ -714,7 +714,7 @@ export default function ReceivingScanner({
         {scanStatus === "idle" && !scannerActive && (
           <div className="text-center py-6 text-gray-500">
             <ScanLine className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-            <p className="text-sm">Click &quot;Start Scanner&quot; or select an item below</p>
+            <p className="text-base">Click &quot;Start Scanner&quot; or select an item below</p>
           </div>
         )}
       </Card>
@@ -778,14 +778,14 @@ export default function ReceivingScanner({
                       <p className="font-medium text-gray-900">{item.product.name}</p>
                       {item.product.lot_tracking_enabled && (
                         <span
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 rounded"
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-base font-medium bg-purple-100 text-purple-700 rounded"
                           title="Lot tracking required"
                         >
                           <Layers className="w-3 h-3" />
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-500 font-mono">{item.product.sku}</p>
+                    <p className="text-base text-slate-500 font-mono">{item.product.sku}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
@@ -793,13 +793,13 @@ export default function ReceivingScanner({
                     <p className={`font-medium ${isComplete ? "text-green-600" : "text-gray-900"}`}>
                       {item.qty_received} / {item.qty_expected}
                     </p>
-                    <p className="text-xs text-gray-500">received</p>
+                    <p className="text-base text-slate-500">received</p>
                   </div>
                   {!isComplete && (
                     <Button
                       variant="ghost"
-                      size="sm"
                       onClick={() => handleManualSelect(item)}
+                      className="min-h-[44px]"
                     >
                       {item.product.lot_tracking_enabled ? "Enter Lot" : "Receive"}
                     </Button>
