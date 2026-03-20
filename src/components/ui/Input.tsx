@@ -4,6 +4,7 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
   hint?: string;
+  variant?: "admin" | "portal";
 }
 
 export default function Input({
@@ -14,9 +15,15 @@ export default function Input({
   hint,
   required,
   disabled,
+  variant = "admin",
   className = "",
   ...props
 }: InputProps) {
+  const focusRing =
+    variant === "portal"
+      ? "focus-visible:ring-cyan-500 focus-visible:border-cyan-500"
+      : "focus-visible:ring-indigo-500 focus-visible:border-indigo-500";
+
   return (
     <div className="w-full">
       {label && (
@@ -34,13 +41,13 @@ export default function Input({
         type={type}
         disabled={disabled}
         className={`
-          w-full px-3 py-2 border rounded-lg transition-colors
-          focus:outline-none focus:ring-2 focus:border-transparent
+          w-full px-3 py-2 border rounded-md transition-colors
+          focus:outline-none focus-visible:ring-2 focus-visible:border-transparent
           disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed
           ${
             error
-              ? "border-red-500 focus:ring-red-500"
-              : "border-slate-300 focus:ring-indigo-500 focus:border-indigo-500"
+              ? "border-red-500 focus-visible:ring-red-500"
+              : `border-slate-300 ${focusRing}`
           }
           ${className}
         `}
@@ -50,7 +57,7 @@ export default function Input({
         <p className="mt-1 text-sm text-red-600">{error}</p>
       )}
       {hint && !error && (
-        <p className="mt-1 text-sm text-gray-500">{hint}</p>
+        <p className="mt-1 text-sm text-slate-500">{hint}</p>
       )}
     </div>
   );
