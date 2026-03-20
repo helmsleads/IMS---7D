@@ -2,6 +2,7 @@
 
 import { ReactNode } from "react";
 import { useAnimatedNumber } from "@/lib/hooks/useAnimatedNumber";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 import MiniSparkline from "@/components/ui/charts/MiniSparkline";
 
 interface StatCardProps {
@@ -31,11 +32,14 @@ function SkeletonStatCard() {
 }
 
 function AnimatedValue({ value }: { value: string | number }) {
+  const prefersReducedMotion = useReducedMotion();
   const numericValue = typeof value === "number" ? value : null;
   const animated = useAnimatedNumber(numericValue ?? 0);
 
   if (numericValue !== null) {
-    return <>{animated.toLocaleString()}</>;
+    // Skip animation if user prefers reduced motion
+    const display = prefersReducedMotion ? numericValue : animated;
+    return <>{display.toLocaleString()}</>;
   }
 
   // For string values like "$12,345" — try to animate the numeric part
@@ -50,13 +54,15 @@ function AnimatedValue({ value }: { value: string | number }) {
 }
 
 function AnimatedStringValue({ prefix, target, suffix }: { prefix: string; target: number; suffix: string }) {
+  const prefersReducedMotion = useReducedMotion();
   const animated = useAnimatedNumber(target);
-  return <>{prefix}{animated.toLocaleString()}{suffix}</>;
+  const display = prefersReducedMotion ? target : animated;
+  return <>{prefix}{display.toLocaleString()}{suffix}</>;
 }
 
 export default function StatCard({
   icon,
-  iconColor = "bg-blue-50 text-blue-600",
+  iconColor = "bg-indigo-50 text-indigo-600",
   label,
   value,
   change,
