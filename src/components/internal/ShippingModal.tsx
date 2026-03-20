@@ -181,6 +181,10 @@ export default function ShippingModal({
   const [fedexError, setFedexError] = useState("");
   const [manualShippingCost, setManualShippingCost] = useState<number | "">("");
 
+  // Demo flag: disable tracking refresh until FedEx tracking credentials are fixed.
+  // Rates + label/ship creation can still work.
+  const ENABLE_FEDEX_TRACKING_REFRESH = false;
+
   // Tracking URL and validation (manual mode)
   const finalCarrier = carrier === "Other" ? customCarrier : carrier;
   const trackingUrl = useMemo(
@@ -362,16 +366,24 @@ export default function ShippingModal({
   };
 
   const handleFedExTrack = async () => {
+    if (!ENABLE_FEDEX_TRACKING_REFRESH) return; // demo safety: avoid calling FedEx tracking
     if (!fedexResult?.trackingNumber) return;
     console.log("📍 FedEx tracking request", { trackingNumber: fedexResult.trackingNumber });
     setFedexTrackLoading(true);
     setFedexTrackError("");
     try {
-      const res = await fetch(`/api/shipping/fedex/track?trackingNumber=${encodeURIComponent(fedexResult.trackingNumber)}`);
+      const url =
+        `/api/shipping/fedex/track?trackingNumber=${encodeURIComponent(fedexResult.trackingNumber)}` +
+        (orderId ? `&orderId=${encodeURIComponent(orderId)}` : '') +
+        (shipDate ? `&shipDate=${encodeURIComponent(shipDate)}` : '');
+      const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) {
         console.error("❌ FedEx tracking failed", { status: res.status, data });
-        setFedexTrackError(data.error || "Failed to fetch tracking");
+        const hint = typeof data?.hint === "string" && data.hint.trim()
+          ? ` (${data.hint})`
+          : "";
+        setFedexTrackError(`${data.error || "Failed to fetch tracking"}${hint}`);
         setFedexLatestStatus("");
       } else {
         console.log("✅ FedEx tracking success", data);
@@ -564,11 +576,11 @@ export default function ShippingModal({
                       <p className="text-[11px] text-slate-400">Select a service</p>
                     </div>
                     <div className="divide-y divide-slate-200">
-                      {fedexRates.map((rate) => {
+                      {fedexRates.map((rate, idx) => {
                         const isSelected = fedexService === rate.serviceType;
                         return (
                           <button
-                            key={rate.serviceType}
+                            key={`${rate.serviceType}-${idx}`}
                             type="button"
                             onClick={() => setFedexService(rate.serviceType)}
                             className={`w-full text-left px-3 py-2.5 text-sm flex items-center justify-between gap-3 ${
@@ -660,7 +672,7 @@ export default function ShippingModal({
                   </Button>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     onClick={async () => {
                       if (!orderId || packageWeight <= 0) return;
                       console.log("💲 FedEx rates request", {
@@ -798,17 +810,19 @@ export default function ShippingModal({
                 )}
 
                 <div className="space-y-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleFedExTrack}
-                    loading={fedexTrackLoading}
-                    disabled={fedexTrackLoading}
-                    className="w-full"
-                  >
-                    <RotateCcw className="w-4 h-4 mr-2" />
-                    Refresh Tracking Status
-                  </Button>
+                  {ENABLE_FEDEX_TRACKING_REFRESH && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={handleFedExTrack}
+                      loading={fedexTrackLoading}
+                      disabled={fedexTrackLoading}
+                      className="w-full"
+                    >
+                      <RotateCcw className="w-4 h-4 mr-2" />
+                      Refresh Tracking Status
+                    </Button>
+                  )}
                   {fedexLatestStatus && (
                     <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                       Latest status: <span className="font-medium text-slate-800">{fedexLatestStatus}</span>

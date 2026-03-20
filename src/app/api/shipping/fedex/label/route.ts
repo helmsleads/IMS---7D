@@ -65,7 +65,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to generate label URL' }, { status: 500 })
     }
 
-    return NextResponse.json({ url: signed.signedUrl })
+    // Redirect so the browser opens the actual PDF URL
+    // (the client currently uses `window.open('/api/...')`).
+    return NextResponse.redirect(signed.signedUrl)
   } catch (err) {
     console.error('FedEx label download error:', err)
     const message = err instanceof Error ? err.message : 'Failed to generate label URL'

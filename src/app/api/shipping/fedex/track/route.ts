@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url)
     const orderId = url.searchParams.get('orderId')
     const trackingFromQuery = url.searchParams.get('trackingNumber')
+    const shipDateFromQuery = url.searchParams.get('shipDate')
 
     if (!orderId && !trackingFromQuery) {
       return NextResponse.json({ error: 'Provide orderId or trackingNumber' }, { status: 400 })
@@ -41,11 +42,12 @@ export async function GET(request: NextRequest) {
 
     let trackingNumber = trackingFromQuery || ''
     let resolvedOrderId: string | null = null
+    let shippedDate: string | null = null
 
     if (orderId) {
       const { data: order, error: orderError } = await serviceSupabase
         .from('outbound_orders')
-        .select('id, tracking_number')
+        .select('id, tracking_number, shipped_date')
         .eq('id', orderId)
         .single()
 
@@ -55,6 +57,7 @@ export async function GET(request: NextRequest) {
 
       trackingNumber = order.tracking_number
       resolvedOrderId = order.id
+      shippedDate = order.shipped_date ?? null
     }
 
     if (!trackingNumber) {
@@ -67,7 +70,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid FedEx tracking number format' }, { status: 400 })
     }
 
-    const result = await trackShipment(trackingNumber, credentials)
+    // FedEx Track API often works better when providing a shipment date range.
+    const rawShipDate = shipDateFromQuery || shippedDate
+    const shipDateBegin = rawShipDate ? rawShipDate.split('T')[0] : undefined
+    const shipDateEnd = shipDateBegin
+    const result = await trackShipment(trackingNumber, credentials, {
+      shipDateBegin,
+      shipDateEnd,
+    })
 
     // Best-effort: update tracking_status fields on the order
     if (resolvedOrderId) {
@@ -102,7 +112,22 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     console.error('FedEx track error:', err)
     const message = err instanceof Error ? err.message : 'Failed to track FedEx shipment'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const isAuth =
+      typeof message === 'string' &&
+      (message.toLowerCase().includes('authorize your credentials') ||
+        message.toLowerCase().includes('oauth failed') ||
+        message.toLowerCase().includes('authentication') ||
+        message.toLowerCase().includes('unauthorized'))
+
+    return NextResponse.json(
+      {
+        error: message,
+        hint: isAuth
+          ? 'FedEx rejected your credentials. Confirm Settings > System > FedEx credentials are correct and the environment matches (Sandbox vs Production). If running locally, set FEDEX_SANDBOX=true to force sandbox.'
+          : null,
+      },
+      { status: isAuth ? 400 : 502 }
+    )
   }
 }
 

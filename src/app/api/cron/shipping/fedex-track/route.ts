@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
 
   for (const o of orders || []) {
     try {
-      const tracking = await trackShipment(o.tracking_number, credentials);
+      const tracking = await trackShipment(o.tracking_number, credentials, undefined);
       const update: Record<string, unknown> = {
         tracking_status: tracking.statusDescription,
         tracking_status_updated_at: new Date().toISOString(),

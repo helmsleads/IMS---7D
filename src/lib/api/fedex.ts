@@ -16,7 +16,7 @@ const FEDEX_URLS = {
 } as const
 
 // ── Token cache ──────────────────────────────────────────
-let cachedToken: { token: string; expiresAt: number } | null = null
+let cachedToken: { token: string; expiresAt: number; environment: string; clientId: string } | null = null
 
 function clearTokenCache() {
   cachedToken = null
@@ -35,7 +35,7 @@ async function fedexFetch(
   const res = await fetch(url, { ...init, headers })
 
   // If token expired/revoked, clear cache and retry once
-  if (res.status === 401) {
+  if (res.status === 401 || res.status === 403) {
     clearTokenCache()
     const retryToken = await getAccessToken(credentials)
     const retryHeaders = new Headers(init.headers || {})
@@ -217,7 +217,12 @@ export async function saveFedExCredentials(creds: FedExCredentials): Promise<voi
 
 export async function getAccessToken(credentials: FedExCredentials): Promise<string> {
   // Return cached token if still valid (with 60s buffer)
-  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
+  if (
+    cachedToken &&
+    cachedToken.expiresAt > Date.now() + 60_000 &&
+    cachedToken.clientId === credentials.client_id &&
+    cachedToken.environment === credentials.environment
+  ) {
     return cachedToken.token
   }
 
@@ -245,6 +250,8 @@ export async function getAccessToken(credentials: FedExCredentials): Promise<str
   cachedToken = {
     token,
     expiresAt: Date.now() + expiresIn * 1000,
+    environment: credentials.environment,
+    clientId: credentials.client_id,
   }
 
   return token
@@ -538,9 +545,13 @@ export async function getRates(
 
 export async function trackShipment(
   trackingNumber: string,
-  credentials: FedExCredentials
+  credentials: FedExCredentials,
+  opts?: { shipDateBegin?: string; shipDateEnd?: string }
 ): Promise<FedExTrackResponse> {
   const baseUrl = FEDEX_URLS[credentials.environment]
+
+  const shipDateBegin = opts?.shipDateBegin
+  const shipDateEnd = opts?.shipDateEnd
 
   const body = {
     trackingInfo: [
@@ -548,6 +559,8 @@ export async function trackShipment(
         trackingNumberInfo: {
           trackingNumber,
         },
+        ...(shipDateBegin ? { shipDateBegin } : {}),
+        ...(shipDateEnd ? { shipDateEnd } : {}),
       },
     ],
     includeDetailedScans: true,
@@ -557,6 +570,8 @@ export async function trackShipment(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      // FedEx tracking endpoints expect locale header (align with other FedEx calls)
+      'X-locale': 'en_US',
     },
     body: JSON.stringify(body),
   }, credentials)
