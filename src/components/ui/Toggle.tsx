@@ -6,6 +6,7 @@ interface ToggleProps {
   disabled?: boolean;
   loading?: boolean;
   size?: "sm" | "md";
+  variant?: "admin" | "portal";
   className?: string;
 }
 
@@ -15,6 +16,7 @@ export default function Toggle({
   disabled = false,
   loading = false,
   size = "md",
+  variant = "admin",
   className = "",
 }: ToggleProps) {
   const trackSize = size === "sm" ? "h-5 w-9" : "h-6 w-11";
@@ -22,6 +24,12 @@ export default function Toggle({
   const thumbTranslate = size === "sm"
     ? (checked ? "translate-x-4" : "translate-x-0.5")
     : (checked ? "translate-x-6" : "translate-x-1");
+
+  const checkedColor = variant === "portal" ? "bg-cyan-600" : "bg-indigo-600";
+  const focusRing =
+    variant === "portal"
+      ? "focus-visible:ring-cyan-500"
+      : "focus-visible:ring-indigo-500";
 
   return (
     <button
@@ -33,9 +41,9 @@ export default function Toggle({
       className={`
         relative inline-flex items-center rounded-full transition-colors
         disabled:opacity-50 disabled:cursor-not-allowed
-        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${focusRing}
         ${trackSize}
-        ${checked ? "bg-blue-600" : "bg-gray-200"}
+        ${checked ? checkedColor : "bg-slate-200"}
         ${className}
       `}
     >
