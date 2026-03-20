@@ -24,7 +24,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 **Milestone Goal:** Execute the severity-tiered action plan — apply design system tokens, fix all 20 Blocking items, resolve 40 High-Value items, and bring the platform to visual/UX production quality across all 91 pages.
 
 - [x] **Phase 5: Design Tokens** — Apply globals.css tokens and reduced-motion foundations (completed 2026-03-19)
-- [ ] **Phase 6: Shared UI Components** — Portal variants, color corrections, ARIA, gray→slate migration
+- [x] **Phase 6: Shared UI Components** — Portal variants, color corrections, ARIA, gray→slate migration (completed 2026-03-20)
 - [ ] **Phase 7: Scanner Components** — Tap target and text size fixes across all scanner components
 - [ ] **Phase 8: Admin Pages** — Inline color corrections and scanner page fixes for admin routes
 - [ ] **Phase 9: Portal Pages** — Cyan brand corrections across all portal routes
@@ -53,7 +53,7 @@ Plans:
   3. All 12 chart components have `aria-label` and `role="img"` and stop animating when the user has prefers-reduced-motion enabled
   4. No shared UI component uses `gray-*` palette classes — all instances are `slate-*`
   5. Warning states on Alert, Badge, and Toast show amber (not yellow); info states show indigo (not blue)
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans complete
 Plans:
 - [ ] 06-01-PLAN.md — Portal variants for Button/Input/Select/Textarea/Toggle + Toggle/Textarea admin color fixes
 - [ ] 06-02-PLAN.md — Color corrections for Alert, Badge, Spinner, Toast, Pagination
@@ -109,7 +109,7 @@ Phases execute in dependency order: 5 → 6 → 7 (parallel with 8) → 8 → 9
 | 3. Page Audits | v1.0 | 3/3 | Complete | 2026-03-19 |
 | 4. Action Plan Compilation | v1.0 | 2/2 | Complete | 2026-03-19 |
 | 5. Design Tokens | v2.0 | 1/1 | Complete | 2026-03-19 |
-| 6. Shared UI Components | 5/6 | In Progress|  | - |
+| 6. Shared UI Components | 6/6 | Complete   | 2026-03-20 | - |
 | 7. Scanner Components | v2.0 | 0/? | Not started | - |
 | 8. Admin Pages | v2.0 | 0/? | Not started | - |
 | 9. Portal Pages | v2.0 | 0/? | Not started | - |
