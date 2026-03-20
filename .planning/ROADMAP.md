@@ -87,7 +87,11 @@ Plans:
   3. The Pick Queue, Putaway Queue, and Inspection Queue pages have no action buttons below 44px
   4. The Location Sublocations page uses the slate/indigo palette exclusively with correct focus rings on all form inputs
   5. The Task Detail page back button is at least 44px and the timeline uses indigo indicators
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 08-01-PLAN.md — Dashboard, Inbound/Outbound lists, and Inventory List color corrections
+- [ ] 08-02-PLAN.md — Tasks List, Lots List, Reports Hub, Settings, and Task Detail fixes
+- [ ] 08-03-PLAN.md — Scanner-route pages: Inventory Transfers, Task Queues, Location Sublocations
 
 ### Phase 9: Portal Pages
 **Goal**: Every portal-facing page uses the correct cyan brand palette — no blue or indigo inline overrides remain, portal auth pages match the dark-gradient login design, and all portal-specific flows feel visually cohesive.
@@ -114,6 +118,6 @@ Phases execute in dependency order: 5 → 6 → 7 (parallel with 8) → 8 → 9
 | 4. Action Plan Compilation | v1.0 | 2/2 | Complete | 2026-03-19 |
 | 5. Design Tokens | v2.0 | 1/1 | Complete | 2026-03-19 |
 | 6. Shared UI Components | v2.0 | 6/6 | Complete | 2026-03-20 |
-| 7. Scanner Components | 3/3 | Complete   | 2026-03-20 | - |
-| 8. Admin Pages | v2.0 | 0/? | Not started | - |
+| 7. Scanner Components | v2.0 | 3/3 | Complete | 2026-03-20 |
+| 8. Admin Pages | v2.0 | 0/3 | Not started | - |
 | 9. Portal Pages | v2.0 | 0/? | Not started | - |
