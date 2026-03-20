@@ -24,9 +24,9 @@ Requirements for UI/UX implementation milestone. Each maps to roadmap phases.
 
 - [x] **SCAN-01**: PickingScanner has no buttons below 44px tap target and no text below text-base
 - [x] **SCAN-02**: PickScanner has no buttons below 44px tap target and no text below text-base
-- [ ] **SCAN-03**: PackScanner has no buttons below 44px tap target and no text below text-base
-- [ ] **SCAN-04**: ShipScanner has no buttons below 44px tap target and no text below text-base
-- [ ] **SCAN-05**: ReceivingScanner has no buttons below 44px tap target and no text below text-base
+- [x] **SCAN-03**: PackScanner has no buttons below 44px tap target and no text below text-base
+- [x] **SCAN-04**: ShipScanner has no buttons below 44px tap target and no text below text-base
+- [x] **SCAN-05**: ReceivingScanner has no buttons below 44px tap target and no text below text-base
 - [x] **SCAN-06**: PalletBreakdownScanner has no buttons below 44px tap target, no text below text-base, error dismiss ≥44px
 - [x] **SCAN-07**: BarcodeScanner close button ≥44px, instruction text ≥text-base
 - [x] **SCAN-08**: Pagination buttons are min 44x44px for scanner route usage
@@ -145,9 +145,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | XCUT-01 | Phase 6 | Complete |
 | SCAN-01 | Phase 7 | Complete |
 | SCAN-02 | Phase 7 | Complete |
-| SCAN-03 | Phase 7 | Pending |
-| SCAN-04 | Phase 7 | Pending |
-| SCAN-05 | Phase 7 | Pending |
+| SCAN-03 | Phase 7 | Complete |
+| SCAN-04 | Phase 7 | Complete |
+| SCAN-05 | Phase 7 | Complete |
 | SCAN-06 | Phase 7 | Complete |
 | SCAN-07 | Phase 7 | Complete |
 | SCAN-08 | Phase 7 | Complete |
