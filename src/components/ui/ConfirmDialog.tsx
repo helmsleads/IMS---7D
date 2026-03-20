@@ -47,7 +47,7 @@ export default function ConfirmDialog({
         </>
       }
     >
-      <p className="text-sm text-gray-600">{description}</p>
+      <p className="text-sm text-slate-600">{description}</p>
     </Modal>
   );
 }

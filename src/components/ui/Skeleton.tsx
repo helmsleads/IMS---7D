@@ -10,7 +10,7 @@ interface SkeletonProps {
 export function Skeleton({ className = "" }: SkeletonProps) {
   return (
     <div
-      className={`animate-pulse bg-gray-200 rounded ${className}`}
+      className={`animate-pulse bg-slate-200 rounded ${className}`}
       aria-hidden="true"
     />
   );
@@ -36,7 +36,7 @@ export function SkeletonText({
       {Array.from({ length: lines }).map((_, i) => (
         <div
           key={i}
-          className="h-4 bg-gray-200 rounded animate-pulse"
+          className="h-4 bg-slate-200 rounded animate-pulse"
           style={{
             width: i === lines - 1 && lines > 1 ? lastLineWidth : "100%",
           }}
@@ -64,7 +64,7 @@ export function SkeletonAvatar({ size = "md", className = "" }: SkeletonAvatarPr
 
   return (
     <div
-      className={`rounded-full bg-gray-200 animate-pulse ${sizeClasses[size]} ${className}`}
+      className={`rounded-full bg-slate-200 animate-pulse ${sizeClasses[size]} ${className}`}
       aria-hidden="true"
     />
   );
@@ -88,11 +88,11 @@ export function SkeletonCard({
 }: SkeletonCardProps) {
   return (
     <div
-      className={`bg-white rounded-lg border border-gray-200 overflow-hidden ${className}`}
+      className={`bg-white rounded-lg border border-slate-200 overflow-hidden ${className}`}
       aria-hidden="true"
     >
       {hasHeader && (
-        <div className="p-4 border-b border-gray-100">
+        <div className="p-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <SkeletonAvatar size="md" />
             <div className="flex-1 space-y-2">
@@ -108,7 +108,7 @@ export function SkeletonCard({
       </div>
 
       {hasFooter && (
-        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+        <div className="px-4 py-3 border-t border-slate-100 bg-slate-50">
           <div className="flex gap-2">
             <Skeleton className="h-8 w-20 rounded-md" />
             <Skeleton className="h-8 w-20 rounded-md" />
@@ -129,7 +129,7 @@ interface SkeletonTableRowProps {
 
 export function SkeletonTableRow({ columns, className = "" }: SkeletonTableRowProps) {
   return (
-    <tr className={`border-b border-gray-100 ${className}`} aria-hidden="true">
+    <tr className={`border-b border-slate-100 ${className}`} aria-hidden="true">
       {Array.from({ length: columns }).map((_, i) => (
         <td key={i} className="px-4 py-3">
           <Skeleton className="h-4 w-full" />
@@ -160,7 +160,7 @@ export function SkeletonTable({
       <table className="w-full">
         {hasHeader && (
           <thead>
-            <tr className="border-b border-gray-200">
+            <tr className="border-b border-slate-200">
               {Array.from({ length: columns }).map((_, i) => (
                 <th key={i} className="px-4 py-3 text-left">
                   <Skeleton className="h-4 w-20" />
@@ -228,7 +228,7 @@ export function SkeletonList({
 }: SkeletonListProps) {
   return (
     <div
-      className={`${divided ? "divide-y divide-gray-100" : "space-y-2"} ${className}`}
+      className={`${divided ? "divide-y divide-slate-100" : "space-y-2"} ${className}`}
       aria-hidden="true"
     >
       {Array.from({ length: items }).map((_, i) => (
@@ -248,7 +248,7 @@ interface SkeletonStatCardProps {
 export function SkeletonStatCard({ className = "" }: SkeletonStatCardProps) {
   return (
     <div
-      className={`bg-white rounded-lg border border-gray-200 p-4 ${className}`}
+      className={`bg-white rounded-lg border border-slate-200 p-4 ${className}`}
       aria-hidden="true"
     >
       <div className="flex items-center gap-3">
@@ -393,7 +393,7 @@ export function SkeletonChart({
       {Array.from({ length: bars }).map((_, i) => (
         <div
           key={i}
-          className="flex-1 bg-gray-200 rounded-t animate-pulse"
+          className="flex-1 bg-slate-200 rounded-t animate-pulse"
           style={{
             height: `${barHeights[i % barHeights.length]}%`,
             animationDelay: `${i * 100}ms`,
@@ -415,7 +415,7 @@ interface SkeletonDonutProps {
 export function SkeletonDonut({ size = 160, className = "" }: SkeletonDonutProps) {
   return (
     <div
-      className={`mx-auto rounded-full border-[16px] border-gray-200 animate-pulse ${className}`}
+      className={`mx-auto rounded-full border-[16px] border-slate-200 animate-pulse ${className}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     />

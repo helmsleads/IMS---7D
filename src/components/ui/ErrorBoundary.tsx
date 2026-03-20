@@ -47,10 +47,10 @@ export default class ErrorBoundary extends Component<
             <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
               <AlertTriangle className="w-8 h-8 text-red-600" />
             </div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+            <h2 className="text-xl font-semibold text-slate-900 mb-2">
               Something went wrong
             </h2>
-            <p className="text-gray-500 mb-6">
+            <p className="text-slate-500 mb-6">
               An unexpected error occurred. Please try again or contact support
               if the problem persists.
             </p>
@@ -62,7 +62,7 @@ export default class ErrorBoundary extends Component<
               Try Again
             </button>
             {process.env.NODE_ENV === "development" && this.state.error && (
-              <div className="mt-6 p-4 bg-gray-100 rounded-lg text-left">
+              <div className="mt-6 p-4 bg-slate-100 rounded-lg text-left">
                 <p className="text-sm font-mono text-red-600 break-all">
                   {this.state.error.message}
                 </p>

@@ -16,10 +16,10 @@ export default function FetchError({
       <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
         <AlertCircle className="w-6 h-6 text-red-600" />
       </div>
-      <p className="text-gray-900 font-medium text-center mb-2">
+      <p className="text-slate-900 font-medium text-center mb-2">
         Something went wrong
       </p>
-      <p className="text-gray-500 text-sm text-center max-w-md mb-4">
+      <p className="text-slate-500 text-sm text-center max-w-md mb-4">
         {message}
       </p>
       {onRetry && (

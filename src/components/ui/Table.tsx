@@ -63,11 +63,11 @@ export default function Table<T extends object>({
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-200">
+            <tr className="border-b border-slate-200">
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`px-4 py-3 text-left text-sm font-semibold text-gray-900 ${
+                  className={`px-4 py-3 text-left text-sm font-semibold text-slate-900 ${
                     column.hideOnMobile ? "hidden md:table-cell" : ""
                   }`}
                 >
@@ -78,7 +78,7 @@ export default function Table<T extends object>({
           </thead>
           <tbody>
             {[...Array(5)].map((_, i) => (
-              <tr key={i} className="border-b border-gray-100">
+              <tr key={i} className="border-b border-slate-100">
                 {columns.map((column) => (
                   <td
                     key={column.key}
@@ -86,7 +86,7 @@ export default function Table<T extends object>({
                       column.hideOnMobile ? "hidden md:table-cell" : ""
                     }`}
                   >
-                    <div className="h-4 bg-gray-200 rounded animate-pulse" />
+                    <div className="h-4 bg-slate-200 rounded animate-pulse" />
                   </td>
                 ))}
               </tr>
@@ -100,8 +100,8 @@ export default function Table<T extends object>({
   if (data.length === 0) {
     return (
       <div className="text-center py-12">
-        {emptyIcon || <Inbox className="w-10 h-10 text-gray-300 mx-auto mb-3" />}
-        <p className="text-gray-500">{emptyMessage}</p>
+        {emptyIcon || <Inbox className="w-10 h-10 text-slate-300 mx-auto mb-3" />}
+        <p className="text-slate-500">{emptyMessage}</p>
       </div>
     );
   }
@@ -109,14 +109,14 @@ export default function Table<T extends object>({
   return (
     <>
       {/* Mobile View Toggle */}
-      <div className="md:hidden flex justify-end p-2 border-b border-gray-100">
-        <div className="inline-flex rounded-lg border border-gray-200 p-0.5">
+      <div className="md:hidden flex justify-end p-2 border-b border-slate-100">
+        <div className="inline-flex rounded-lg border border-slate-200 p-0.5">
           <button
             onClick={() => setViewMode("cards")}
             className={`p-1.5 rounded-md transition-colors ${
               viewMode === "cards"
-                ? "bg-gray-900 text-white"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-slate-900 text-white"
+                : "text-slate-500 hover:text-slate-700"
             }`}
             aria-label="Card view"
           >
@@ -126,8 +126,8 @@ export default function Table<T extends object>({
             onClick={() => setViewMode("table")}
             className={`p-1.5 rounded-md transition-colors ${
               viewMode === "table"
-                ? "bg-gray-900 text-white"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-slate-900 text-white"
+                : "text-slate-500 hover:text-slate-700"
             }`}
             aria-label="Table view"
           >
@@ -138,27 +138,27 @@ export default function Table<T extends object>({
 
       {/* Mobile Card View */}
       {viewMode === "cards" && (
-        <div className="md:hidden divide-y divide-gray-100">
+        <div className="md:hidden divide-y divide-slate-100">
           {data.map((item, index) => (
             <div
               key={index}
               onClick={() => onRowClick?.(item)}
               className={`p-4 ${
-                onRowClick ? "cursor-pointer hover:bg-gray-50 active:bg-gray-100" : ""
+                onRowClick ? "cursor-pointer hover:bg-slate-50 active:bg-slate-100" : ""
               } ${rowClassName?.(item) || ""}`}
             >
               {/* Primary row: title + actions */}
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   {/* Primary column (title) */}
-                  <div className="font-medium text-gray-900">
+                  <div className="font-medium text-slate-900">
                     {renderCellValue(item, primaryColumn)}
                   </div>
                   {/* Secondary columns */}
                   {secondaryColumns.length > 0 && (
                     <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
                       {secondaryColumns.map((col) => (
-                        <div key={col.key} className="text-sm text-gray-600">
+                        <div key={col.key} className="text-sm text-slate-600">
                           {renderCellValue(item, col)}
                         </div>
                       ))}
@@ -175,13 +175,13 @@ export default function Table<T extends object>({
 
               {/* Detail columns */}
               {detailColumns.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-2">
+                <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2">
                   {detailColumns.map((col) => (
                     <div key={col.key}>
-                      <span className="text-xs text-gray-500 uppercase tracking-wide">
+                      <span className="text-xs text-slate-500 uppercase tracking-wide">
                         {col.header}
                       </span>
-                      <div className="text-sm text-gray-900 mt-0.5">
+                      <div className="text-sm text-slate-900 mt-0.5">
                         {renderCellValue(item, col)}
                       </div>
                     </div>
@@ -198,11 +198,11 @@ export default function Table<T extends object>({
         <div className="md:hidden overflow-x-auto">
           <table className="w-full min-w-[600px]">
             <thead>
-              <tr className="border-b border-gray-200">
+              <tr className="border-b border-slate-200">
                 {mobileTableColumns.map((column) => (
                   <th
                     key={column.key}
-                    className="px-4 py-3 text-left text-sm font-semibold text-gray-900 whitespace-nowrap"
+                    className="px-4 py-3 text-left text-sm font-semibold text-slate-900 whitespace-nowrap"
                   >
                     {column.header}
                   </th>
@@ -215,15 +215,15 @@ export default function Table<T extends object>({
                   key={index}
                   onClick={() => onRowClick?.(item)}
                   className={`
-                    border-b border-gray-100
-                    ${onRowClick ? "cursor-pointer hover:bg-gray-50" : ""}
+                    border-b border-slate-100
+                    ${onRowClick ? "cursor-pointer hover:bg-slate-50" : ""}
                     ${rowClassName?.(item) || ""}
                   `}
                 >
                   {mobileTableColumns.map((column) => (
                     <td
                       key={column.key}
-                      className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap"
+                      className="px-4 py-3 text-sm text-slate-700 whitespace-nowrap"
                     >
                       {renderCellValue(item, column)}
                     </td>
@@ -239,11 +239,11 @@ export default function Table<T extends object>({
       <div className="hidden md:block overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-200">
+            <tr className="border-b border-slate-200">
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`px-4 py-3 text-sm font-semibold text-gray-900 ${
+                  className={`px-4 py-3 text-sm font-semibold text-slate-900 ${
                     column.align === "right" ? "text-right" : column.align === "center" ? "text-center" : "text-left"
                   }`}
                 >
@@ -258,15 +258,15 @@ export default function Table<T extends object>({
                 key={index}
                 onClick={() => onRowClick?.(item)}
                 className={`
-                  border-b border-gray-100
-                  ${onRowClick ? "cursor-pointer hover:bg-gray-50" : ""}
+                  border-b border-slate-100
+                  ${onRowClick ? "cursor-pointer hover:bg-slate-50" : ""}
                   ${rowClassName?.(item) || ""}
                 `}
               >
                 {columns.map((column) => (
                   <td
                     key={column.key}
-                    className={`px-4 py-3 text-sm text-gray-700 ${
+                    className={`px-4 py-3 text-sm text-slate-700 ${
                       column.align === "right" ? "text-right" : column.align === "center" ? "text-center" : "text-left"
                     }`}
                   >

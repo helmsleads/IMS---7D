@@ -253,10 +253,10 @@ export default function BarcodeScanner({
   // Checking state
   if (permissionState === "checking") {
     return (
-      <div className={`flex items-center justify-center p-8 bg-gray-100 rounded-lg min-h-[200px] ${className}`}>
+      <div className={`flex items-center justify-center p-8 bg-slate-100 rounded-lg min-h-[200px] ${className}`}>
         <div className="text-center">
           <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-3"></div>
-          <p className="text-sm text-gray-600 font-medium">Checking camera...</p>
+          <p className="text-sm text-slate-600 font-medium">Checking camera...</p>
         </div>
       </div>
     );
@@ -265,13 +265,13 @@ export default function BarcodeScanner({
   // Permission needed
   if (permissionState === "prompt") {
     return (
-      <div className={`flex items-center justify-center p-8 bg-gray-100 rounded-lg min-h-[200px] ${className}`}>
+      <div className={`flex items-center justify-center p-8 bg-slate-100 rounded-lg min-h-[200px] ${className}`}>
         <div className="text-center max-w-xs">
           <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <Camera className="w-8 h-8 text-blue-600" />
           </div>
-          <h3 className="font-semibold text-gray-900 mb-2">Camera Access Required</h3>
-          <p className="text-sm text-gray-500 mb-4">
+          <h3 className="font-semibold text-slate-900 mb-2">Camera Access Required</h3>
+          <p className="text-sm text-slate-500 mb-4">
             Allow camera access to scan barcodes
           </p>
           <Button onClick={requestPermission} className="min-h-[48px] px-6">
@@ -286,13 +286,13 @@ export default function BarcodeScanner({
   // Permission denied
   if (permissionState === "denied") {
     return (
-      <div className={`flex items-center justify-center p-8 bg-gray-100 rounded-lg min-h-[200px] ${className}`}>
+      <div className={`flex items-center justify-center p-8 bg-slate-100 rounded-lg min-h-[200px] ${className}`}>
         <div className="text-center max-w-xs">
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CameraOff className="w-8 h-8 text-red-600" />
           </div>
-          <h3 className="font-semibold text-gray-900 mb-2">Camera Access Denied</h3>
-          <p className="text-sm text-gray-500 mb-4">
+          <h3 className="font-semibold text-slate-900 mb-2">Camera Access Denied</h3>
+          <p className="text-sm text-slate-500 mb-4">
             {cameraError || "Please allow camera access in your browser settings to scan barcodes."}
           </p>
           <Button variant="secondary" onClick={requestPermission} className="min-h-[48px] px-6">
@@ -307,13 +307,13 @@ export default function BarcodeScanner({
   // Error state
   if (permissionState === "error") {
     return (
-      <div className={`flex items-center justify-center p-8 bg-gray-100 rounded-lg min-h-[200px] ${className}`}>
+      <div className={`flex items-center justify-center p-8 bg-slate-100 rounded-lg min-h-[200px] ${className}`}>
         <div className="text-center max-w-xs">
           <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CameraOff className="w-8 h-8 text-amber-600" />
           </div>
-          <h3 className="font-semibold text-gray-900 mb-2">Camera Error</h3>
-          <p className="text-sm text-gray-500 mb-4">
+          <h3 className="font-semibold text-slate-900 mb-2">Camera Error</h3>
+          <p className="text-sm text-slate-500 mb-4">
             {cameraError || "Unable to access camera"}
           </p>
           <Button variant="secondary" onClick={requestPermission} className="min-h-[48px] px-6">
@@ -344,7 +344,7 @@ export default function BarcodeScanner({
 
           {/* Loading overlay */}
           {isStarting && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-900/75 rounded-lg">
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/75 rounded-lg">
               <div className="text-center text-white">
                 <div className="animate-spin w-10 h-10 border-4 border-white border-t-transparent rounded-full mx-auto mb-3"></div>
                 <p className="text-sm font-medium">Starting camera...</p>
@@ -372,20 +372,20 @@ export default function BarcodeScanner({
 
           {/* Instructions */}
           <div className="mt-3 text-center">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-slate-600">
               Position barcode within the frame
             </p>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-slate-400 mt-1">
               Hold steady for best results
             </p>
           </div>
         </div>
       ) : (
-        <div className="flex items-center justify-center p-8 bg-gray-100 rounded-lg min-h-[200px]">
+        <div className="flex items-center justify-center p-8 bg-slate-100 rounded-lg min-h-[200px]">
           <div className="text-center">
-            <Camera className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-            <p className="text-gray-600 font-medium">Scanner inactive</p>
-            <p className="text-sm text-gray-500 mt-1">
+            <Camera className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+            <p className="text-slate-600 font-medium">Scanner inactive</p>
+            <p className="text-sm text-slate-500 mt-1">
               Activate to start scanning
             </p>
           </div>
@@ -433,11 +433,11 @@ export function BarcodeScannerModal({
       {/* Modal - Full width on mobile, centered on desktop */}
       <div className="relative bg-white w-full sm:max-w-md sm:mx-4 sm:rounded-xl rounded-t-xl shadow-xl max-h-[90vh] overflow-hidden">
         {/* Header with touch-friendly close button */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
           <button
             onClick={handleClose}
-            className="w-11 h-11 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 active:bg-gray-200 transition-colors -mr-2"
+            className="w-11 h-11 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors -mr-2"
             aria-label="Close"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -464,7 +464,7 @@ export function BarcodeScannerModal({
         </div>
 
         {/* Footer with touch-friendly button */}
-        <div className="p-4 border-t border-gray-200 bg-gray-50">
+        <div className="p-4 border-t border-slate-200 bg-slate-50">
           <Button
             variant="secondary"
             onClick={handleClose}

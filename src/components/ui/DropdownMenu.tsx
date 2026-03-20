@@ -68,7 +68,7 @@ export default function DropdownMenu({
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
         className={`
-          p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100
+          p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100
           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
           transition-colors ${triggerClassName}
         `}
@@ -91,7 +91,7 @@ export default function DropdownMenu({
             {items.map((item, index) => (
               <div key={index}>
                 {item.divider && index > 0 && (
-                  <div className="my-1 border-t border-gray-100" />
+                  <div className="my-1 border-t border-slate-100" />
                 )}
                 <button
                   onClick={() => handleItemClick(item)}
@@ -100,10 +100,10 @@ export default function DropdownMenu({
                     w-full flex items-center gap-3 px-4 py-2 text-sm text-left
                     transition-colors
                     ${item.disabled
-                      ? "text-gray-400 cursor-not-allowed"
+                      ? "text-slate-400 cursor-not-allowed"
                       : item.variant === "danger"
                       ? "text-red-600 hover:bg-red-50"
-                      : "text-gray-700 hover:bg-gray-50"
+                      : "text-slate-700 hover:bg-slate-50"
                     }
                   `}
                   role="menuitem"

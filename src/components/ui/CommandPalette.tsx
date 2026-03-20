@@ -254,17 +254,17 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       {/* Palette */}
       <div className="relative w-full max-w-xl bg-white rounded-xl shadow-2xl overflow-hidden mx-4">
         {/* Search Input */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200">
-          <Search className="w-5 h-5 text-gray-400" />
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200">
+          <Search className="w-5 h-5 text-slate-400" />
           <input
             ref={inputRef}
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search commands..."
-            className="flex-1 text-gray-900 placeholder-gray-400 outline-none text-base"
+            className="flex-1 text-slate-900 placeholder-slate-400 outline-none text-base"
           />
-          <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-400 bg-gray-100 rounded">
+          <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-400 bg-slate-100 rounded">
             ESC
           </kbd>
         </div>
@@ -272,7 +272,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
         {/* Results */}
         <div ref={listRef} className="max-h-80 overflow-y-auto py-2">
           {filteredCommands.length === 0 ? (
-            <div className="px-4 py-8 text-center text-gray-500">
+            <div className="px-4 py-8 text-center text-slate-500">
               No results found for "{search}"
             </div>
           ) : (
@@ -280,7 +280,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
               {/* Quick Actions */}
               {groupedCommands.action.length > 0 && (
                 <div>
-                  <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <div className="px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
                     Quick Actions
                   </div>
                   {groupedCommands.action.map((cmd) => {
@@ -296,7 +296,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                           ${
                             selectedIndex === index
                               ? "bg-blue-50 text-blue-900"
-                              : "text-gray-700 hover:bg-gray-50"
+                              : "text-slate-700 hover:bg-slate-50"
                           }
                         `}
                       >
@@ -304,7 +304,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                           className={
                             selectedIndex === index
                               ? "text-blue-600"
-                              : "text-gray-400"
+                              : "text-slate-400"
                           }
                         >
                           {cmd.icon}
@@ -312,7 +312,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                         <div className="flex-1 min-w-0">
                           <p className="font-medium">{cmd.label}</p>
                           {cmd.description && (
-                            <p className="text-sm text-gray-500 truncate">
+                            <p className="text-sm text-slate-500 truncate">
                               {cmd.description}
                             </p>
                           )}
@@ -326,7 +326,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
               {/* Navigation */}
               {groupedCommands.navigation.length > 0 && (
                 <div>
-                  <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <div className="px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
                     Navigation
                   </div>
                   {groupedCommands.navigation.map((cmd) => {
@@ -342,7 +342,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                           ${
                             selectedIndex === index
                               ? "bg-blue-50 text-blue-900"
-                              : "text-gray-700 hover:bg-gray-50"
+                              : "text-slate-700 hover:bg-slate-50"
                           }
                         `}
                       >
@@ -350,7 +350,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                           className={
                             selectedIndex === index
                               ? "text-blue-600"
-                              : "text-gray-400"
+                              : "text-slate-400"
                           }
                         >
                           {cmd.icon}
@@ -366,15 +366,15 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-2 border-t border-gray-200 bg-gray-50 flex items-center justify-between text-xs text-gray-500">
+        <div className="px-4 py-2 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500">
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-white border border-gray-300 rounded text-gray-600">↑</kbd>
-              <kbd className="px-1.5 py-0.5 bg-white border border-gray-300 rounded text-gray-600">↓</kbd>
+              <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded text-slate-600">↑</kbd>
+              <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded text-slate-600">↓</kbd>
               <span className="ml-1">Navigate</span>
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-white border border-gray-300 rounded text-gray-600">↵</kbd>
+              <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded text-slate-600">↵</kbd>
               <span className="ml-1">Select</span>
             </span>
           </div>

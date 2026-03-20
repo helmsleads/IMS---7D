@@ -63,13 +63,13 @@ export default function ProductImage({
     return (
       <div
         className={`
-          flex items-center justify-center bg-gray-100 rounded-lg
+          flex items-center justify-center bg-slate-100 rounded-lg
           ${size === "full" ? "w-full aspect-square" : ""}
           ${className}
         `}
         style={size !== "full" ? { width: config.width, height: config.height } : undefined}
       >
-        <Package className={`${config.iconSize} text-gray-300`} />
+        <Package className={`${config.iconSize} text-slate-300`} />
       </div>
     );
   }
@@ -77,7 +77,7 @@ export default function ProductImage({
   // For full size images, use fill layout
   if (size === "full") {
     return (
-      <div className={`relative w-full aspect-square overflow-hidden rounded-lg bg-gray-100 ${className}`}>
+      <div className={`relative w-full aspect-square overflow-hidden rounded-lg bg-slate-100 ${className}`}>
         <Image
           src={src}
           alt={alt}
@@ -94,7 +94,7 @@ export default function ProductImage({
           onError={() => setHasError(true)}
         />
         {isLoading && (
-          <div className="absolute inset-0 bg-gray-200 animate-pulse" />
+          <div className="absolute inset-0 bg-slate-200 animate-pulse" />
         )}
       </div>
     );
@@ -103,7 +103,7 @@ export default function ProductImage({
   // For fixed size images
   return (
     <div
-      className={`relative overflow-hidden rounded-lg bg-gray-100 flex-shrink-0 ${className}`}
+      className={`relative overflow-hidden rounded-lg bg-slate-100 flex-shrink-0 ${className}`}
       style={{ width: config.width, height: config.height }}
     >
       <Image
@@ -122,7 +122,7 @@ export default function ProductImage({
         onError={() => setHasError(true)}
       />
       {isLoading && (
-        <div className="absolute inset-0 bg-gray-200 animate-pulse" />
+        <div className="absolute inset-0 bg-slate-200 animate-pulse" />
       )}
     </div>
   );
@@ -159,17 +159,17 @@ export function ProductImageCard({
     return (
       <div
         className={`
-          relative w-full ${aspectClasses[aspectRatio]} bg-gray-100
+          relative w-full ${aspectClasses[aspectRatio]} bg-slate-100
           flex items-center justify-center ${className}
         `}
       >
-        <Package className="w-16 h-16 text-gray-300" />
+        <Package className="w-16 h-16 text-slate-300" />
       </div>
     );
   }
 
   return (
-    <div className={`relative w-full ${aspectClasses[aspectRatio]} overflow-hidden bg-gray-100 ${className}`}>
+    <div className={`relative w-full ${aspectClasses[aspectRatio]} overflow-hidden bg-slate-100 ${className}`}>
       <Image
         src={src}
         alt={alt}
@@ -186,7 +186,7 @@ export function ProductImageCard({
         onError={() => setHasError(true)}
       />
       {isLoading && (
-        <div className="absolute inset-0 bg-gray-200 animate-pulse" />
+        <div className="absolute inset-0 bg-slate-200 animate-pulse" />
       )}
     </div>
   );
@@ -223,17 +223,17 @@ export function ProductThumbnail({
     return (
       <div
         className={`
-          ${config.container} rounded-lg bg-gray-100
+          ${config.container} rounded-lg bg-slate-100
           flex items-center justify-center flex-shrink-0 ${className}
         `}
       >
-        <Package className={`${config.icon} text-gray-400`} />
+        <Package className={`${config.icon} text-slate-400`} />
       </div>
     );
   }
 
   return (
-    <div className={`${config.container} relative rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 ${className}`}>
+    <div className={`${config.container} relative rounded-lg overflow-hidden bg-slate-100 flex-shrink-0 ${className}`}>
       <Image
         src={src}
         alt={alt}
@@ -247,7 +247,7 @@ export function ProductThumbnail({
         onError={() => setHasError(true)}
       />
       {isLoading && (
-        <div className="absolute inset-0 bg-gray-200 animate-pulse" />
+        <div className="absolute inset-0 bg-slate-200 animate-pulse" />
       )}
     </div>
   );
