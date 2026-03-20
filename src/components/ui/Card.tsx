@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, KeyboardEvent } from "react";
 
 interface CardProps {
   children: ReactNode;
@@ -38,10 +38,22 @@ export default function Card({
 }: CardProps) {
   const hasHeader = title || subtitle || actions;
 
+  const handleKeyDown = onClick
+    ? (e: KeyboardEvent<HTMLDivElement>) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }
+    : undefined;
+
   return (
     <div
-      className={`bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden transition-all duration-200 ${accent ? accentColors[accent] : ""} ${className} ${onClick ? "cursor-pointer hover:shadow-md hover:border-slate-300" : ""}`}
+      className={`bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden transition-all duration-200 ${accent ? accentColors[accent] : ""} ${className} ${onClick ? "cursor-pointer hover:shadow-md hover:border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2" : ""}`}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
     >
       {hasHeader && (
         <div className="flex items-start justify-between px-6 pt-6 pb-0">
