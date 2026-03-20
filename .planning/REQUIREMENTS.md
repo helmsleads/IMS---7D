@@ -30,9 +30,9 @@ Requirements for UI/UX implementation milestone. Each maps to roadmap phases.
 - [x] **SCAN-06**: PalletBreakdownScanner has no buttons below 44px tap target, no text below text-base, error dismiss ≥44px
 - [x] **SCAN-07**: BarcodeScanner close button ≥44px, instruction text ≥text-base
 - [x] **SCAN-08**: Pagination buttons are min 44x44px for scanner route usage
-- [ ] **SCAN-09**: Inventory Transfers page uses slate palette, no size="sm" action buttons, text-base date cells
-- [ ] **SCAN-10**: Task queue pages (Pick/Putaway/Inspection) have no size="sm" action buttons
-- [ ] **SCAN-11**: Location Sublocations page uses slate/indigo palette with correct focus rings
+- [x] **SCAN-09**: Inventory Transfers page uses slate palette, no size="sm" action buttons, text-base date cells
+- [x] **SCAN-10**: Task queue pages (Pick/Putaway/Inspection) have no size="sm" action buttons
+- [x] **SCAN-11**: Location Sublocations page uses slate/indigo palette with correct focus rings
 
 ### Component Colors & ARIA
 
@@ -61,7 +61,7 @@ Requirements for UI/UX implementation milestone. Each maps to roadmap phases.
 - [x] **ADMN-03**: Tasks List page uses indigo icons, Badge component for priority
 - [x] **ADMN-04**: Lots List page uses indigo tabs, count badges, search input, and lot number links
 - [x] **ADMN-05**: Reports Hub uses indigo icon colors, focus-visible:ring on report card links
-- [ ] **ADMN-06**: Location Sublocations non-Blocking overrides use indigo palette
+- [x] **ADMN-06**: Location Sublocations non-Blocking overrides use indigo palette
 - [x] **ADMN-07**: Settings page active sidebar tab uses indigo palette
 - [x] **ADMN-08**: Inventory List status map uses amber for quarantine, indigo for reserved, slate for returned
 - [x] **ADMN-09**: Outbound orders list uses cyan for "portal" source badge, slate for "internal"
@@ -156,14 +156,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ADMN-03 | Phase 8 | Complete |
 | ADMN-04 | Phase 8 | Complete |
 | ADMN-05 | Phase 8 | Complete |
-| ADMN-06 | Phase 8 | Pending |
+| ADMN-06 | Phase 8 | Complete |
 | ADMN-07 | Phase 8 | Complete |
 | ADMN-08 | Phase 8 | Complete |
 | ADMN-09 | Phase 8 | Complete |
 | ADMN-10 | Phase 8 | Complete |
-| SCAN-09 | Phase 8 | Pending |
-| SCAN-10 | Phase 8 | Pending |
-| SCAN-11 | Phase 8 | Pending |
+| SCAN-09 | Phase 8 | Complete |
+| SCAN-10 | Phase 8 | Complete |
+| SCAN-11 | Phase 8 | Complete |
 | PRTP-01 | Phase 9 | Pending |
 | PRTP-02 | Phase 9 | Pending |
 | PRTP-03 | Phase 9 | Pending |
