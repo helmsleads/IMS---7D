@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useId } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, X } from "lucide-react";
 
@@ -39,6 +39,8 @@ export default function SearchSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const listboxId = useId();
+  const inputId = name || useId();
 
   const selectedOption = options.find((o) => o.value === value);
 
@@ -126,12 +128,14 @@ export default function SearchSelect({
     if (e.key === "Escape") {
       setIsOpen(false);
       setSearch("");
+      setHighlightIndex(-1);
       inputRef.current?.blur();
       return;
     }
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      if (!isOpen) setIsOpen(true);
       setHighlightIndex((prev) =>
         prev < filtered.length - 1 ? prev + 1 : 0
       );
@@ -140,6 +144,7 @@ export default function SearchSelect({
 
     if (e.key === "ArrowUp") {
       e.preventDefault();
+      if (!isOpen) setIsOpen(true);
       setHighlightIndex((prev) =>
         prev > 0 ? prev - 1 : filtered.length - 1
       );
@@ -156,11 +161,20 @@ export default function SearchSelect({
     }
   };
 
+  // Build active descendant ID for the highlighted option
+  const activeDescendantId =
+    isOpen && highlightIndex >= 0 && filtered[highlightIndex]
+      ? `${listboxId}-option-${highlightIndex}`
+      : undefined;
+
   const dropdown =
     isOpen && typeof document !== "undefined"
       ? createPortal(
           <div
             ref={listRef}
+            id={listboxId}
+            role="listbox"
+            aria-label={label || "Options"}
             style={{
               position: "fixed",
               top: dropdownPos.top,
@@ -171,21 +185,23 @@ export default function SearchSelect({
             className="bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto"
           >
             {filtered.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-slate-500 text-center">
+              <div className="px-3 py-4 text-sm text-slate-500 text-center" role="option" aria-selected={false}>
                 No matches found
               </div>
             ) : (
               filtered.map((option, index) => (
-                <button
+                <div
                   key={option.value}
-                  type="button"
+                  id={`${listboxId}-option-${index}`}
+                  role="option"
+                  aria-selected={option.value === value}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     handleSelect(option.value);
                   }}
                   onMouseEnter={() => setHighlightIndex(index)}
                   className={`
-                    w-full text-left px-3 py-2 text-sm transition-colors
+                    w-full text-left px-3 py-2 text-sm transition-colors cursor-pointer
                     ${
                       option.value === value
                         ? "bg-indigo-50 text-indigo-700 font-medium"
@@ -196,7 +212,7 @@ export default function SearchSelect({
                   `}
                 >
                   {option.label}
-                </button>
+                </div>
               ))
             )}
           </div>,
@@ -208,7 +224,7 @@ export default function SearchSelect({
     <div className="w-full" ref={containerRef}>
       {label && (
         <label
-          htmlFor={name}
+          htmlFor={inputId}
           className="block text-sm font-medium text-slate-700 mb-1"
         >
           {label}
@@ -231,8 +247,14 @@ export default function SearchSelect({
       >
         <input
           ref={inputRef}
-          id={name}
+          id={inputId}
           type="text"
+          role="combobox"
+          aria-expanded={isOpen}
+          aria-controls={listboxId}
+          aria-activedescendant={activeDescendantId}
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
           value={isOpen ? search : selectedOption?.label || ""}
           onChange={(e) => {
             setSearch(e.target.value);
@@ -251,6 +273,7 @@ export default function SearchSelect({
               type="button"
               tabIndex={-1}
               onClick={handleClear}
+              aria-label="Clear selection"
               className="p-0.5 text-slate-400 hover:text-slate-600 rounded"
             >
               <X className="w-3.5 h-3.5" />
@@ -260,6 +283,7 @@ export default function SearchSelect({
             className={`w-4 h-4 text-slate-400 transition-transform ${
               isOpen ? "rotate-180" : ""
             }`}
+            aria-hidden="true"
           />
         </div>
       </div>

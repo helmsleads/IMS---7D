@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect, useState, useCallback } from "react";
+import { ReactNode, useEffect, useState, useCallback, useRef, useId } from "react";
 
 interface ModalProps {
   isOpen: boolean;
@@ -18,6 +18,9 @@ const sizeStyles = {
   xl: "max-w-xl",
 };
 
+const FOCUSABLE_SELECTORS =
+  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
 export default function Modal({
   isOpen,
   onClose,
@@ -28,6 +31,9 @@ export default function Modal({
 }: ModalProps) {
   const [visible, setVisible] = useState(false);
   const [animating, setAnimating] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<Element | null>(null);
+  const titleId = useId();
 
   const handleClose = useCallback(() => {
     setAnimating(true);
@@ -51,23 +57,66 @@ export default function Modal({
     }
   }, [isOpen]);
 
+  // Save trigger and restore focus on close
   useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        handleClose();
+    if (isOpen) {
+      triggerRef.current = document.activeElement;
+    } else {
+      if (triggerRef.current && (triggerRef.current as HTMLElement).focus) {
+        (triggerRef.current as HTMLElement).focus();
+        triggerRef.current = null;
       }
-    };
-
-    if (visible) {
-      document.addEventListener("keydown", handleEscape);
-      document.body.style.overflow = "hidden";
     }
+  }, [isOpen]);
 
+  // Focus first focusable element when modal opens
+  useEffect(() => {
+    if (visible && isOpen && modalRef.current) {
+      const focusable = modalRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS);
+      if (focusable.length > 0) {
+        focusable[0].focus();
+      }
+    }
+  }, [visible, isOpen]);
+
+  // Escape key handler and body scroll lock
+  useEffect(() => {
+    if (!visible) return;
+    document.body.style.overflow = "hidden";
     return () => {
-      document.removeEventListener("keydown", handleEscape);
       document.body.style.overflow = "unset";
     };
-  }, [visible, handleClose]);
+  }, [visible]);
+
+  // Focus trap: Tab/Shift+Tab cycle within modal
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === "Escape") {
+        handleClose();
+        return;
+      }
+      if (e.key === "Tab" && modalRef.current) {
+        const focusable = Array.from(
+          modalRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS)
+        ).filter((el) => !el.closest('[aria-hidden="true"]'));
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    },
+    [handleClose]
+  );
 
   if (!visible && !isOpen) {
     return null;
@@ -78,8 +127,14 @@ export default function Modal({
       <div
         className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm ${animating ? "animate-modal-fade-out" : "animate-modal-fade-in"}`}
         onClick={handleClose}
+        aria-hidden="true"
       />
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        onKeyDown={handleKeyDown}
         className={`
           relative bg-white rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.15),0_4px_16px_rgba(0,0,0,0.05)] w-full mx-4 my-auto max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-4rem)] flex flex-col
           ${sizeStyles[size]}
@@ -87,18 +142,20 @@ export default function Modal({
         `}
       >
         <div className="flex items-center justify-between p-4 border-b border-slate-100 flex-shrink-0">
-          <h2 className="text-lg font-semibold text-slate-900">
+          <h2 id={titleId} className="text-lg font-semibold text-slate-900">
             {title || "\u00A0"}
           </h2>
           <button
             onClick={handleClose}
-            className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+            aria-label="Close"
+            className="p-1 text-slate-400 hover:text-slate-600 transition-colors rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
           >
             <svg
               className="w-5 h-5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
+              aria-hidden="true"
             >
               <path
                 strokeLinecap="round"
