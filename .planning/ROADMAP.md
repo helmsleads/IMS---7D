@@ -26,7 +26,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] **Phase 5: Design Tokens** — Apply globals.css tokens and reduced-motion foundations (completed 2026-03-19)
 - [x] **Phase 6: Shared UI Components** — Portal variants, color corrections, ARIA, gray→slate migration (completed 2026-03-20)
 - [x] **Phase 7: Scanner Components** — Tap target and text size fixes across all scanner components (completed 2026-03-20)
-- [ ] **Phase 8: Admin Pages** — Inline color corrections and scanner page fixes for admin routes
+- [x] **Phase 8: Admin Pages** — Inline color corrections and scanner page fixes for admin routes (completed 2026-03-20)
 - [ ] **Phase 9: Portal Pages** — Cyan brand corrections across all portal routes
 
 ## Phase Details
@@ -87,7 +87,7 @@ Plans:
   3. The Pick Queue, Putaway Queue, and Inspection Queue pages have no action buttons below 44px
   4. The Location Sublocations page uses the slate/indigo palette exclusively with correct focus rings on all form inputs
   5. The Task Detail page back button is at least 44px and the timeline uses indigo indicators
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 Plans:
 - [ ] 08-01-PLAN.md — Dashboard, Inbound/Outbound lists, and Inventory List color corrections
 - [ ] 08-02-PLAN.md — Tasks List, Lots List, Reports Hub, Settings, and Task Detail fixes
@@ -119,5 +119,5 @@ Phases execute in dependency order: 5 → 6 → 7 (parallel with 8) → 8 → 9
 | 5. Design Tokens | v2.0 | 1/1 | Complete | 2026-03-19 |
 | 6. Shared UI Components | v2.0 | 6/6 | Complete | 2026-03-20 |
 | 7. Scanner Components | v2.0 | 3/3 | Complete | 2026-03-20 |
-| 8. Admin Pages | v2.0 | 0/3 | Not started | - |
+| 8. Admin Pages | 3/3 | Complete   | 2026-03-20 | - |
 | 9. Portal Pages | v2.0 | 0/? | Not started | - |

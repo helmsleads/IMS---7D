@@ -58,14 +58,14 @@ Requirements for UI/UX implementation milestone. Each maps to roadmap phases.
 
 - [ ] **ADMN-01**: Dashboard page uses indigo StatCard icons, no decorative blobs, rounded-md hero buttons, focus-visible:ring
 - [ ] **ADMN-02**: Inbound and Outbound list pages use amber (not yellow) and indigo (not blue/purple) status tabs
-- [ ] **ADMN-03**: Tasks List page uses indigo icons, Badge component for priority
-- [ ] **ADMN-04**: Lots List page uses indigo tabs, count badges, search input, and lot number links
-- [ ] **ADMN-05**: Reports Hub uses indigo icon colors, focus-visible:ring on report card links
+- [x] **ADMN-03**: Tasks List page uses indigo icons, Badge component for priority
+- [x] **ADMN-04**: Lots List page uses indigo tabs, count badges, search input, and lot number links
+- [x] **ADMN-05**: Reports Hub uses indigo icon colors, focus-visible:ring on report card links
 - [ ] **ADMN-06**: Location Sublocations non-Blocking overrides use indigo palette
-- [ ] **ADMN-07**: Settings page active sidebar tab uses indigo palette
+- [x] **ADMN-07**: Settings page active sidebar tab uses indigo palette
 - [ ] **ADMN-08**: Inventory List status map uses amber for quarantine, indigo for reserved, slate for returned
 - [ ] **ADMN-09**: Outbound orders list uses cyan for "portal" source badge, slate for "internal"
-- [ ] **ADMN-10**: Task Detail page uses ≥44px back button, text-sm timestamps, indigo timeline indicator
+- [x] **ADMN-10**: Task Detail page uses ≥44px back button, text-sm timestamps, indigo timeline indicator
 
 ### Portal Pages
 
@@ -153,14 +153,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SCAN-08 | Phase 7 | Complete |
 | ADMN-01 | Phase 8 | Pending |
 | ADMN-02 | Phase 8 | Pending |
-| ADMN-03 | Phase 8 | Pending |
-| ADMN-04 | Phase 8 | Pending |
-| ADMN-05 | Phase 8 | Pending |
+| ADMN-03 | Phase 8 | Complete |
+| ADMN-04 | Phase 8 | Complete |
+| ADMN-05 | Phase 8 | Complete |
 | ADMN-06 | Phase 8 | Pending |
-| ADMN-07 | Phase 8 | Pending |
+| ADMN-07 | Phase 8 | Complete |
 | ADMN-08 | Phase 8 | Pending |
 | ADMN-09 | Phase 8 | Pending |
-| ADMN-10 | Phase 8 | Pending |
+| ADMN-10 | Phase 8 | Complete |
 | SCAN-09 | Phase 8 | Pending |
 | SCAN-10 | Phase 8 | Pending |
 | SCAN-11 | Phase 8 | Pending |
