@@ -55,12 +55,12 @@ Plans:
   5. Warning states on Alert, Badge, and Toast show amber (not yellow); info states show indigo (not blue)
 **Plans:** 6/6 plans complete
 Plans:
-- [ ] 06-01-PLAN.md — Portal variants for Button/Input/Select/Textarea/Toggle + Toggle/Textarea admin color fixes
-- [ ] 06-02-PLAN.md — Color corrections for Alert, Badge, Spinner, Toast, Pagination
-- [ ] 06-03-PLAN.md — ARIA and keyboard accessibility for Modal, SearchSelect, Breadcrumbs, Card
-- [ ] 06-04-PLAN.md — Charts ARIA + reduced-motion + useReducedMotion hook + StatCard fixes
-- [ ] 06-05-PLAN.md — Gray-to-slate migration + StatusBadge refactor
-- [ ] 06-06-PLAN.md — Dark mode class removal from scanner components
+- [x] 06-01-PLAN.md — Portal variants for Button/Input/Select/Textarea/Toggle + Toggle/Textarea admin color fixes
+- [x] 06-02-PLAN.md — Color corrections for Alert, Badge, Spinner, Toast, Pagination
+- [x] 06-03-PLAN.md — ARIA and keyboard accessibility for Modal, SearchSelect, Breadcrumbs, Card
+- [x] 06-04-PLAN.md — Charts ARIA + reduced-motion + useReducedMotion hook + StatCard fixes
+- [x] 06-05-PLAN.md — Gray-to-slate migration + StatusBadge refactor
+- [x] 06-06-PLAN.md — Dark mode class removal from scanner components
 
 ### Phase 7: Scanner Components
 **Goal**: Every scanner component meets the warehouse floor accessibility standard — all tap targets are at least 44px, all text is at least text-base size, and dark mode classes are removed.
@@ -71,7 +71,11 @@ Plans:
   2. All instructional and status text in scanner components is at least text-base — nothing requires squinting to read on a handheld device
   3. The BarcodeScanner close button and instruction text meet the same 44px and text-base standards
   4. Pagination buttons are at least 44×44px, making them safe for use on Pick/Putaway/Inspection scanner routes
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 07-01-PLAN.md — Fix PickingScanner, PickScanner, BarcodeScanner tap targets and text sizes
+- [ ] 07-02-PLAN.md — Fix PackScanner, ShipScanner, ReceivingScanner tap targets and text sizes
+- [ ] 07-03-PLAN.md — Fix PalletBreakdownScanner tap targets, text sizes, error dismiss + verify Pagination
 
 ### Phase 8: Admin Pages
 **Goal**: Every admin-facing page uses the correct indigo brand palette and scanner pages are fully compliant — no blue/yellow/purple inline overrides remain and all scanner-route admin pages pass the tap-target rubric.
@@ -109,7 +113,7 @@ Phases execute in dependency order: 5 → 6 → 7 (parallel with 8) → 8 → 9
 | 3. Page Audits | v1.0 | 3/3 | Complete | 2026-03-19 |
 | 4. Action Plan Compilation | v1.0 | 2/2 | Complete | 2026-03-19 |
 | 5. Design Tokens | v2.0 | 1/1 | Complete | 2026-03-19 |
-| 6. Shared UI Components | 6/6 | Complete   | 2026-03-20 | - |
-| 7. Scanner Components | v2.0 | 0/? | Not started | - |
+| 6. Shared UI Components | v2.0 | 6/6 | Complete | 2026-03-20 |
+| 7. Scanner Components | v2.0 | 0/3 | Planned | - |
 | 8. Admin Pages | v2.0 | 0/? | Not started | - |
 | 9. Portal Pages | v2.0 | 0/? | Not started | - |
