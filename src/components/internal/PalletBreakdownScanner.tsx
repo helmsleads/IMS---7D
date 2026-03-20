@@ -274,7 +274,7 @@ export default function PalletBreakdownScanner({
             )}
           </div>
         ))}
-        <span className="ml-2 text-sm font-medium text-gray-600">
+        <span className="ml-2 text-base font-medium text-slate-600">
           {stepLabels[step]}
         </span>
       </div>
@@ -283,18 +283,24 @@ export default function PalletBreakdownScanner({
       {success && (
         <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg p-3">
           <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-          <p className="text-sm font-medium">{success}</p>
+          <p className="text-base font-medium">{success}</p>
         </div>
       )}
 
       {/* Error Banner */}
       {error && (
-        <div className="flex items-center gap-2 text-red-700 bg-red-50 rounded-lg p-3">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <p className="text-sm">{error}</p>
-          <button onClick={() => setError("")} className="ml-auto text-red-400 hover:text-red-600">
-            &times;
-          </button>
+        <div className="bg-red-50 rounded-lg p-3 space-y-3">
+          <div className="flex items-center gap-2 text-red-700">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <p className="text-base">{error}</p>
+          </div>
+          <Button
+            variant="secondary"
+            onClick={() => setError("")}
+            className="w-full min-h-[44px] text-red-600 border-red-200 hover:bg-red-100"
+          >
+            Dismiss
+          </Button>
         </div>
       )}
 
@@ -304,7 +310,7 @@ export default function PalletBreakdownScanner({
           <Package className="w-5 h-5 text-blue-600" />
           <div>
             <p className="font-medium text-gray-900">{pallet.lpn_number}</p>
-            <p className="text-xs text-gray-500">
+            <p className="text-base text-slate-500">
               {pallet.contents?.length || 0} products |{" "}
               {pallet.contents?.reduce((sum, c) => sum + c.qty, 0) || 0} total units
             </p>
@@ -358,17 +364,17 @@ export default function PalletBreakdownScanner({
               <button
                 key={content.id}
                 onClick={() => handleSelectProduct(content)}
-                className="w-full flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors text-left"
+                className="w-full flex items-center justify-between p-3 min-h-[44px] border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors text-left"
               >
                 <div>
                   <p className="font-medium text-gray-900">{content.product.name}</p>
-                  <p className="text-sm text-gray-500">{content.product.sku}</p>
+                  <p className="text-base text-slate-500">{content.product.sku}</p>
                 </div>
                 <div className="text-right">
                   <Badge variant={getContainerTypeBadgeColor(content.product.container_type || "other")}>
                     {content.product.container_type || "other"}
                   </Badge>
-                  <p className="text-sm font-medium mt-1">
+                  <p className="text-base font-medium mt-1">
                     {formatCaseAwareQty(
                       content.qty,
                       content.product.container_type || "other",
@@ -386,7 +392,7 @@ export default function PalletBreakdownScanner({
         <div className="space-y-3">
           <div className="bg-gray-50 rounded-lg p-3">
             <p className="font-medium">{selectedContent.product.name}</p>
-            <p className="text-sm text-gray-500">
+            <p className="text-base text-slate-500">
               Available:{" "}
               {formatCaseAwareQty(
                 selectedContent.qty,
@@ -396,7 +402,7 @@ export default function PalletBreakdownScanner({
             </p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-base font-medium text-slate-700 mb-1">
               Quantity to Pull
             </label>
             <input
@@ -413,23 +419,23 @@ export default function PalletBreakdownScanner({
             />
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Button variant="ghost" size="sm" onClick={() => setPullQty(1)}>
+            <Button variant="ghost" onClick={() => setPullQty(1)} className="min-h-[44px]">
               1 unit
             </Button>
             {(selectedContent.product.units_per_case || 1) > 1 && (
               <Button
                 variant="ghost"
-                size="sm"
                 onClick={() => setPullQty(selectedContent.product.units_per_case || 1)}
+                className="min-h-[44px]"
               >
                 1 case ({selectedContent.product.units_per_case})
               </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={() => setPullQty(selectedContent.qty)}>
+            <Button variant="ghost" onClick={() => setPullQty(selectedContent.qty)} className="min-h-[44px]">
               All ({selectedContent.qty})
             </Button>
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-base text-slate-500">
             {formatCaseAwareQty(
               pullQty,
               selectedContent.product.container_type || "other",
@@ -469,12 +475,12 @@ export default function PalletBreakdownScanner({
       {step === "confirm" && selectedContent && (
         <div className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-base">
               <Package className="w-4 h-4 text-blue-600" />
               <span className="text-gray-600">Product:</span>
               <span className="font-medium">{selectedContent.product.name}</span>
             </div>
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-base">
               <span className="text-gray-600 ml-6">Quantity:</span>
               <span className="font-medium">
                 {formatCaseAwareQty(
@@ -484,7 +490,7 @@ export default function PalletBreakdownScanner({
                 )}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-base">
               <ArrowRight className="w-4 h-4 text-blue-600" />
               <span className="text-gray-600">Destination:</span>
               <span className="font-medium">{destinationCode}</span>
@@ -510,11 +516,11 @@ export default function PalletBreakdownScanner({
 
       {/* Bottom actions */}
       <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-        <Button variant="ghost" size="sm" onClick={handleReset}>
+        <Button variant="ghost" onClick={handleReset} className="min-h-[44px]">
           <RotateCcw className="w-4 h-4 mr-1" />
           Start Over
         </Button>
-        <Button variant="secondary" size="sm" onClick={() => onComplete(pallet)}>
+        <Button variant="secondary" onClick={() => onComplete(pallet)} className="min-h-[44px]">
           Done
         </Button>
       </div>
