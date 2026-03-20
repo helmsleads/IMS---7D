@@ -9,6 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 interface BarConfig {
   dataKey: string;
@@ -22,6 +23,7 @@ interface MiniBarChartProps {
   height?: number;
   showGrid?: boolean;
   showXAxis?: boolean;
+  ariaLabel?: string;
 }
 
 function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ color: string; name: string; value: number }>; label?: string }) {
@@ -47,38 +49,64 @@ export default function MiniBarChart({
   height = 160,
   showGrid = false,
   showXAxis = true,
+  ariaLabel = "Bar chart",
 }: MiniBarChartProps) {
+  const prefersReducedMotion = useReducedMotion();
+
   if (!data || data.length === 0) return null;
 
   return (
-    <div className="animate-chart-enter" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-          {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />}
-          {showXAxis && (
-            <XAxis
-              dataKey="name"
-              tick={{ fontSize: 11, fill: "#94A3B8" }}
-              axisLine={false}
-              tickLine={false}
-            />
-          )}
-          <YAxis hide />
-          <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(148, 163, 184, 0.08)" }} />
-          {bars.map((bar) => (
-            <Bar
-              key={bar.dataKey}
-              dataKey={bar.dataKey}
-              name={bar.label || bar.dataKey}
-              fill={bar.color}
-              radius={[4, 4, 0, 0]}
-              isAnimationActive={true}
-              animationDuration={800}
-              animationBegin={100}
-            />
+    <div role="img" aria-label={ariaLabel}>
+      <div className="animate-chart-enter" style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+            {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />}
+            {showXAxis && (
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 11, fill: "#94A3B8" }}
+                axisLine={false}
+                tickLine={false}
+              />
+            )}
+            <YAxis hide />
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(148, 163, 184, 0.08)" }} />
+            {bars.map((bar) => (
+              <Bar
+                key={bar.dataKey}
+                dataKey={bar.dataKey}
+                name={bar.label || bar.dataKey}
+                fill={bar.color}
+                radius={[4, 4, 0, 0]}
+                isAnimationActive={!prefersReducedMotion}
+                animationDuration={800}
+                animationBegin={100}
+              />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <table className="sr-only">
+        <caption>{ariaLabel}</caption>
+        <thead>
+          <tr>
+            <th>Name</th>
+            {bars.map((bar) => (
+              <th key={bar.dataKey}>{bar.label || bar.dataKey}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((row, i) => (
+            <tr key={i}>
+              <td>{String(row.name ?? i)}</td>
+              {bars.map((bar) => (
+                <td key={bar.dataKey}>{String(row[bar.dataKey] ?? "")}</td>
+              ))}
+            </tr>
           ))}
-        </BarChart>
-      </ResponsiveContainer>
+        </tbody>
+      </table>
     </div>
   );
 }

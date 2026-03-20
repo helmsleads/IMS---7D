@@ -1,6 +1,7 @@
 "use client";
 
 import { Treemap, ResponsiveContainer, Tooltip } from "recharts";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 interface TreemapItem {
   name: string;
@@ -12,6 +13,7 @@ interface TreemapChartProps {
   data: TreemapItem[];
   height?: number;
   valueFormatter?: (value: number) => string;
+  ariaLabel?: string;
 }
 
 // Custom content renderer for treemap cells
@@ -82,27 +84,49 @@ export default function TreemapChart({
   data,
   height = 200,
   valueFormatter,
+  ariaLabel = "Treemap chart",
 }: TreemapChartProps) {
+  const prefersReducedMotion = useReducedMotion();
+
   if (!data || data.length === 0) return null;
 
   // Recharts Treemap expects data in a specific nested format
   const treemapData = [{ name: "root", children: data }];
 
   return (
-    <div className="animate-chart-enter" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <Treemap
-          data={treemapData as never}
-          dataKey="value"
-          aspectRatio={4 / 3}
-          stroke="none"
-          content={<CustomContent x={0} y={0} width={0} height={0} name="" color="" value={0} />}
-          isAnimationActive={true}
-          animationDuration={800}
-        >
-          <Tooltip content={<CustomTooltip valueFormatter={valueFormatter} />} />
-        </Treemap>
-      </ResponsiveContainer>
+    <div role="img" aria-label={ariaLabel}>
+      <div className="animate-chart-enter" style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <Treemap
+            data={treemapData as never}
+            dataKey="value"
+            aspectRatio={4 / 3}
+            stroke="none"
+            content={<CustomContent x={0} y={0} width={0} height={0} name="" color="" value={0} />}
+            isAnimationActive={!prefersReducedMotion}
+            animationDuration={800}
+          >
+            <Tooltip content={<CustomTooltip valueFormatter={valueFormatter} />} />
+          </Treemap>
+        </ResponsiveContainer>
+      </div>
+      <table className="sr-only">
+        <caption>{ariaLabel}</caption>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((item, i) => (
+            <tr key={i}>
+              <td>{item.name}</td>
+              <td>{valueFormatter ? valueFormatter(item.value) : item.value.toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

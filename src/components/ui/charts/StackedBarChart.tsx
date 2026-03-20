@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 interface StackConfig {
   dataKey: string;
@@ -25,6 +26,7 @@ interface StackedBarChartProps {
   xDataKey?: string;
   layout?: "horizontal" | "vertical";
   valueFormatter?: (value: number) => string;
+  ariaLabel?: string;
 }
 
 function CustomTooltip({
@@ -64,58 +66,88 @@ export default function StackedBarChart({
   xDataKey = "name",
   layout = "horizontal",
   valueFormatter,
+  ariaLabel = "Stacked bar chart",
 }: StackedBarChartProps) {
+  const prefersReducedMotion = useReducedMotion();
+
   if (!data || data.length === 0) return null;
 
   return (
-    <div className="animate-chart-enter" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={data}
-          layout={layout === "vertical" ? "vertical" : "horizontal"}
-          margin={{ top: 4, right: 8, bottom: 0, left: layout === "vertical" ? 0 : -20 }}
-        >
-          {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />}
-          {layout === "vertical" ? (
-            <>
-              <XAxis type="number" hide />
-              <YAxis
-                type="category"
-                dataKey={xDataKey}
-                tick={{ fontSize: 11, fill: "#94A3B8" }}
-                axisLine={false}
-                tickLine={false}
-                width={80}
-              />
-            </>
-          ) : (
-            <>
-              {showXAxis && (
-                <XAxis
+    <div role="img" aria-label={ariaLabel}>
+      <div className="animate-chart-enter" style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={data}
+            layout={layout === "vertical" ? "vertical" : "horizontal"}
+            margin={{ top: 4, right: 8, bottom: 0, left: layout === "vertical" ? 0 : -20 }}
+          >
+            {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />}
+            {layout === "vertical" ? (
+              <>
+                <XAxis type="number" hide />
+                <YAxis
+                  type="category"
                   dataKey={xDataKey}
                   tick={{ fontSize: 11, fill: "#94A3B8" }}
                   axisLine={false}
                   tickLine={false}
+                  width={80}
                 />
-              )}
-              <YAxis hide />
-            </>
-          )}
-          <Tooltip content={<CustomTooltip valueFormatter={valueFormatter} />} cursor={{ fill: "rgba(148, 163, 184, 0.08)" }} />
-          {stacks.map((stack, idx) => (
-            <Bar
-              key={stack.dataKey}
-              dataKey={stack.dataKey}
-              name={stack.label || stack.dataKey}
-              fill={stack.color}
-              stackId="stack"
-              radius={idx === stacks.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-              isAnimationActive={true}
-              animationDuration={800}
-            />
+              </>
+            ) : (
+              <>
+                {showXAxis && (
+                  <XAxis
+                    dataKey={xDataKey}
+                    tick={{ fontSize: 11, fill: "#94A3B8" }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                )}
+                <YAxis hide />
+              </>
+            )}
+            <Tooltip content={<CustomTooltip valueFormatter={valueFormatter} />} cursor={{ fill: "rgba(148, 163, 184, 0.08)" }} />
+            {stacks.map((stack, idx) => (
+              <Bar
+                key={stack.dataKey}
+                dataKey={stack.dataKey}
+                name={stack.label || stack.dataKey}
+                fill={stack.color}
+                stackId="stack"
+                radius={idx === stacks.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                isAnimationActive={!prefersReducedMotion}
+                animationDuration={800}
+              />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <table className="sr-only">
+        <caption>{ariaLabel}</caption>
+        <thead>
+          <tr>
+            <th>{xDataKey}</th>
+            {stacks.map((stack) => (
+              <th key={stack.dataKey}>{stack.label || stack.dataKey}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((row, i) => (
+            <tr key={i}>
+              <td>{String(row[xDataKey] ?? i)}</td>
+              {stacks.map((stack) => (
+                <td key={stack.dataKey}>
+                  {valueFormatter
+                    ? valueFormatter(Number(row[stack.dataKey] ?? 0))
+                    : String(row[stack.dataKey] ?? "")}
+                </td>
+              ))}
+            </tr>
           ))}
-        </BarChart>
-      </ResponsiveContainer>
+        </tbody>
+      </table>
     </div>
   );
 }

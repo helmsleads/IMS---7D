@@ -8,6 +8,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 interface WaterfallItem {
   name: string;
@@ -19,6 +20,7 @@ interface WaterfallChartProps {
   data: WaterfallItem[];
   height?: number;
   valueFormatter?: (value: number) => string;
+  ariaLabel?: string;
 }
 
 interface ProcessedItem {
@@ -60,7 +62,10 @@ export default function WaterfallChart({
   data,
   height = 200,
   valueFormatter,
+  ariaLabel = "Waterfall chart",
 }: WaterfallChartProps) {
+  const prefersReducedMotion = useReducedMotion();
+
   if (!data || data.length === 0) return null;
 
   // Calculate invisible base bars and visible bars
@@ -96,38 +101,59 @@ export default function WaterfallChart({
   });
 
   return (
-    <div className="animate-chart-enter" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={processed} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
-          <XAxis
-            dataKey="name"
-            tick={{ fontSize: 11, fill: "#94A3B8" }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <Tooltip
-            content={<CustomTooltip valueFormatter={valueFormatter} />}
-            cursor={{ fill: "rgba(148, 163, 184, 0.08)" }}
-          />
-          <Bar
-            dataKey="invisible"
-            stackId="stack"
-            fill="transparent"
-            isAnimationActive={false}
-          />
-          <Bar
-            dataKey="visible"
-            stackId="stack"
-            radius={[4, 4, 0, 0]}
-            isAnimationActive={true}
-            animationDuration={800}
-          >
-            {processed.map((entry, idx) => (
-              <Cell key={idx} fill={COLORS[entry.type]} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+    <div role="img" aria-label={ariaLabel}>
+      <div className="animate-chart-enter" style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={processed} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
+            <XAxis
+              dataKey="name"
+              tick={{ fontSize: 11, fill: "#94A3B8" }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip
+              content={<CustomTooltip valueFormatter={valueFormatter} />}
+              cursor={{ fill: "rgba(148, 163, 184, 0.08)" }}
+            />
+            <Bar
+              dataKey="invisible"
+              stackId="stack"
+              fill="transparent"
+              isAnimationActive={false}
+            />
+            <Bar
+              dataKey="visible"
+              stackId="stack"
+              radius={[4, 4, 0, 0]}
+              isAnimationActive={!prefersReducedMotion}
+              animationDuration={800}
+            >
+              {processed.map((entry, idx) => (
+                <Cell key={idx} fill={COLORS[entry.type]} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <table className="sr-only">
+        <caption>{ariaLabel}</caption>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Value</th>
+            <th>Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((item, i) => (
+            <tr key={i}>
+              <td>{item.name}</td>
+              <td>{valueFormatter ? valueFormatter(item.value) : item.value.toLocaleString()}</td>
+              <td>{item.type}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

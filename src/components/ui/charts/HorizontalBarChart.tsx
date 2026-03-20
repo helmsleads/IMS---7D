@@ -9,12 +9,14 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 interface HorizontalBarChartProps {
   data: { name: string; value: number; color?: string }[];
   height?: number;
   color?: string;
   valueFormatter?: (value: number) => string;
+  ariaLabel?: string;
 }
 
 function CustomTooltip({
@@ -43,38 +45,60 @@ export default function HorizontalBarChart({
   height,
   color = "#4F46E5",
   valueFormatter,
+  ariaLabel = "Horizontal bar chart",
 }: HorizontalBarChartProps) {
+  const prefersReducedMotion = useReducedMotion();
+
   if (!data || data.length === 0) return null;
 
   const computedHeight = height || Math.max(data.length * 36, 120);
 
   return (
-    <div className="animate-chart-enter" style={{ height: computedHeight }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
-          <XAxis type="number" hide />
-          <YAxis
-            type="category"
-            dataKey="name"
-            tick={{ fontSize: 12, fill: "#64748B" }}
-            axisLine={false}
-            tickLine={false}
-            width={100}
-          />
-          <Tooltip content={<CustomTooltip valueFormatter={valueFormatter} />} cursor={{ fill: "rgba(148, 163, 184, 0.08)" }} />
-          <Bar
-            dataKey="value"
-            radius={[0, 4, 4, 0]}
-            isAnimationActive={true}
-            animationDuration={800}
-            barSize={20}
-          >
-            {data.map((entry, idx) => (
-              <Cell key={idx} fill={entry.color || color} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+    <div role="img" aria-label={ariaLabel}>
+      <div className="animate-chart-enter" style={{ height: computedHeight }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} layout="vertical" margin={{ top: 0, right: 8, bottom: 0, left: 0 }}>
+            <XAxis type="number" hide />
+            <YAxis
+              type="category"
+              dataKey="name"
+              tick={{ fontSize: 12, fill: "#64748B" }}
+              axisLine={false}
+              tickLine={false}
+              width={100}
+            />
+            <Tooltip content={<CustomTooltip valueFormatter={valueFormatter} />} cursor={{ fill: "rgba(148, 163, 184, 0.08)" }} />
+            <Bar
+              dataKey="value"
+              radius={[0, 4, 4, 0]}
+              isAnimationActive={!prefersReducedMotion}
+              animationDuration={800}
+              barSize={20}
+            >
+              {data.map((entry, idx) => (
+                <Cell key={idx} fill={entry.color || color} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <table className="sr-only">
+        <caption>{ariaLabel}</caption>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((entry, i) => (
+            <tr key={i}>
+              <td>{entry.name}</td>
+              <td>{valueFormatter ? valueFormatter(entry.value) : entry.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

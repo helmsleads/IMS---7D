@@ -9,6 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 interface LineConfig {
   dataKey: string;
@@ -25,6 +26,7 @@ interface MiniLineChartProps {
   showGrid?: boolean;
   showXAxis?: boolean;
   xDataKey?: string;
+  ariaLabel?: string;
 }
 
 function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ color: string; name: string; value: number }>; label?: string }) {
@@ -50,41 +52,67 @@ export default function MiniLineChart({
   showGrid = true,
   showXAxis = true,
   xDataKey = "name",
+  ariaLabel = "Line chart",
 }: MiniLineChartProps) {
+  const prefersReducedMotion = useReducedMotion();
+
   if (!data || data.length === 0) return null;
 
   return (
-    <div className="animate-chart-enter" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
-          {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />}
-          {showXAxis && (
-            <XAxis
-              dataKey={xDataKey}
-              tick={{ fontSize: 11, fill: "#94A3B8" }}
-              axisLine={false}
-              tickLine={false}
-            />
-          )}
-          <YAxis hide />
-          <Tooltip content={<CustomTooltip />} />
-          {lines.map((line) => (
-            <Line
-              key={line.dataKey}
-              type="monotone"
-              dataKey={line.dataKey}
-              name={line.label || line.dataKey}
-              stroke={line.color}
-              strokeWidth={2}
-              strokeDasharray={line.dashed ? "5 5" : undefined}
-              dot={false}
-              activeDot={{ r: 4, strokeWidth: 0 }}
-              isAnimationActive={true}
-              animationDuration={800}
-            />
+    <div role="img" aria-label={ariaLabel}>
+      <div className="animate-chart-enter" style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
+            {showGrid && <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />}
+            {showXAxis && (
+              <XAxis
+                dataKey={xDataKey}
+                tick={{ fontSize: 11, fill: "#94A3B8" }}
+                axisLine={false}
+                tickLine={false}
+              />
+            )}
+            <YAxis hide />
+            <Tooltip content={<CustomTooltip />} />
+            {lines.map((line) => (
+              <Line
+                key={line.dataKey}
+                type="monotone"
+                dataKey={line.dataKey}
+                name={line.label || line.dataKey}
+                stroke={line.color}
+                strokeWidth={2}
+                strokeDasharray={line.dashed ? "5 5" : undefined}
+                dot={false}
+                activeDot={{ r: 4, strokeWidth: 0 }}
+                isAnimationActive={!prefersReducedMotion}
+                animationDuration={800}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <table className="sr-only">
+        <caption>{ariaLabel}</caption>
+        <thead>
+          <tr>
+            <th>{xDataKey}</th>
+            {lines.map((line) => (
+              <th key={line.dataKey}>{line.label || line.dataKey}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((row, i) => (
+            <tr key={i}>
+              <td>{String(row[xDataKey] ?? i)}</td>
+              {lines.map((line) => (
+                <td key={line.dataKey}>{String(row[line.dataKey] ?? "")}</td>
+              ))}
+            </tr>
           ))}
-        </LineChart>
-      </ResponsiveContainer>
+        </tbody>
+      </table>
     </div>
   );
 }

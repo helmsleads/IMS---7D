@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 interface CalendarDay {
   date: string; // YYYY-MM-DD
@@ -10,6 +11,7 @@ interface CalendarDay {
 interface CalendarHeatmapProps {
   data: CalendarDay[];
   days?: number;
+  ariaLabel?: string;
 }
 
 const COLORS = [
@@ -29,14 +31,18 @@ function getColor(count: number, max: number): string {
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export default function CalendarHeatmap({ data, days = 90 }: CalendarHeatmapProps) {
-  const { grid, months, maxCount, weeks } = useMemo(() => {
+export default function CalendarHeatmap({ data, days = 90, ariaLabel = "Calendar heatmap" }: CalendarHeatmapProps) {
+  const prefersReducedMotion = useReducedMotion();
+
+  const { grid, months, maxCount, weeks, totalCount } = useMemo(() => {
     // Build lookup
     const lookup = new Map<string, number>();
     let maxCount = 0;
+    let totalCount = 0;
     for (const d of data) {
       lookup.set(d.date, d.count);
       if (d.count > maxCount) maxCount = d.count;
+      totalCount += d.count;
     }
 
     // Generate day list ending today
@@ -59,7 +65,6 @@ export default function CalendarHeatmap({ data, days = 90 }: CalendarHeatmapProp
       // Get ISO week number to detect week boundary
       const weekStart = new Date(day.date);
       weekStart.setDate(weekStart.getDate() - dow);
-      const weekKey = weekStart.toISOString().slice(0, 10);
 
       if (prevWeek === -1) {
         prevWeek = 0;
@@ -84,7 +89,7 @@ export default function CalendarHeatmap({ data, days = 90 }: CalendarHeatmapProp
       }
     }
 
-    return { grid, months, maxCount, weeks };
+    return { grid, months, maxCount, weeks, totalCount };
   }, [data, days]);
 
   const cellSize = 12;
@@ -95,37 +100,42 @@ export default function CalendarHeatmap({ data, days = 90 }: CalendarHeatmapProp
   const svgHeight = 7 * step + topMargin + cellGap;
 
   return (
-    <div className="animate-chart-enter overflow-x-auto">
-      <svg width={svgWidth} height={svgHeight} role="img" aria-label="Calendar heatmap">
-        {/* Month labels */}
-        {months.map((m, i) => (
-          <text
-            key={i}
-            x={m.col * step + cellGap}
-            y={10}
-            fontSize={10}
-            fill="#94A3B8"
-            fontFamily="inherit"
-          >
-            {m.label}
-          </text>
-        ))}
-        {/* Day cells */}
-        {grid.map((cell, i) => (
-          <rect
-            key={i}
-            x={cell.col * step + cellGap}
-            y={cell.row * step + topMargin}
-            width={cellSize}
-            height={cellSize}
-            rx={2}
-            ry={2}
-            fill={getColor(cell.count, maxCount)}
-          >
-            <title>{`${cell.date.toISOString().slice(0, 10)}: ${cell.count}`}</title>
-          </rect>
-        ))}
-      </svg>
+    <div role="img" aria-label={ariaLabel}>
+      <div className={prefersReducedMotion ? "overflow-x-auto" : "animate-chart-enter overflow-x-auto"}>
+        <svg width={svgWidth} height={svgHeight} aria-hidden="true">
+          {/* Month labels */}
+          {months.map((m, i) => (
+            <text
+              key={i}
+              x={m.col * step + cellGap}
+              y={10}
+              fontSize={10}
+              fill="#94A3B8"
+              fontFamily="inherit"
+            >
+              {m.label}
+            </text>
+          ))}
+          {/* Day cells */}
+          {grid.map((cell, i) => (
+            <rect
+              key={i}
+              x={cell.col * step + cellGap}
+              y={cell.row * step + topMargin}
+              width={cellSize}
+              height={cellSize}
+              rx={2}
+              ry={2}
+              fill={getColor(cell.count, maxCount)}
+            >
+              <title>{`${cell.date.toISOString().slice(0, 10)}: ${cell.count}`}</title>
+            </rect>
+          ))}
+        </svg>
+      </div>
+      <p className="sr-only">
+        {ariaLabel}: {days}-day activity heatmap. Total activity: {totalCount}. Peak day: {maxCount}.
+      </p>
     </div>
   );
 }

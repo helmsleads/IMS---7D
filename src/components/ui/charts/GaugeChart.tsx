@@ -1,15 +1,23 @@
+"use client";
+
+import { useReducedMotion } from "@/hooks/useReducedMotion";
+
 interface GaugeChartProps {
   value: number; // 0-100
   label?: string;
   color?: string;
+  ariaLabel?: string;
 }
 
 export default function GaugeChart({
   value,
   label,
   color = "#4F46E5",
+  ariaLabel,
 }: GaugeChartProps) {
+  const prefersReducedMotion = useReducedMotion();
   const clampedValue = Math.max(0, Math.min(100, value));
+  const resolvedAriaLabel = ariaLabel ?? `Gauge: ${clampedValue}%${label ? ` — ${label}` : ""}`;
 
   // SVG arc parameters
   const cx = 100;
@@ -44,54 +52,56 @@ export default function GaugeChart({
       : "";
 
   return (
-    <div className="animate-chart-enter flex justify-center">
-      <svg viewBox="0 0 200 120" width="200" height="120" role="img" aria-label={`Gauge: ${clampedValue}%`}>
-        {/* Background arc */}
-        <path
-          d={bgPath}
-          fill="none"
-          stroke="#E2E8F0"
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-        />
-        {/* Value arc */}
-        {valPath && (
+    <div role="img" aria-label={resolvedAriaLabel}>
+      <div className={prefersReducedMotion ? "flex justify-center" : "animate-chart-enter flex justify-center"}>
+        <svg viewBox="0 0 200 120" width="200" height="120" aria-hidden="true">
+          {/* Background arc */}
           <path
-            d={valPath}
+            d={bgPath}
             fill="none"
-            stroke={color}
+            stroke="#E2E8F0"
             strokeWidth={strokeWidth}
             strokeLinecap="round"
           />
-        )}
-        {/* Value text */}
-        <text
-          x={cx}
-          y={cy - 4}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize={28}
-          fontWeight={700}
-          fill="#0F172A"
-          fontFamily="inherit"
-        >
-          {clampedValue}%
-        </text>
-        {/* Label */}
-        {label && (
+          {/* Value arc */}
+          {valPath && (
+            <path
+              d={valPath}
+              fill="none"
+              stroke={color}
+              strokeWidth={strokeWidth}
+              strokeLinecap="round"
+            />
+          )}
+          {/* Value text */}
           <text
             x={cx}
-            y={cy + 18}
+            y={cy - 4}
             textAnchor="middle"
             dominantBaseline="central"
-            fontSize={11}
-            fill="#64748B"
+            fontSize={28}
+            fontWeight={700}
+            fill="#0F172A"
             fontFamily="inherit"
           >
-            {label}
+            {clampedValue}%
           </text>
-        )}
-      </svg>
+          {/* Label */}
+          {label && (
+            <text
+              x={cx}
+              y={cy + 18}
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize={11}
+              fill="#64748B"
+              fontFamily="inherit"
+            >
+              {label}
+            </text>
+          )}
+        </svg>
+      </div>
     </div>
   );
 }

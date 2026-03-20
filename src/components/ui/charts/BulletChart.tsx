@@ -1,3 +1,7 @@
+"use client";
+
+import { useReducedMotion } from "@/hooks/useReducedMotion";
+
 interface BulletItem {
   label: string;
   current: number;
@@ -8,9 +12,13 @@ interface BulletItem {
 
 interface BulletChartProps {
   data: BulletItem[];
+  ariaLabel?: string;
 }
 
-export default function BulletChart({ data }: BulletChartProps) {
+export default function BulletChart({ data, ariaLabel = "Bullet chart" }: BulletChartProps) {
+  // useReducedMotion imported for consistency — BulletChart uses static SVG, no CSS animations
+  useReducedMotion();
+
   if (!data || data.length === 0) return null;
 
   const rowHeight = 40;
@@ -20,87 +28,109 @@ export default function BulletChart({ data }: BulletChartProps) {
   const totalHeight = data.length * rowHeight + 8;
 
   return (
-    <div className="animate-chart-enter overflow-x-auto">
-      <svg
-        viewBox={`0 0 ${totalWidth} ${totalHeight}`}
-        width="100%"
-        preserveAspectRatio="xMinYMid meet"
-        role="img"
-        aria-label="Bullet chart"
-      >
-        {data.map((item, i) => {
-          const y = i * rowHeight + 4;
-          const barY = y + 8;
-          const barHeight = 24;
-          const color = item.color || "#4F46E5";
+    <div role="img" aria-label={ariaLabel}>
+      <div className={`animate-chart-enter overflow-x-auto`}>
+        <svg
+          viewBox={`0 0 ${totalWidth} ${totalHeight}`}
+          width="100%"
+          preserveAspectRatio="xMinYMid meet"
+          aria-hidden="true"
+        >
+          {data.map((item, i) => {
+            const y = i * rowHeight + 4;
+            const barY = y + 8;
+            const barHeight = 24;
+            const color = item.color || "#4F46E5";
 
-          const scale = (v: number) =>
-            Math.max(0, Math.min((v / item.max) * barAreaWidth, barAreaWidth));
+            const scale = (v: number) =>
+              Math.max(0, Math.min((v / item.max) * barAreaWidth, barAreaWidth));
 
-          const currentWidth = scale(item.current);
-          const targetX = scale(item.target);
+            const currentWidth = scale(item.current);
+            const targetX = scale(item.target);
 
-          return (
-            <g key={i}>
-              {/* Label */}
-              <text
-                x={labelWidth - 8}
-                y={barY + barHeight / 2}
-                textAnchor="end"
-                dominantBaseline="central"
-                fontSize={12}
-                fill="#64748B"
-                fontFamily="inherit"
-              >
-                {item.label}
-              </text>
+            return (
+              <g key={i}>
+                {/* Label */}
+                <text
+                  x={labelWidth - 8}
+                  y={barY + barHeight / 2}
+                  textAnchor="end"
+                  dominantBaseline="central"
+                  fontSize={12}
+                  fill="#64748B"
+                  fontFamily="inherit"
+                >
+                  {item.label}
+                </text>
 
-              {/* Max range background */}
-              <rect
-                x={labelWidth}
-                y={barY}
-                width={barAreaWidth}
-                height={barHeight}
-                rx={4}
-                ry={4}
-                fill="#F1F5F9"
-              />
+                {/* Max range background */}
+                <rect
+                  x={labelWidth}
+                  y={barY}
+                  width={barAreaWidth}
+                  height={barHeight}
+                  rx={4}
+                  ry={4}
+                  fill="#F1F5F9"
+                />
 
-              {/* Target range (lighter shade) */}
-              <rect
-                x={labelWidth}
-                y={barY + 4}
-                width={targetX}
-                height={barHeight - 8}
-                rx={2}
-                ry={2}
-                fill="#CBD5E1"
-              />
+                {/* Target range (lighter shade) */}
+                <rect
+                  x={labelWidth}
+                  y={barY + 4}
+                  width={targetX}
+                  height={barHeight - 8}
+                  rx={2}
+                  ry={2}
+                  fill="#CBD5E1"
+                />
 
-              {/* Current value (dark fill) */}
-              <rect
-                x={labelWidth}
-                y={barY + 6}
-                width={currentWidth}
-                height={barHeight - 12}
-                rx={2}
-                ry={2}
-                fill={color}
-              />
+                {/* Current value (dark fill) */}
+                <rect
+                  x={labelWidth}
+                  y={barY + 6}
+                  width={currentWidth}
+                  height={barHeight - 12}
+                  rx={2}
+                  ry={2}
+                  fill={color}
+                />
 
-              {/* Target marker line */}
-              <line
-                x1={labelWidth + targetX}
-                y1={barY + 2}
-                x2={labelWidth + targetX}
-                y2={barY + barHeight - 2}
-                stroke="#0F172A"
-                strokeWidth={2}
-              />
-            </g>
-          );
-        })}
-      </svg>
+                {/* Target marker line */}
+                <line
+                  x1={labelWidth + targetX}
+                  y1={barY + 2}
+                  x2={labelWidth + targetX}
+                  y2={barY + barHeight - 2}
+                  stroke="#0F172A"
+                  strokeWidth={2}
+                />
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <table className="sr-only">
+        <caption>{ariaLabel}</caption>
+        <thead>
+          <tr>
+            <th>Label</th>
+            <th>Current</th>
+            <th>Target</th>
+            <th>Max</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((item, i) => (
+            <tr key={i}>
+              <td>{item.label}</td>
+              <td>{item.current}</td>
+              <td>{item.target}</td>
+              <td>{item.max}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
