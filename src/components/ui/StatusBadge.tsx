@@ -9,12 +9,25 @@ interface StatusBadgeProps {
   className?: string;
 }
 
-const variantMap: Record<string, "default" | "success" | "warning" | "error" | "info"> = {
+type BadgeVariant = "default" | "success" | "warning" | "error" | "info";
+
+/**
+ * Maps a Tailwind bg class (from getStatusColor) to a semantic Badge variant.
+ * This is the canonical mapping for the design system's status colors.
+ */
+const bgToVariant: Record<string, BadgeVariant> = {
   "bg-green-100": "success",
   "bg-yellow-100": "warning",
   "bg-red-100": "error",
   "bg-blue-100": "info",
-  "bg-gray-100": "default",
+  "bg-slate-100": "default",
+  // Unmapped bg values (e.g., defaultColors from status.ts) fall through to ?? "default"
+  "bg-purple-100": "warning",
+  "bg-indigo-100": "info",
+  "bg-cyan-100": "info",
+  "bg-orange-100": "warning",
+  "bg-teal-100": "info",
+  "bg-pink-100": "error",
 };
 
 export default function StatusBadge({
@@ -24,7 +37,7 @@ export default function StatusBadge({
   className = "",
 }: StatusBadgeProps) {
   const colors = getStatusColor(status, entityType);
-  const variant = variantMap[colors.bg] ?? "default";
+  const variant: BadgeVariant = bgToVariant[colors.bg] ?? "default";
 
   return (
     <Badge variant={variant} size={size} className={`${colors.bg} ${colors.text} ${className}`}>
