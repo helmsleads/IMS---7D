@@ -53,7 +53,7 @@ Plans:
   3. All 12 chart components have `aria-label` and `role="img"` and stop animating when the user has prefers-reduced-motion enabled
   4. No shared UI component uses `gray-*` palette classes — all instances are `slate-*`
   5. Warning states on Alert, Badge, and Toast show amber (not yellow); info states show indigo (not blue)
-**Plans:** 4/6 plans executed
+**Plans:** 5/6 plans executed
 Plans:
 - [ ] 06-01-PLAN.md — Portal variants for Button/Input/Select/Textarea/Toggle + Toggle/Textarea admin color fixes
 - [ ] 06-02-PLAN.md — Color corrections for Alert, Badge, Spinner, Toast, Pagination
@@ -109,7 +109,7 @@ Phases execute in dependency order: 5 → 6 → 7 (parallel with 8) → 8 → 9
 | 3. Page Audits | v1.0 | 3/3 | Complete | 2026-03-19 |
 | 4. Action Plan Compilation | v1.0 | 2/2 | Complete | 2026-03-19 |
 | 5. Design Tokens | v2.0 | 1/1 | Complete | 2026-03-19 |
-| 6. Shared UI Components | 4/6 | In Progress|  | - |
+| 6. Shared UI Components | 5/6 | In Progress|  | - |
 | 7. Scanner Components | v2.0 | 0/? | Not started | - |
 | 8. Admin Pages | v2.0 | 0/? | Not started | - |
 | 9. Portal Pages | v2.0 | 0/? | Not started | - |

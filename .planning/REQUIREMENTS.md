@@ -39,7 +39,7 @@ Requirements for UI/UX implementation milestone. Each maps to roadmap phases.
 - [x] **COMP-01**: Alert component uses amber for warning, indigo for info, has dismiss button aria-label and focus-visible:ring
 - [x] **COMP-02**: Badge component uses amber for warning, indigo for info, has border pattern on all variants
 - [x] **COMP-03**: Spinner uses indigo-600, slate-200, has role="status" and aria-label, motion-safe prefix
-- [ ] **COMP-04**: StatCard iconColor defaults to indigo-50/indigo-600 instead of blue
+- [x] **COMP-04**: StatCard iconColor defaults to indigo-50/indigo-600 instead of blue
 - [x] **COMP-05**: Toast uses indigo for info, has warning variant (amber), motion-safe prefix, focus-visible dismiss
 - [x] **COMP-06**: Toggle admin checked state uses indigo-600, unchecked slate-200, focus-visible:ring-indigo-500
 - [x] **COMP-07**: Textarea admin uses focus-visible:ring-indigo-500, rounded-md, slate palette
@@ -48,8 +48,8 @@ Requirements for UI/UX implementation milestone. Each maps to roadmap phases.
 - [x] **COMP-10**: Card has role="button", tabIndex, onKeyDown when onClick present, focus-visible:ring on clickable
 - [x] **COMP-11**: Modal has role="dialog", aria-modal="true", aria-labelledby, close button aria-label and focus-visible:ring
 - [x] **COMP-12**: SearchSelect has ARIA combobox pattern (role="combobox", role="listbox", role="option")
-- [ ] **COMP-13**: All 12 chart components have aria-label prop and role="img" wrapper
-- [ ] **COMP-14**: All Recharts chart components respect prefers-reduced-motion via isAnimationActive
+- [x] **COMP-13**: All 12 chart components have aria-label prop and role="img" wrapper
+- [x] **COMP-14**: All Recharts chart components respect prefers-reduced-motion via isAnimationActive
 - [ ] **COMP-15**: Gray→slate migration complete across all shared UI components (~19 components)
 - [x] **COMP-16**: Dark mode classes removed from 5 scanner components (outside MASTER.md scope)
 - [ ] **COMP-17**: StatusBadge refactored from Tailwind class key to semantic status→variant mapping
@@ -81,7 +81,7 @@ Requirements for UI/UX implementation milestone. Each maps to roadmap phases.
 
 ### Cross-Cutting
 
-- [ ] **XCUT-01**: StatCard useAnimatedNumber hook respects prefers-reduced-motion
+- [x] **XCUT-01**: StatCard useAnimatedNumber hook respects prefers-reduced-motion
 - [x] **XCUT-02**: All custom keyframe animations in globals.css have reduced-motion fallbacks
 
 ## Future Requirements
@@ -128,7 +128,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COMP-01 | Phase 6 | Complete |
 | COMP-02 | Phase 6 | Complete |
 | COMP-03 | Phase 6 | Complete |
-| COMP-04 | Phase 6 | Pending |
+| COMP-04 | Phase 6 | Complete |
 | COMP-05 | Phase 6 | Complete |
 | COMP-06 | Phase 6 | Complete |
 | COMP-07 | Phase 6 | Complete |
@@ -137,12 +137,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COMP-10 | Phase 6 | Complete |
 | COMP-11 | Phase 6 | Complete |
 | COMP-12 | Phase 6 | Complete |
-| COMP-13 | Phase 6 | Pending |
-| COMP-14 | Phase 6 | Pending |
+| COMP-13 | Phase 6 | Complete |
+| COMP-14 | Phase 6 | Complete |
 | COMP-15 | Phase 6 | Pending |
 | COMP-16 | Phase 6 | Complete |
 | COMP-17 | Phase 6 | Pending |
-| XCUT-01 | Phase 6 | Pending |
+| XCUT-01 | Phase 6 | Complete |
 | SCAN-01 | Phase 7 | Pending |
 | SCAN-02 | Phase 7 | Pending |
 | SCAN-03 | Phase 7 | Pending |
