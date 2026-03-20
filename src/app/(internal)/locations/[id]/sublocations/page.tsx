@@ -449,7 +449,7 @@ export default function LocationSublocationsPage() {
           type="checkbox"
           checked={sublocations.length > 0 && selectedSublocations.size === sublocations.length}
           onChange={toggleSelectAll}
-          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+          className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus-visible:ring-indigo-500"
         />
       ),
       render: (subloc: SublocationWithLocation) => (
@@ -458,7 +458,7 @@ export default function LocationSublocationsPage() {
           checked={selectedSublocations.has(subloc.id)}
           onChange={() => toggleSelectSublocation(subloc.id)}
           onClick={(e) => e.stopPropagation()}
-          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+          className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus-visible:ring-indigo-500"
         />
       ),
       hideOnMobile: true,
@@ -467,28 +467,28 @@ export default function LocationSublocationsPage() {
       key: "code",
       header: "Code",
       render: (subloc: SublocationWithLocation) => (
-        <span className="font-mono font-medium text-gray-900">{subloc.code}</span>
+        <span className="font-mono font-medium text-slate-900">{subloc.code}</span>
       ),
     },
     {
       key: "name",
       header: "Name",
       render: (subloc: SublocationWithLocation) => (
-        <span className="text-gray-900">{subloc.name || "—"}</span>
+        <span className="text-slate-900">{subloc.name || "—"}</span>
       ),
     },
     {
       key: "zone",
       header: "Zone",
       render: (subloc: SublocationWithLocation) => (
-        <span className="text-gray-600">{subloc.zone || "—"}</span>
+        <span className="text-slate-600">{subloc.zone || "—"}</span>
       ),
     },
     {
       key: "path",
       header: "Aisle-Rack-Shelf-Bin",
       render: (subloc: SublocationWithLocation) => (
-        <span className="font-mono text-sm text-gray-600">{formatAisleRackShelfBin(subloc)}</span>
+        <span className="font-mono text-sm text-slate-600">{formatAisleRackShelfBin(subloc)}</span>
       ),
     },
     {
@@ -497,11 +497,11 @@ export default function LocationSublocationsPage() {
       render: (subloc: SublocationWithLocation) => (
         subloc.barcode ? (
           <div className="flex items-center gap-1.5">
-            <Barcode className="w-4 h-4 text-gray-400" />
-            <span className="font-mono text-sm text-gray-600">{subloc.barcode}</span>
+            <Barcode className="w-4 h-4 text-slate-400" />
+            <span className="font-mono text-sm text-slate-600">{subloc.barcode}</span>
           </div>
         ) : (
-          <span className="text-gray-400">—</span>
+          <span className="text-slate-400">—</span>
         )
       ),
     },
@@ -509,7 +509,7 @@ export default function LocationSublocationsPage() {
       key: "capacity",
       header: "Capacity",
       render: (subloc: SublocationWithLocation) => (
-        <span className="text-gray-600">
+        <span className="text-slate-600">
           {subloc.capacity ? subloc.capacity.toLocaleString() : "—"}
         </span>
       ),
@@ -521,8 +521,8 @@ export default function LocationSublocationsPage() {
         const itemCount = sublocationItemCounts.get(subloc.id) || 0;
         return (
           <div className="flex items-center gap-1.5">
-            <Package className="w-4 h-4 text-gray-400" />
-            <span className={`font-medium ${itemCount > 0 ? "text-gray-900" : "text-gray-400"}`}>
+            <Package className="w-4 h-4 text-slate-400" />
+            <span className={`font-medium ${itemCount > 0 ? "text-slate-900" : "text-slate-400"}`}>
               {itemCount.toLocaleString()}
             </span>
           </div>
@@ -558,14 +558,14 @@ export default function LocationSublocationsPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => openEditModal(subloc)}
-            className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
             title="Edit"
           >
             <Pencil className="w-4 h-4" />
           </button>
           <button
             onClick={() => handlePrintBarcode(subloc)}
-            className="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+            className="p-1.5 text-slate-500 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
             title="Print Barcode"
           >
             <Printer className="w-4 h-4" />
@@ -579,7 +579,7 @@ export default function LocationSublocationsPage() {
     return (
       <AppShell title="Loading...">
         <div className="flex items-center justify-center py-12">
-          <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+          <div className="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div>
         </div>
       </AppShell>
     );
@@ -629,7 +629,7 @@ export default function LocationSublocationsPage() {
         {/* Back Link */}
         <button
           onClick={() => router.push("/locations")}
-          className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+          className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Locations
@@ -646,26 +646,26 @@ export default function LocationSublocationsPage() {
         {/* Location Summary */}
         <Card>
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-blue-100 rounded-xl">
-              <MapPin className="w-6 h-6 text-blue-600" />
+            <div className="p-3 bg-indigo-100 rounded-xl">
+              <MapPin className="w-6 h-6 text-indigo-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">{location.name}</h2>
+              <h2 className="text-lg font-semibold text-slate-900">{location.name}</h2>
               {location.city && location.state && (
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-slate-500">
                   {location.city}, {location.state}
                 </p>
               )}
             </div>
             <div className="ml-auto flex items-center gap-6">
               <div className="text-center">
-                <p className="text-2xl font-bold text-gray-900">{activeSublocations.length}</p>
-                <p className="text-xs text-gray-500">Active Sublocations</p>
+                <p className="text-2xl font-bold text-slate-900">{activeSublocations.length}</p>
+                <p className="text-xs text-slate-500">Active Sublocations</p>
               </div>
               {inactiveSublocations.length > 0 && (
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-gray-400">{inactiveSublocations.length}</p>
-                  <p className="text-xs text-gray-500">Inactive</p>
+                  <p className="text-2xl font-bold text-slate-400">{inactiveSublocations.length}</p>
+                  <p className="text-xs text-slate-500">Inactive</p>
                 </div>
               )}
             </div>
@@ -676,9 +676,9 @@ export default function LocationSublocationsPage() {
         <Card>
           {/* Selection Actions Bar */}
           {sublocations.length > 0 && (
-            <div className="flex items-center justify-between pb-4 mb-4 border-b border-gray-100">
+            <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
               <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-500">
+                <span className="text-sm text-slate-500">
                   {selectedSublocations.size > 0
                     ? `${selectedSublocations.size} of ${sublocations.length} selected`
                     : `${sublocations.length} sublocation${sublocations.length !== 1 ? "s" : ""}`}
@@ -686,7 +686,7 @@ export default function LocationSublocationsPage() {
                 {selectedSublocations.size > 0 && (
                   <button
                     onClick={() => setSelectedSublocations(new Set())}
-                    className="text-sm text-blue-600 hover:text-blue-800"
+                    className="text-sm text-indigo-600 hover:text-indigo-800"
                   >
                     Clear selection
                   </button>
@@ -751,16 +751,16 @@ export default function LocationSublocationsPage() {
 
             {/* Location Path Fields */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
                 Location Path
               </label>
               <div className="grid grid-cols-5 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Zone</label>
+                  <label className="block text-xs text-slate-500 mb-1">Zone</label>
                   <select
                     value={formData.zone}
                     onChange={(e) => handleFieldChange("zone", e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 bg-white"
                   >
                     <option value="">--</option>
                     {ZONES.map((zone) => (
@@ -769,47 +769,47 @@ export default function LocationSublocationsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Aisle</label>
+                  <label className="block text-xs text-slate-500 mb-1">Aisle</label>
                   <input
                     type="text"
                     value={formData.aisle}
                     onChange={(e) => handleFieldChange("aisle", e.target.value)}
                     placeholder="01"
                     maxLength={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Rack</label>
+                  <label className="block text-xs text-slate-500 mb-1">Rack</label>
                   <input
                     type="text"
                     value={formData.rack}
                     onChange={(e) => handleFieldChange("rack", e.target.value)}
                     placeholder="01"
                     maxLength={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Shelf</label>
+                  <label className="block text-xs text-slate-500 mb-1">Shelf</label>
                   <input
                     type="text"
                     value={formData.shelf}
                     onChange={(e) => handleFieldChange("shelf", e.target.value)}
                     placeholder="A"
                     maxLength={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Bin</label>
+                  <label className="block text-xs text-slate-500 mb-1">Bin</label>
                   <input
                     type="text"
                     value={formData.bin}
                     onChange={(e) => handleFieldChange("bin", e.target.value)}
                     placeholder="01"
                     maxLength={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   />
                 </div>
               </div>
@@ -818,7 +818,7 @@ export default function LocationSublocationsPage() {
             {/* Code and Name */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
                   Code *
                 </label>
                 <input
@@ -826,20 +826,20 @@ export default function LocationSublocationsPage() {
                   value={formData.code}
                   onChange={(e) => handleFieldChange("code", e.target.value)}
                   placeholder="e.g., A-01-01-A-01"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 font-mono"
                 />
-                <p className="text-xs text-gray-400 mt-1">Auto-filled from location path</p>
+                <p className="text-xs text-slate-400 mt-1">Auto-filled from location path</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Name <span className="text-gray-400 font-normal">(optional)</span>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Name <span className="text-slate-400 font-normal">(optional)</span>
                 </label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => handleFieldChange("name", e.target.value)}
                   placeholder="e.g., Main Shelf A1"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                 />
               </div>
             </div>
@@ -847,10 +847,10 @@ export default function LocationSublocationsPage() {
             {/* Barcode */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-slate-700">
                   Barcode
                 </label>
-                <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={formData.autoGenerateBarcode}
@@ -862,7 +862,7 @@ export default function LocationSublocationsPage() {
                         barcode: newValue ? generateBarcode(formData.code) : formData.barcode,
                       });
                     }}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus-visible:ring-indigo-500"
                   />
                   Auto-generate
                 </label>
@@ -873,16 +873,16 @@ export default function LocationSublocationsPage() {
                 onChange={(e) => setFormData({ ...formData, barcode: e.target.value, autoGenerateBarcode: false })}
                 placeholder="LOC-XXX-A-01-01"
                 disabled={formData.autoGenerateBarcode}
-                className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono ${
-                  formData.autoGenerateBarcode ? "bg-gray-50 text-gray-500" : ""
+                className={`w-full px-3 py-2 border border-slate-300 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 font-mono ${
+                  formData.autoGenerateBarcode ? "bg-slate-50 text-slate-500" : ""
                 }`}
               />
             </div>
 
             {/* Capacity */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Capacity <span className="text-gray-400 font-normal">(max units)</span>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Capacity <span className="text-slate-400 font-normal">(max units)</span>
               </label>
               <input
                 type="number"
@@ -890,22 +890,22 @@ export default function LocationSublocationsPage() {
                 onChange={(e) => handleFieldChange("capacity", e.target.value ? parseInt(e.target.value) : null)}
                 placeholder="Leave empty for unlimited"
                 min={0}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-slate-300 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               />
             </div>
 
             {/* Pickable Checkbox */}
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
               <input
                 type="checkbox"
                 id="is_pickable"
                 checked={formData.is_pickable}
                 onChange={(e) => handleFieldChange("is_pickable", e.target.checked)}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus-visible:ring-indigo-500"
               />
-              <label htmlFor="is_pickable" className="text-sm text-gray-700">
+              <label htmlFor="is_pickable" className="text-sm text-slate-700">
                 <span className="font-medium">Pickable location</span>
-                <span className="block text-xs text-gray-500">Items can be picked from here for orders</span>
+                <span className="block text-xs text-slate-500">Items can be picked from here for orders</span>
               </label>
             </div>
 
