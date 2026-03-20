@@ -53,13 +53,14 @@ Plans:
   3. All 12 chart components have `aria-label` and `role="img"` and stop animating when the user has prefers-reduced-motion enabled
   4. No shared UI component uses `gray-*` palette classes — all instances are `slate-*`
   5. Warning states on Alert, Badge, and Toast show amber (not yellow); info states show indigo (not blue)
-**Plans:** 5 plans
+**Plans:** 6 plans
 Plans:
 - [ ] 06-01-PLAN.md — Portal variants for Button/Input/Select/Textarea/Toggle + Toggle/Textarea admin color fixes
 - [ ] 06-02-PLAN.md — Color corrections for Alert, Badge, Spinner, Toast, Pagination
 - [ ] 06-03-PLAN.md — ARIA and keyboard accessibility for Modal, SearchSelect, Breadcrumbs, Card
 - [ ] 06-04-PLAN.md — Charts ARIA + reduced-motion + useReducedMotion hook + StatCard fixes
-- [ ] 06-05-PLAN.md — Gray-to-slate migration + dark mode removal + StatusBadge refactor
+- [ ] 06-05-PLAN.md — Gray-to-slate migration + StatusBadge refactor
+- [ ] 06-06-PLAN.md — Dark mode class removal from scanner components
 
 ### Phase 7: Scanner Components
 **Goal**: Every scanner component meets the warehouse floor accessibility standard — all tap targets are at least 44px, all text is at least text-base size, and dark mode classes are removed.
@@ -108,7 +109,7 @@ Phases execute in dependency order: 5 → 6 → 7 (parallel with 8) → 8 → 9
 | 3. Page Audits | v1.0 | 3/3 | Complete | 2026-03-19 |
 | 4. Action Plan Compilation | v1.0 | 2/2 | Complete | 2026-03-19 |
 | 5. Design Tokens | v2.0 | 1/1 | Complete | 2026-03-19 |
-| 6. Shared UI Components | v2.0 | 0/5 | Not started | - |
+| 6. Shared UI Components | v2.0 | 0/6 | Not started | - |
 | 7. Scanner Components | v2.0 | 0/? | Not started | - |
 | 8. Admin Pages | v2.0 | 0/? | Not started | - |
 | 9. Portal Pages | v2.0 | 0/? | Not started | - |
