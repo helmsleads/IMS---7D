@@ -335,15 +335,16 @@ export default function PackScanner({
             Pack Scanner
           </h3>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">
+            <span className="text-base text-slate-500">
               {cartons.length} carton{cartons.length !== 1 ? "s" : ""}
             </span>
             <Button
               variant="ghost"
-              size="sm"
               onClick={() => setAudioEnabled(!audioEnabled)}
+              className="min-h-[44px] min-w-[44px]"
+              aria-label={audioEnabled ? "Sound on" : "Sound off"}
             >
-              <Volume2 className={`w-4 h-4 ${audioEnabled ? "text-blue-600" : "text-gray-400"}`} />
+              <Volume2 className={`w-5 h-5 ${audioEnabled ? "text-blue-600" : "text-gray-400"}`} />
             </Button>
           </div>
         </div>
@@ -376,7 +377,7 @@ export default function PackScanner({
                   {currentCarton.lpn_number}
                 </span>
               </div>
-              <span className="text-sm text-gray-500">
+              <span className="text-base text-slate-500">
                 {cartonContents.reduce((sum, c) => sum + c.qty, 0)} items
               </span>
             </div>
@@ -395,8 +396,8 @@ export default function PackScanner({
                     </div>
                     <Button
                       variant="ghost"
-                      size="sm"
                       onClick={() => handleRemoveFromCarton(content.productId)}
+                      className="min-h-[44px]"
                     >
                       -1
                     </Button>
@@ -404,7 +405,7 @@ export default function PackScanner({
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-500 mb-3">Scan items to add to carton</p>
+              <p className="text-base text-slate-500 mb-3">Scan items to add to carton</p>
             )}
 
             {/* Scanner */}
@@ -462,7 +463,7 @@ export default function PackScanner({
                 <Package className="w-5 h-5 text-gray-400" />
                 <div>
                   <p className="font-medium text-gray-900">{item.product.sku}</p>
-                  <p className="text-sm text-gray-500">{item.product.name}</p>
+                  <p className="text-base text-slate-500">{item.product.name}</p>
                 </div>
               </div>
               <span className="font-medium text-gray-600">
@@ -489,7 +490,7 @@ export default function PackScanner({
                     {carton.lpn_number}
                   </span>
                 </div>
-                <span className="text-sm text-gray-500 capitalize">{carton.stage}</span>
+                <span className="text-base text-slate-500 capitalize">{carton.stage}</span>
               </div>
             ))}
           </div>
