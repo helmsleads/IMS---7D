@@ -400,13 +400,14 @@ export default function PickScanner({
             Pick Scanner
           </h3>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">
+            <span className="text-base text-slate-500">
               {items.filter(i => i.qty_picked >= i.qty_requested).length} / {items.length} items
             </span>
             <Button
               variant="ghost"
-              size="sm"
               onClick={() => setAudioEnabled(!audioEnabled)}
+              className="min-h-[44px] min-w-[44px]"
+              aria-label={audioEnabled ? "Sound on" : "Sound off"}
             >
               <Volume2 className={`w-4 h-4 ${audioEnabled ? "text-blue-600" : "text-gray-400"}`} />
             </Button>
@@ -456,12 +457,12 @@ export default function PickScanner({
                   <Package className="w-10 h-10 text-blue-600" />
                   <div>
                     <p className="font-semibold text-gray-900">{currentItem.product.name}</p>
-                    <p className="text-sm text-gray-600">{currentItem.product.sku}</p>
+                    <p className="text-base text-slate-600">{currentItem.product.sku}</p>
                     {currentItem.lot_number && (
-                      <p className="text-xs text-slate-500 mt-0.5">Lot: {currentItem.lot_number}</p>
+                      <p className="text-base text-slate-500 mt-0.5">Lot: {currentItem.lot_number}</p>
                     )}
                     {currentItem.suggested_location && (
-                      <p className="text-sm text-blue-600 flex items-center gap-1 mt-1">
+                      <p className="text-base text-blue-600 flex items-center gap-1 mt-1">
                         <MapPin className="w-3 h-3" />
                         {currentItem.suggested_location.name}
                         {currentItem.suggested_location.sublocation_code && (
@@ -475,7 +476,7 @@ export default function PickScanner({
                   <p className="text-2xl font-bold text-gray-900">
                     {currentItem.qty_picked} / {currentItem.qty_requested}
                   </p>
-                  <p className="text-sm text-gray-500">picked</p>
+                  <p className="text-base text-slate-500">picked</p>
                 </div>
               </div>
             </div>
@@ -501,12 +502,12 @@ export default function PickScanner({
             {/* Quantity Controls (shown after successful scan) */}
             {scanStatus === "found" && (
               <div className="mb-4 p-4 border rounded-lg">
-                <p className="text-sm text-gray-600 mb-2">Quantity to pick:</p>
+                <p className="text-base text-slate-600 mb-2">Quantity to pick:</p>
                 <div className="flex items-center gap-2 mb-3">
-                  <Button size="sm" variant="secondary" onClick={() => setPendingQty(Math.max(0, pendingQty - 1))}>-</Button>
+                  <Button variant="secondary" onClick={() => setPendingQty(Math.max(0, pendingQty - 1))} className="min-h-[44px] min-w-[44px]">-</Button>
                   <span className="w-16 text-center text-xl font-bold">{pendingQty}</span>
-                  <Button size="sm" variant="secondary" onClick={() => handleAddQty(1)}>+</Button>
-                  <Button size="sm" variant="secondary" onClick={handlePickAll}>Pick All ({remainingQty})</Button>
+                  <Button variant="secondary" onClick={() => handleAddQty(1)} className="min-h-[44px] min-w-[44px]">+</Button>
+                  <Button variant="secondary" onClick={handlePickAll} className="min-h-[44px]">Pick All ({remainingQty})</Button>
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -563,7 +564,7 @@ export default function PickScanner({
                 )}
                 <div>
                   <p className="font-medium text-gray-900">{item.product.sku}</p>
-                  <p className="text-sm text-gray-500">{item.product.name}</p>
+                  <p className="text-base text-slate-500">{item.product.name}</p>
                 </div>
               </div>
               <span className={`font-medium ${
