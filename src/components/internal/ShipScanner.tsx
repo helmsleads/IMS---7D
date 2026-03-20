@@ -234,15 +234,16 @@ export default function ShipScanner({
             Ship Scanner
           </h3>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">
+            <span className="text-base text-slate-500">
               Order: {orderNumber}
             </span>
             <Button
               variant="ghost"
-              size="sm"
               onClick={() => setAudioEnabled(!audioEnabled)}
+              className="min-h-[44px] min-w-[44px]"
+              aria-label={audioEnabled ? "Sound on" : "Sound off"}
             >
-              <Volume2 className={`w-4 h-4 ${audioEnabled ? "text-blue-600" : "text-gray-400"}`} />
+              <Volume2 className={`w-5 h-5 ${audioEnabled ? "text-blue-600" : "text-gray-400"}`} />
             </Button>
           </div>
         </div>
@@ -267,7 +268,7 @@ export default function ShipScanner({
 
         {/* Progress */}
         <div className="mb-4">
-          <div className="flex justify-between text-sm text-gray-600 mb-1">
+          <div className="flex justify-between text-base text-slate-600 mb-1">
             <span>Cartons verified</span>
             <span>{cartons.filter(c => c.scanned).length} / {cartons.length}</span>
           </div>
@@ -327,7 +328,7 @@ export default function ShipScanner({
                     {carton.lpn_number}
                   </span>
                 </div>
-                <span className={`text-sm ${
+                <span className={`text-base ${
                   carton.scanned ? "text-green-600" : "text-gray-500"
                 }`}>
                   {carton.scanned ? "Verified" : "Pending"}
@@ -339,7 +340,7 @@ export default function ShipScanner({
           <div className="text-center py-8 text-gray-500">
             <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
             <p>No cartons found for this order</p>
-            <p className="text-sm">Items may not have been packed yet</p>
+            <p className="text-base">Items may not have been packed yet</p>
           </div>
         )}
       </Card>
@@ -349,7 +350,7 @@ export default function ShipScanner({
         <h4 className="font-medium text-gray-900 mb-4">Shipping Details</h4>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-gray-600 mb-1">
+            <label className="block text-base text-slate-600 mb-1">
               Carrier
             </label>
             <Input
@@ -359,7 +360,7 @@ export default function ShipScanner({
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-1">
+            <label className="block text-base text-slate-600 mb-1">
               Tracking Number
             </label>
             <Input
@@ -389,7 +390,7 @@ export default function ShipScanner({
           )}
         </Button>
         {!allCartonsScanned && cartons.length > 0 && (
-          <p className="text-sm text-center text-gray-500 mt-2">
+          <p className="text-base text-center text-slate-500 mt-2">
             Scan all cartons to enable shipping
           </p>
         )}
