@@ -272,7 +272,7 @@ export default function TaskDetailPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => router.back()}
-              className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
+              className="p-3 min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors"
             >
               <ArrowLeft className="w-5 h-5 text-slate-500" />
             </button>
@@ -409,17 +409,17 @@ export default function TaskDetailPage() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-slate-700">Created</p>
-                      <p className="text-xs text-slate-500">{formatDate(task.created_at)}</p>
+                      <p className="text-sm text-slate-500">{formatDate(task.created_at)}</p>
                     </div>
                   </div>
                   {task.assigned_at && (
                     <div className="flex items-start gap-3">
-                      <div className="mt-0.5 p-1 rounded-full bg-blue-100">
-                        <User className="w-3 h-3 text-blue-600" />
+                      <div className="mt-0.5 p-1 rounded-full bg-indigo-100">
+                        <User className="w-3 h-3 text-indigo-600" />
                       </div>
                       <div>
                         <p className="text-sm font-medium text-slate-700">Assigned</p>
-                        <p className="text-xs text-slate-500">{formatDate(task.assigned_at)}</p>
+                        <p className="text-sm text-slate-500">{formatDate(task.assigned_at)}</p>
                       </div>
                     </div>
                   )}
@@ -430,7 +430,7 @@ export default function TaskDetailPage() {
                       </div>
                       <div>
                         <p className="text-sm font-medium text-slate-700">Started</p>
-                        <p className="text-xs text-slate-500">{formatDate(task.started_at)}</p>
+                        <p className="text-sm text-slate-500">{formatDate(task.started_at)}</p>
                       </div>
                     </div>
                   )}
@@ -447,7 +447,7 @@ export default function TaskDetailPage() {
                         <p className="text-sm font-medium text-slate-700">
                           {task.status === "completed" ? "Completed" : task.status === "failed" ? "Failed" : "Cancelled"}
                         </p>
-                        <p className="text-xs text-slate-500">{formatDate(task.completed_at)}</p>
+                        <p className="text-sm text-slate-500">{formatDate(task.completed_at)}</p>
                       </div>
                     </div>
                   )}
