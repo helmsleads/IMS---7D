@@ -423,7 +423,7 @@ export default function PickingScanner({
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-gray-900">Picking Progress</h3>
-            <p className="text-sm text-gray-500">
+            <p className="text-base text-slate-500">
               {runningTotal} of {totalRequested} units
               {pendingQty > 0 && (
                 <span className="text-blue-600 ml-1">(+{pendingQty} pending)</span>
@@ -431,15 +431,14 @@ export default function PickingScanner({
             </p>
           </div>
           <div className="flex items-center gap-4">
-            <button
+            <Button
+              variant="ghost"
               onClick={() => setAudioEnabled(!audioEnabled)}
-              className={`p-2 rounded-lg transition-colors ${
-                audioEnabled ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-400"
-              }`}
-              title={audioEnabled ? "Sound on" : "Sound off"}
+              className={`min-h-[44px] min-w-[44px] ${audioEnabled ? "text-blue-600" : "text-slate-400"}`}
+              aria-label={audioEnabled ? "Sound on" : "Sound off"}
             >
-              <Volume2 className="w-4 h-4" />
-            </button>
+              <Volume2 className="w-5 h-5" />
+            </Button>
             <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
               <div
                 className="h-full bg-green-500 transition-all"
@@ -447,7 +446,7 @@ export default function PickingScanner({
               />
             </div>
             {allPicked && (
-              <span className="flex items-center gap-1 text-green-600 text-sm font-medium">
+              <span className="flex items-center gap-1 text-green-600 text-base font-medium">
                 <CheckCircle className="w-4 h-4" />
                 Complete
               </span>
@@ -489,7 +488,7 @@ export default function PickingScanner({
               <X className="w-6 h-6 text-red-600" />
             </div>
             <p className="font-medium text-gray-900">Product Not Found</p>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-base text-slate-500 mt-1">
               No product matches code: <span className="font-mono">{scannedCode}</span>
             </p>
             <Button variant="secondary" onClick={handleScanAgain} className="mt-4">
@@ -505,7 +504,7 @@ export default function PickingScanner({
               <AlertTriangle className="w-6 h-6 text-amber-600" />
             </div>
             <p className="font-medium text-gray-900">Not in This Order</p>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-base text-slate-500 mt-1">
               This product is not part of this outbound order
             </p>
             <Button variant="secondary" onClick={handleScanAgain} className="mt-4">
@@ -521,7 +520,7 @@ export default function PickingScanner({
               <Package className="w-6 h-6 text-red-600" />
             </div>
             <p className="font-medium text-gray-900">No Stock Available</p>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-base text-slate-500 mt-1">
               {scannedItem.product.name} has no available inventory
             </p>
             <Button variant="secondary" onClick={handleScanAgain} className="mt-4">
@@ -554,10 +553,10 @@ export default function PickingScanner({
                 {/* Product Info */}
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-900 text-lg">{scannedItem.product.name}</p>
-                  <p className="text-sm text-gray-500 font-mono">{scannedItem.product.sku}</p>
+                  <p className="text-base text-slate-500 font-mono">{scannedItem.product.sku}</p>
 
                   {/* Quantity Stats */}
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-base">
                     <div className="bg-white rounded px-2 py-1">
                       <span className="text-gray-500">Requested:</span>
                       <span className="font-bold text-gray-900 ml-1">{scannedItem.qty_requested}</span>
@@ -573,7 +572,7 @@ export default function PickingScanner({
 
             {/* Pick Location Selection */}
             <div className="space-y-2">
-              <p className="text-sm font-medium text-gray-700">Pick from location:</p>
+              <p className="text-base font-medium text-slate-700">Pick from location:</p>
               {scannedItem.inventory.length > 1 ? (
                 <Select
                   name="pick-location"
@@ -589,7 +588,7 @@ export default function PickingScanner({
                 <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                   <MapPin className="w-4 h-4 text-blue-600" />
                   <span className="font-medium text-gray-900">{scannedItem.inventory[0]?.location_name}</span>
-                  <span className="text-sm text-gray-500">
+                  <span className="text-base text-slate-500">
                     ({scannedItem.inventory[0]?.qty_available} available)
                   </span>
                 </div>
@@ -599,7 +598,7 @@ export default function PickingScanner({
             {/* Quick Add Buttons */}
             {selectedLocationId && (
               <div className="space-y-3">
-                <p className="text-sm font-medium text-gray-700">Add to pick quantity:</p>
+                <p className="text-base font-medium text-slate-700">Add to pick quantity:</p>
                 <div className="flex gap-2">
                   <Button
                     variant="secondary"
@@ -636,16 +635,16 @@ export default function PickingScanner({
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-blue-600 font-medium">Pending to Pick</p>
+                    <p className="text-base text-blue-600 font-medium">Pending to Pick</p>
                     <p className="text-3xl font-bold text-blue-700">{pendingQty}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-gray-500">New Total</p>
+                    <p className="text-base text-slate-500">New Total</p>
                     <p className="text-xl font-semibold text-gray-900">
                       {scannedItem.qty_shipped + pendingQty} / {scannedItem.qty_requested}
                     </p>
                     {scannedItem.qty_shipped + pendingQty >= scannedItem.qty_requested && (
-                      <span className="text-xs text-green-600 font-medium">Complete</span>
+                      <span className="text-base text-green-600 font-medium">Complete</span>
                     )}
                   </div>
                 </div>
@@ -677,7 +676,7 @@ export default function PickingScanner({
         {scanStatus === "idle" && !scannerActive && (
           <div className="text-center py-6 text-gray-500">
             <ScanLine className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-            <p className="text-sm">Click &quot;Start Scanner&quot; or select an item below</p>
+            <p className="text-base">Click &quot;Start Scanner&quot; or select an item below</p>
           </div>
         )}
       </Card>
@@ -740,7 +739,7 @@ export default function PickingScanner({
                     </div>
                     <div>
                       <p className="font-medium text-gray-900">{item.product.name}</p>
-                      <p className="text-sm text-gray-500 font-mono">{item.product.sku}</p>
+                      <p className="text-base text-slate-500 font-mono">{item.product.sku}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
@@ -748,15 +747,15 @@ export default function PickingScanner({
                       <p className={`font-medium ${isComplete ? "text-green-600" : "text-gray-900"}`}>
                         {item.qty_shipped} / {item.qty_requested}
                       </p>
-                      <p className="text-xs text-gray-500">picked</p>
+                      <p className="text-base text-slate-500">picked</p>
                     </div>
                     {!isComplete && (
                       <Button
                         variant="ghost"
-                        size="sm"
                         onClick={() => handleManualSelect(item)}
                         disabled={!hasStock}
                         title={!hasStock ? "No stock available" : undefined}
+                        className="min-h-[44px]"
                       >
                         {hasStock ? "Pick" : "No Stock"}
                       </Button>
@@ -770,14 +769,14 @@ export default function PickingScanner({
                     {item.inventory.slice(0, 3).map((inv) => (
                       <span
                         key={inv.location_id}
-                        className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded"
+                        className="inline-flex items-center gap-1 text-base bg-slate-100 text-slate-600 px-2 py-1 rounded"
                       >
                         <MapPin className="w-3 h-3" />
                         {inv.location_name}: {inv.qty_available}
                       </span>
                     ))}
                     {item.inventory.length > 3 && (
-                      <span className="text-xs text-gray-400">
+                      <span className="text-base text-slate-400">
                         +{item.inventory.length - 3} more
                       </span>
                     )}
