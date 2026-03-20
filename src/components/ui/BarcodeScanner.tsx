@@ -256,7 +256,7 @@ export default function BarcodeScanner({
       <div className={`flex items-center justify-center p-8 bg-slate-100 rounded-lg min-h-[200px] ${className}`}>
         <div className="text-center">
           <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-3"></div>
-          <p className="text-sm text-slate-600 font-medium">Checking camera...</p>
+          <p className="text-base text-slate-600 font-medium">Checking camera...</p>
         </div>
       </div>
     );
@@ -271,7 +271,7 @@ export default function BarcodeScanner({
             <Camera className="w-8 h-8 text-blue-600" />
           </div>
           <h3 className="font-semibold text-slate-900 mb-2">Camera Access Required</h3>
-          <p className="text-sm text-slate-500 mb-4">
+          <p className="text-base text-slate-500 mb-4">
             Allow camera access to scan barcodes
           </p>
           <Button onClick={requestPermission} className="min-h-[48px] px-6">
@@ -292,7 +292,7 @@ export default function BarcodeScanner({
             <CameraOff className="w-8 h-8 text-red-600" />
           </div>
           <h3 className="font-semibold text-slate-900 mb-2">Camera Access Denied</h3>
-          <p className="text-sm text-slate-500 mb-4">
+          <p className="text-base text-slate-500 mb-4">
             {cameraError || "Please allow camera access in your browser settings to scan barcodes."}
           </p>
           <Button variant="secondary" onClick={requestPermission} className="min-h-[48px] px-6">
@@ -313,7 +313,7 @@ export default function BarcodeScanner({
             <CameraOff className="w-8 h-8 text-amber-600" />
           </div>
           <h3 className="font-semibold text-slate-900 mb-2">Camera Error</h3>
-          <p className="text-sm text-slate-500 mb-4">
+          <p className="text-base text-slate-500 mb-4">
             {cameraError || "Unable to access camera"}
           </p>
           <Button variant="secondary" onClick={requestPermission} className="min-h-[48px] px-6">
@@ -329,7 +329,7 @@ export default function BarcodeScanner({
     <div className={className} ref={containerRef}>
       {cameraError && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-sm text-red-600">{cameraError}</p>
+          <p className="text-base text-red-600">{cameraError}</p>
         </div>
       )}
 
@@ -347,7 +347,7 @@ export default function BarcodeScanner({
             <div className="absolute inset-0 flex items-center justify-center bg-slate-900/75 rounded-lg">
               <div className="text-center text-white">
                 <div className="animate-spin w-10 h-10 border-4 border-white border-t-transparent rounded-full mx-auto mb-3"></div>
-                <p className="text-sm font-medium">Starting camera...</p>
+                <p className="text-base font-medium">Starting camera...</p>
               </div>
             </div>
           )}
@@ -372,10 +372,10 @@ export default function BarcodeScanner({
 
           {/* Instructions */}
           <div className="mt-3 text-center">
-            <p className="text-sm text-slate-600">
+            <p className="text-base text-slate-600">
               Position barcode within the frame
             </p>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-base text-slate-400 mt-1">
               Hold steady for best results
             </p>
           </div>
@@ -385,7 +385,7 @@ export default function BarcodeScanner({
           <div className="text-center">
             <Camera className="w-12 h-12 text-slate-400 mx-auto mb-3" />
             <p className="text-slate-600 font-medium">Scanner inactive</p>
-            <p className="text-sm text-slate-500 mt-1">
+            <p className="text-base text-slate-500 mt-1">
               Activate to start scanning
             </p>
           </div>
@@ -456,7 +456,7 @@ export function BarcodeScannerModal({
 
           {lastScanned && (
             <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-sm text-green-800">
+              <p className="text-base text-green-800">
                 <span className="font-medium">Scanned:</span> {lastScanned}
               </p>
             </div>
