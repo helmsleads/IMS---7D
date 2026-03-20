@@ -34,7 +34,7 @@ const reports: ReportCard[] = [
     description: "Current stock levels by product and location with quantity on hand and reserved",
     icon: <Package className="w-6 h-6" />,
     href: "/reports/inventory-summary",
-    color: "bg-blue-100 text-blue-600",
+    color: "bg-indigo-100 text-indigo-600",
   },
   {
     id: "inventory-valuation",
@@ -58,7 +58,7 @@ const reports: ReportCard[] = [
     description: "Complete history of outbound orders with status, dates, and client details",
     icon: <ArrowUpFromLine className="w-6 h-6" />,
     href: "/reports/order-history",
-    color: "bg-purple-100 text-purple-600",
+    color: "bg-indigo-100 text-indigo-600",
   },
   {
     id: "inbound-history",
@@ -137,17 +137,17 @@ export default function ReportsPage() {
           <Link
             key={report.id}
             href={report.href}
-            className="block h-full hover:shadow-md transition-shadow rounded-lg"
+            className="block h-full hover:shadow-md transition-shadow rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
           >
             <Card>
               <div className="flex flex-col">
                 <div className={`w-12 h-12 rounded-lg ${report.color} flex items-center justify-center mb-4`}>
                   {report.icon}
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">
                   {report.title}
                 </h3>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-slate-500">
                   {report.description}
                 </p>
               </div>

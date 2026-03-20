@@ -54,7 +54,7 @@ function getPriorityBadge(priority: number) {
 function getTaskTypeIcon(type: WarehouseTaskType) {
   switch (type) {
     case "inspection": return <ShieldCheck className="w-4 h-4 text-amber-600" />;
-    case "putaway": return <ArrowDownToLine className="w-4 h-4 text-blue-600" />;
+    case "putaway": return <ArrowDownToLine className="w-4 h-4 text-indigo-600" />;
     case "pick": return <ListChecks className="w-4 h-4 text-green-600" />;
   }
 }
@@ -123,12 +123,10 @@ const columns: { key: string; header: React.ReactNode; render?: (item: Warehouse
     header: "Priority",
     mobilePriority: 3,
     render: (task) => {
-      const info = getPriorityBadge(task.priority);
-      return (
-        <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${info.className}`}>
-          {info.label}
-        </span>
-      );
+      const priority = task.priority;
+      if (priority >= 8) return <Badge variant="error">Urgent</Badge>;
+      if (priority >= 6) return <Badge variant="warning">High</Badge>;
+      return <Badge variant="default">Normal</Badge>;
     },
   },
   {
@@ -303,8 +301,8 @@ export default function TaskDashboardPage() {
           <Card className="border-slate-200/80">
             <div className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-50">
-                  <ArrowDownToLine className="w-5 h-5 text-blue-600" />
+                <div className="p-2 rounded-lg bg-indigo-50">
+                  <ArrowDownToLine className="w-5 h-5 text-indigo-600" />
                 </div>
                 <div>
                   <p className="text-sm text-slate-500">Putaway</p>

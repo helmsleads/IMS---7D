@@ -49,9 +49,9 @@ export default function SettingsPage() {
         {/* Sidebar Navigation */}
         <div className="lg:w-72 flex-shrink-0 space-y-4">
           {/* User Settings */}
-          <nav className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <nav className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 User Settings
               </span>
             </div>
@@ -66,8 +66,8 @@ export default function SettingsPage() {
                   className={`
                     w-full flex items-center gap-3 px-4 py-3 text-left transition-colors
                     ${isActive
-                      ? "bg-blue-50 text-blue-600 border-l-4 border-blue-600"
-                      : "text-gray-600 hover:bg-gray-50 border-l-4 border-transparent"
+                      ? "bg-indigo-50 text-indigo-600 border-l-4 border-indigo-600"
+                      : "text-slate-600 hover:bg-slate-50 border-l-4 border-transparent"
                     }
                   `}
                 >
@@ -79,9 +79,9 @@ export default function SettingsPage() {
           </nav>
 
           {/* Admin Settings */}
-          <nav className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <nav className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Admin Settings
               </span>
             </div>
@@ -91,14 +91,14 @@ export default function SettingsPage() {
                 <Link
                   key={setting.href}
                   href={setting.href}
-                  className="flex items-center gap-3 px-4 py-3 text-left transition-colors text-gray-600 hover:bg-gray-50 border-l-4 border-transparent group"
+                  className="flex items-center gap-3 px-4 py-3 text-left transition-colors text-slate-600 hover:bg-slate-50 border-l-4 border-transparent group"
                 >
-                  <Icon className="w-5 h-5 text-gray-400 group-hover:text-gray-600" />
+                  <Icon className="w-5 h-5 text-slate-400 group-hover:text-slate-600" />
                   <div className="flex-1 min-w-0">
                     <span className="font-medium block">{setting.label}</span>
-                    <span className="text-xs text-gray-400">{setting.description}</span>
+                    <span className="text-xs text-slate-400">{setting.description}</span>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500" />
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500" />
                 </Link>
               );
             })}
@@ -117,8 +117,8 @@ export default function SettingsPage() {
 
 function ProfileTab() {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-6">Profile Settings</h2>
+    <div className="bg-white rounded-xl border border-slate-200 p-6">
+      <h2 className="text-lg font-semibold text-slate-900 mb-6">Profile Settings</h2>
 
       <div className="space-y-6">
         <Input
@@ -137,8 +137,8 @@ function ProfileTab() {
           hint="Contact an administrator to change your email"
         />
 
-        <div className="pt-4 border-t border-gray-200">
-          <button className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors">
+        <div className="pt-4 border-t border-slate-200">
+          <button className="px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors">
             Save Changes
           </button>
         </div>
@@ -226,35 +226,35 @@ function NotificationsTab() {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+          <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-2">Email Notifications</h2>
-      <p className="text-gray-500 mb-6">Choose which notifications you want to receive</p>
+    <div className="bg-white rounded-xl border border-slate-200 p-6">
+      <h2 className="text-lg font-semibold text-slate-900 mb-2">Email Notifications</h2>
+      <p className="text-slate-500 mb-6">Choose which notifications you want to receive</p>
 
       <div className="space-y-1">
         {NOTIFICATION_OPTIONS.map((option) => (
           <div
             key={option.id}
-            className="flex items-center justify-between py-4 border-b border-gray-100 last:border-0"
+            className="flex items-center justify-between py-4 border-b border-slate-100 last:border-0"
           >
             <div>
-              <p className="font-medium text-gray-900">{option.label}</p>
-              <p className="text-sm text-gray-500">{option.description}</p>
+              <p className="font-medium text-slate-900">{option.label}</p>
+              <p className="text-sm text-slate-500">{option.description}</p>
             </div>
             <button
               onClick={() => handleToggle(option.id)}
               disabled={saving === option.id}
               className={`
                 relative w-12 h-6 rounded-full transition-colors disabled:opacity-50
-                ${settings[option.id] ? "bg-blue-600" : "bg-gray-300"}
+                ${settings[option.id] ? "bg-indigo-600" : "bg-slate-300"}
               `}
             >
               {saving === option.id ? (
@@ -274,7 +274,7 @@ function NotificationsTab() {
         ))}
       </div>
 
-      <p className="text-sm text-gray-400 mt-6">
+      <p className="text-sm text-slate-400 mt-6">
         Changes are saved automatically
       </p>
     </div>
