@@ -65,12 +65,15 @@ export default function Pagination({
 
   const pageNumbers = getPageNumbers();
 
+  const focusRing =
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2";
+
   return (
     <div
-      className={`flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 border-t border-gray-200 ${className}`}
+      className={`flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 border-t border-slate-200 ${className}`}
     >
       {/* Item count info */}
-      <p className="text-sm text-gray-600">
+      <p className="text-sm text-slate-600">
         Showing <span className="font-medium">{startItem}</span> to{" "}
         <span className="font-medium">{endItem}</span> of{" "}
         <span className="font-medium">{totalItems}</span> items
@@ -83,11 +86,11 @@ export default function Pagination({
           onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage === 1}
           className={`
-            inline-flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium transition-colors
+            inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-md text-sm font-medium transition-colors ${focusRing}
             ${
               currentPage === 1
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                ? "text-slate-300 cursor-not-allowed"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
             }
           `}
           aria-label="Previous page"
@@ -101,7 +104,7 @@ export default function Pagination({
             page === "ellipsis" ? (
               <span
                 key={`ellipsis-${index}`}
-                className="w-9 h-9 flex items-center justify-center text-gray-400"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400"
               >
                 ...
               </span>
@@ -110,11 +113,11 @@ export default function Pagination({
                 key={page}
                 onClick={() => onPageChange(page)}
                 className={`
-                  inline-flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium transition-colors
+                  inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-md text-sm font-medium transition-colors ${focusRing}
                   ${
                     currentPage === page
-                      ? "bg-gray-900 text-white"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                      ? "bg-indigo-600 text-white"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                   }
                 `}
                 aria-current={currentPage === page ? "page" : undefined}
@@ -126,7 +129,7 @@ export default function Pagination({
         </div>
 
         {/* Mobile page indicator */}
-        <span className="sm:hidden px-3 text-sm text-gray-600">
+        <span className="sm:hidden px-3 text-sm text-slate-600">
           Page {currentPage} of {totalPages}
         </span>
 
@@ -135,11 +138,11 @@ export default function Pagination({
           onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage === totalPages}
           className={`
-            inline-flex items-center justify-center w-9 h-9 rounded-md text-sm font-medium transition-colors
+            inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-md text-sm font-medium transition-colors ${focusRing}
             ${
               currentPage === totalPages
-                ? "text-gray-300 cursor-not-allowed"
-                : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                ? "text-slate-300 cursor-not-allowed"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
             }
           `}
           aria-label="Next page"

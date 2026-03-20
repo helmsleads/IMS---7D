@@ -7,10 +7,10 @@ import {
   useCallback,
   ReactNode,
 } from "react";
-import { X, CheckCircle, AlertCircle, Info } from "lucide-react";
+import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from "lucide-react";
 
 // Types
-type ToastType = "success" | "error" | "info";
+type ToastType = "success" | "error" | "info" | "warning";
 
 interface Toast {
   id: string;
@@ -26,6 +26,7 @@ interface ToastContextType {
   success: (message: string, title?: string) => void;
   error: (message: string, title?: string) => void;
   info: (message: string, title?: string) => void;
+  warning: (message: string, title?: string) => void;
 }
 
 // Context
@@ -36,6 +37,7 @@ const AUTO_DISMISS_DURATION: Record<ToastType, number | null> = {
   success: 4000,
   error: null, // Manual dismiss only
   info: 5000,
+  warning: 6000,
 };
 
 // Toast styling
@@ -56,10 +58,16 @@ const TOAST_STYLES: Record<
     iconColor: "text-red-600",
   },
   info: {
-    bg: "bg-blue-50",
-    border: "border-blue-200",
+    bg: "bg-indigo-50",
+    border: "border-indigo-200",
     icon: Info,
-    iconColor: "text-blue-600",
+    iconColor: "text-indigo-600",
+  },
+  warning: {
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+    icon: AlertTriangle,
+    iconColor: "text-amber-600",
   },
 };
 
@@ -113,9 +121,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [addToast]
   );
 
+  const warning = useCallback(
+    (message: string, title?: string) => {
+      addToast({ type: "warning", message, title });
+    },
+    [addToast]
+  );
+
   return (
     <ToastContext.Provider
-      value={{ toasts, addToast, removeToast, success, error, info }}
+      value={{ toasts, addToast, removeToast, success, error, info, warning }}
     >
       {children}
       <ToastContainer toasts={toasts} removeToast={removeToast} />
@@ -161,14 +176,13 @@ function ToastItem({
 }) {
   const style = TOAST_STYLES[toast.type];
   const Icon = style.icon;
-  const canDismiss = toast.type === "error" || true; // All can be manually dismissed
 
   return (
     <div
       className={`
         ${style.bg} ${style.border}
         border rounded-lg shadow-lg p-4 pointer-events-auto
-        animate-in slide-in-from-right-full fade-in duration-300
+        motion-safe:animate-in motion-safe:slide-in-from-right-full motion-safe:fade-in duration-300
       `}
       role="alert"
     >
@@ -176,21 +190,19 @@ function ToastItem({
         <Icon className={`w-5 h-5 ${style.iconColor} flex-shrink-0 mt-0.5`} />
         <div className="flex-1 min-w-0">
           {toast.title && (
-            <p className="font-semibold text-gray-900 text-sm">{toast.title}</p>
+            <p className="font-semibold text-slate-900 text-sm">{toast.title}</p>
           )}
-          <p className={`text-sm text-gray-700 ${toast.title ? "mt-1" : ""}`}>
+          <p className={`text-sm text-slate-700 ${toast.title ? "mt-1" : ""}`}>
             {toast.message}
           </p>
         </div>
-        {canDismiss && (
-          <button
-            onClick={() => onDismiss(toast.id)}
-            className="flex-shrink-0 p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-            aria-label="Dismiss"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
+        <button
+          onClick={() => onDismiss(toast.id)}
+          className="flex-shrink-0 p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
+          aria-label="Dismiss"
+        >
+          <X className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );
