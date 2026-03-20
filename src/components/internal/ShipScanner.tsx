@@ -229,7 +229,7 @@ export default function ShipScanner({
       {/* Header */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <Truck className="w-5 h-5" />
             Ship Scanner
           </h3>
@@ -251,10 +251,10 @@ export default function ShipScanner({
         {message && (
           <div className={`mb-4 p-3 rounded-lg flex items-center gap-2 ${
             message.type === "success"
-              ? "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+              ? "bg-green-50 text-green-700"
               : message.type === "warning"
-              ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400"
-              : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+              ? "bg-yellow-50 text-yellow-700"
+              : "bg-red-50 text-red-700"
           }`}>
             {message.type === "success" ? (
               <CheckCircle className="w-5 h-5" />
@@ -267,11 +267,11 @@ export default function ShipScanner({
 
         {/* Progress */}
         <div className="mb-4">
-          <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-1">
+          <div className="flex justify-between text-sm text-gray-600 mb-1">
             <span>Cartons verified</span>
             <span>{cartons.filter(c => c.scanned).length} / {cartons.length}</span>
           </div>
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+          <div className="w-full bg-gray-200 rounded-full h-2">
             <div
               className="bg-blue-600 h-2 rounded-full transition-all"
               style={{
@@ -313,8 +313,8 @@ export default function ShipScanner({
                 key={carton.id}
                 className={`flex items-center justify-between p-3 rounded-lg ${
                   carton.scanned
-                    ? "bg-green-50 dark:bg-green-900/20"
-                    : "bg-gray-50 dark:bg-gray-800"
+                    ? "bg-green-50"
+                    : "bg-gray-50"
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -323,7 +323,7 @@ export default function ShipScanner({
                   ) : (
                     <Box className="w-5 h-5 text-gray-400" />
                   )}
-                  <span className="font-medium text-gray-900 dark:text-white">
+                  <span className="font-medium text-gray-900">
                     {carton.lpn_number}
                   </span>
                 </div>
@@ -346,10 +346,10 @@ export default function ShipScanner({
 
       {/* Shipping Details */}
       <Card>
-        <h4 className="font-medium text-gray-900 dark:text-white mb-4">Shipping Details</h4>
+        <h4 className="font-medium text-gray-900 mb-4">Shipping Details</h4>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+            <label className="block text-sm text-gray-600 mb-1">
               Carrier
             </label>
             <Input
@@ -359,7 +359,7 @@ export default function ShipScanner({
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+            <label className="block text-sm text-gray-600 mb-1">
               Tracking Number
             </label>
             <Input

@@ -395,7 +395,7 @@ export default function PickScanner({
       {/* Progress Header */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <ShoppingCart className="w-5 h-5" />
             Pick Scanner
           </h3>
@@ -414,7 +414,7 @@ export default function PickScanner({
         </div>
 
         {/* Progress Bar */}
-        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-4">
+        <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
           <div
             className="bg-blue-600 h-2 rounded-full transition-all"
             style={{
@@ -427,10 +427,10 @@ export default function PickScanner({
         {message && (
           <div className={`mb-4 p-3 rounded-lg flex items-center gap-2 ${
             message.type === "success"
-              ? "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+              ? "bg-green-50 text-green-700"
               : message.type === "warning"
-              ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400"
-              : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+              ? "bg-yellow-50 text-yellow-700"
+              : "bg-red-50 text-red-700"
           }`}>
             {message.type === "success" ? (
               <CheckCircle className="w-5 h-5" />
@@ -444,19 +444,19 @@ export default function PickScanner({
         {allItemsPicked ? (
           <div className="text-center py-8">
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-            <p className="text-xl font-semibold text-gray-900 dark:text-white">All Items Picked!</p>
+            <p className="text-xl font-semibold text-gray-900">All Items Picked!</p>
             <p className="text-gray-500 mt-2">Ready for packing</p>
           </div>
         ) : currentItem ? (
           <>
             {/* Current Item to Pick */}
-            <div className="mb-4 p-4 border-2 border-blue-500 rounded-lg bg-blue-50 dark:bg-blue-900/20">
+            <div className="mb-4 p-4 border-2 border-blue-500 rounded-lg bg-blue-50">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <Package className="w-10 h-10 text-blue-600" />
                   <div>
-                    <p className="font-semibold text-gray-900 dark:text-white">{currentItem.product.name}</p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{currentItem.product.sku}</p>
+                    <p className="font-semibold text-gray-900">{currentItem.product.name}</p>
+                    <p className="text-sm text-gray-600">{currentItem.product.sku}</p>
                     {currentItem.lot_number && (
                       <p className="text-xs text-slate-500 mt-0.5">Lot: {currentItem.lot_number}</p>
                     )}
@@ -472,7 +472,7 @@ export default function PickScanner({
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  <p className="text-2xl font-bold text-gray-900">
                     {currentItem.qty_picked} / {currentItem.qty_requested}
                   </p>
                   <p className="text-sm text-gray-500">picked</p>
@@ -500,8 +500,8 @@ export default function PickScanner({
 
             {/* Quantity Controls (shown after successful scan) */}
             {scanStatus === "found" && (
-              <div className="mb-4 p-4 border rounded-lg dark:border-gray-700">
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Quantity to pick:</p>
+              <div className="mb-4 p-4 border rounded-lg">
+                <p className="text-sm text-gray-600 mb-2">Quantity to pick:</p>
                 <div className="flex items-center gap-2 mb-3">
                   <Button size="sm" variant="secondary" onClick={() => setPendingQty(Math.max(0, pendingQty - 1))}>-</Button>
                   <span className="w-16 text-center text-xl font-bold">{pendingQty}</span>
@@ -535,17 +535,17 @@ export default function PickScanner({
 
       {/* Pick List */}
       <Card>
-        <h4 className="font-medium text-gray-900 dark:text-white mb-3">Pick List</h4>
+        <h4 className="font-medium text-gray-900 mb-3">Pick List</h4>
         <div className="space-y-2">
           {items.map((item, idx) => (
             <div
               key={item.id}
               className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
                 idx === currentItemIndex
-                  ? "bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800"
+                  ? "bg-blue-50 border border-blue-200"
                   : item.qty_picked >= item.qty_requested
-                  ? "bg-green-50 dark:bg-green-900/20"
-                  : "bg-gray-50 dark:bg-gray-800"
+                  ? "bg-green-50"
+                  : "bg-gray-50"
               }`}
               onClick={() => {
                 if (item.qty_picked < item.qty_requested) {
@@ -562,14 +562,14 @@ export default function PickScanner({
                   <Package className="w-5 h-5 text-gray-400" />
                 )}
                 <div>
-                  <p className="font-medium text-gray-900 dark:text-white">{item.product.sku}</p>
+                  <p className="font-medium text-gray-900">{item.product.sku}</p>
                   <p className="text-sm text-gray-500">{item.product.name}</p>
                 </div>
               </div>
               <span className={`font-medium ${
                 item.qty_picked >= item.qty_requested
                   ? "text-green-600"
-                  : "text-gray-600 dark:text-gray-400"
+                  : "text-gray-600"
               }`}>
                 {item.qty_picked} / {item.qty_requested}
               </span>

@@ -330,7 +330,7 @@ export default function PackScanner({
       {/* Header */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <Box className="w-5 h-5" />
             Pack Scanner
           </h3>
@@ -352,10 +352,10 @@ export default function PackScanner({
         {message && (
           <div className={`mb-4 p-3 rounded-lg flex items-center gap-2 ${
             message.type === "success"
-              ? "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+              ? "bg-green-50 text-green-700"
               : message.type === "warning"
-              ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400"
-              : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+              ? "bg-yellow-50 text-yellow-700"
+              : "bg-red-50 text-red-700"
           }`}>
             {message.type === "success" ? (
               <CheckCircle className="w-5 h-5" />
@@ -368,11 +368,11 @@ export default function PackScanner({
 
         {/* Current Carton */}
         {currentCarton ? (
-          <div className="mb-4 p-4 border-2 border-blue-500 rounded-lg bg-blue-50 dark:bg-blue-900/20">
+          <div className="mb-4 p-4 border-2 border-blue-500 rounded-lg bg-blue-50">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Box className="w-6 h-6 text-blue-600" />
-                <span className="font-semibold text-gray-900 dark:text-white">
+                <span className="font-semibold text-gray-900">
                   {currentCarton.lpn_number}
                 </span>
               </div>
@@ -387,10 +387,10 @@ export default function PackScanner({
                 {cartonContents.map(content => (
                   <div
                     key={content.productId}
-                    className="flex items-center justify-between py-2 px-3 bg-white dark:bg-gray-800 rounded"
+                    className="flex items-center justify-between py-2 px-3 bg-white rounded"
                   >
                     <div>
-                      <span className="font-medium text-gray-900 dark:text-white">{content.sku}</span>
+                      <span className="font-medium text-gray-900">{content.sku}</span>
                       <span className="text-gray-500 ml-2">x{content.qty}</span>
                     </div>
                     <Button
@@ -451,21 +451,21 @@ export default function PackScanner({
 
       {/* Order Items Summary */}
       <Card>
-        <h4 className="font-medium text-gray-900 dark:text-white mb-3">Items to Pack</h4>
+        <h4 className="font-medium text-gray-900 mb-3">Items to Pack</h4>
         <div className="space-y-2">
           {items.map(item => (
             <div
               key={item.id}
-              className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+              className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
             >
               <div className="flex items-center gap-3">
                 <Package className="w-5 h-5 text-gray-400" />
                 <div>
-                  <p className="font-medium text-gray-900 dark:text-white">{item.product.sku}</p>
+                  <p className="font-medium text-gray-900">{item.product.sku}</p>
                   <p className="text-sm text-gray-500">{item.product.name}</p>
                 </div>
               </div>
-              <span className="font-medium text-gray-600 dark:text-gray-400">
+              <span className="font-medium text-gray-600">
                 {item.qty_shipped} units
               </span>
             </div>
@@ -476,16 +476,16 @@ export default function PackScanner({
       {/* Completed Cartons */}
       {cartons.filter(c => c.id !== currentCarton?.id).length > 0 && (
         <Card>
-          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Completed Cartons</h4>
+          <h4 className="font-medium text-gray-900 mb-3">Completed Cartons</h4>
           <div className="space-y-2">
             {cartons.filter(c => c.id !== currentCarton?.id).map(carton => (
               <div
                 key={carton.id}
-                className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg"
+                className="flex items-center justify-between p-3 bg-green-50 rounded-lg"
               >
                 <div className="flex items-center gap-2">
                   <CheckCircle className="w-5 h-5 text-green-500" />
-                  <span className="font-medium text-gray-900 dark:text-white">
+                  <span className="font-medium text-gray-900">
                     {carton.lpn_number}
                   </span>
                 </div>

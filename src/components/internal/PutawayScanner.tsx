@@ -403,7 +403,7 @@ export default function PutawayScanner({
       {/* Scanner Controls */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <MapPin className="w-5 h-5" />
             Putaway Scanner
           </h3>
@@ -420,8 +420,8 @@ export default function PutawayScanner({
         {message && (
           <div className={`mb-4 p-3 rounded-lg flex items-center gap-2 ${
             message.type === "success"
-              ? "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
-              : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+              ? "bg-green-50 text-green-700"
+              : "bg-red-50 text-red-700"
           }`}>
             {message.type === "success" ? (
               <CheckCircle className="w-5 h-5" />
@@ -433,8 +433,8 @@ export default function PutawayScanner({
         )}
 
         {/* Scan Instructions */}
-        <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+        <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+          <p className="text-sm text-gray-600">
             {scanMode === "product_or_lpn"
               ? "Step 1: Scan a product barcode or LPN label"
               : "Step 2: Scan destination location or bin"}
@@ -461,16 +461,16 @@ export default function PutawayScanner({
 
         {/* Scanned Item Display */}
         {scannedProduct && (
-          <div className="mb-4 p-4 border rounded-lg dark:border-gray-700">
+          <div className="mb-4 p-4 border rounded-lg">
             <div className="flex items-center gap-3">
               <Package className="w-8 h-8 text-gray-400" />
               <div>
-                <p className="font-medium text-gray-900 dark:text-white">{scannedProduct.name}</p>
+                <p className="font-medium text-gray-900">{scannedProduct.name}</p>
                 <p className="text-sm text-gray-500">{scannedProduct.sku}</p>
               </div>
             </div>
             <div className="mt-3">
-              <label className="text-sm text-gray-600 dark:text-gray-400">Quantity</label>
+              <label className="text-sm text-gray-600">Quantity</label>
               <div className="flex items-center gap-2 mt-1">
                 <Button size="sm" variant="secondary" onClick={() => setQty(Math.max(1, qty - 1))}>-</Button>
                 <span className="w-12 text-center font-medium">{qty}</span>
@@ -481,19 +481,19 @@ export default function PutawayScanner({
         )}
 
         {scannedLPN && (
-          <div className="mb-4 p-4 border rounded-lg dark:border-gray-700">
+          <div className="mb-4 p-4 border rounded-lg">
             <div className="flex items-center gap-3">
               <Box className="w-8 h-8 text-gray-400" />
               <div>
-                <p className="font-medium text-gray-900 dark:text-white">{scannedLPN.lpn_number}</p>
+                <p className="font-medium text-gray-900">{scannedLPN.lpn_number}</p>
                 <p className="text-sm text-gray-500 capitalize">{scannedLPN.container_type}</p>
               </div>
             </div>
             {scannedLPN.contents.length > 0 && (
               <div className="mt-3 text-sm">
-                <p className="text-gray-600 dark:text-gray-400 mb-1">Contents:</p>
+                <p className="text-gray-600 mb-1">Contents:</p>
                 {scannedLPN.contents.slice(0, 3).map((c, i) => (
-                  <p key={i} className="text-gray-700 dark:text-gray-300">
+                  <p key={i} className="text-gray-700">
                     {c.qty}x {c.product.sku}
                   </p>
                 ))}
@@ -507,11 +507,11 @@ export default function PutawayScanner({
 
         {/* Scanned Location Display */}
         {scannedLocation && (
-          <div className="mb-4 p-4 border rounded-lg dark:border-gray-700 bg-green-50 dark:bg-green-900/20">
+          <div className="mb-4 p-4 border rounded-lg bg-green-50">
             <div className="flex items-center gap-3">
               <MapPin className="w-8 h-8 text-green-600" />
               <div>
-                <p className="font-medium text-gray-900 dark:text-white">{scannedLocation.name}</p>
+                <p className="font-medium text-gray-900">{scannedLocation.name}</p>
                 {scannedSublocation && (
                   <p className="text-sm text-green-600">Bin: {scannedSublocation.code}</p>
                 )}
@@ -560,11 +560,11 @@ export default function PutawayScanner({
       {/* Recent Putaways */}
       {recentPutaways.length > 0 && (
         <Card>
-          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Recent Putaways</h4>
+          <h4 className="font-medium text-gray-900 mb-3">Recent Putaways</h4>
           <div className="space-y-2">
             {recentPutaways.map((p, i) => (
-              <div key={i} className="flex items-center justify-between text-sm py-2 border-b dark:border-gray-700 last:border-0">
-                <span className="text-gray-700 dark:text-gray-300">{p.item}</span>
+              <div key={i} className="flex items-center justify-between text-sm py-2 border-b last:border-0">
+                <span className="text-gray-700">{p.item}</span>
                 <span className="text-gray-500">{p.qty}x to {p.location}</span>
               </div>
             ))}
