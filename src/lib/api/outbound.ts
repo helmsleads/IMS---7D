@@ -1162,17 +1162,17 @@ export async function deleteOutboundItem(itemId: string): Promise<void> {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Fetch current item to check shipped qty
+  // Fetch current item and parent order status
   const { data: item, error: itemError } = await supabase
     .from("outbound_items")
-    .select("*")
+    .select("*, outbound_orders!inner(status)")
     .eq("id", itemId)
     .single();
 
   if (itemError) throw new Error(itemError.message);
 
-  if (item.qty_shipped > 0) {
-    throw new Error("Cannot delete an item that has already been shipped");
+  if (item.outbound_orders.status === "shipped" || item.outbound_orders.status === "delivered") {
+    throw new Error("Cannot delete an item from a shipped order");
   }
 
   const { error } = await supabase
