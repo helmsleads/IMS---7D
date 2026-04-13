@@ -426,6 +426,38 @@ export async function createShipment(
   }
 }
 
+/** Cancel / void a shipment that has not been tendered (Ship API). */
+export async function cancelShipment(trackingNumber: string, credentials: FedExCredentials): Promise<void> {
+  const baseUrl = FEDEX_URLS[credentials.environment]
+
+  const body = {
+    accountNumber: {
+      value: credentials.account_number,
+    },
+    trackingNumber,
+  }
+
+  const response = await fedexFetch(
+    `${baseUrl}/ship/v1/shipments/cancel`,
+    {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-locale': 'en_US',
+      },
+      body: JSON.stringify(body),
+    },
+    credentials
+  )
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({ errors: [{ message: 'Unknown error' }] }))
+    const errors = errorBody.errors as FedExError[] | undefined
+    const msg = errors?.map((e) => e.message).join('; ') || `FedEx cancel error (${response.status})`
+    throw new Error(msg)
+  }
+}
+
 // ── Rates API ──────────────────────────────────────────────
 
 export async function getRates(

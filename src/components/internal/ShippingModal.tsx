@@ -126,7 +126,7 @@ export interface ShippingData {
   clientShippingCost?: number;
 }
 
-type FedExFlowState = "idle" | "creating" | "success" | "error";
+type FedExFlowState = "idle" | "creating" | "success" | "error" | "cancelled";
 
 export default function ShippingModal({
   isOpen,
@@ -179,6 +179,8 @@ export default function ShippingModal({
     listCost: number | null;
   } | null>(null);
   const [fedexError, setFedexError] = useState("");
+  const [fedexCancelLoading, setFedexCancelLoading] = useState(false);
+  const [fedexCancelError, setFedexCancelError] = useState("");
   const [manualShippingCost, setManualShippingCost] = useState<number | "">("");
 
   // Demo flag: disable tracking refresh until FedEx tracking credentials are fixed.
@@ -265,6 +267,7 @@ export default function ShippingModal({
 
     setFedexFlowState("creating");
     setFedexError("");
+    setFedexCancelError("");
 
     try {
       console.log("📦 FedEx create shipment request", {
@@ -365,6 +368,35 @@ export default function ShippingModal({
     window.open(`/api/shipping/fedex/label?path=${encodeURIComponent(fedexResult.labelUrl)}`, "_blank");
   };
 
+  const handleFedExCancel = async () => {
+    if (!orderId || !fedexResult?.trackingNumber) return;
+
+    setFedexCancelLoading(true);
+    setFedexCancelError("");
+    try {
+      const res = await fetch("/api/shipping/fedex/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          trackingNumber: fedexResult.trackingNumber,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const hint = typeof data?.hint === "string" && data.hint.trim() ? ` ${data.hint}` : "";
+        setFedexCancelError(`${data.error || "Failed to cancel FedEx shipment"}${hint}`);
+        return;
+      }
+      setFedexResult(null);
+      setFedexFlowState("cancelled");
+    } catch (err) {
+      setFedexCancelError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setFedexCancelLoading(false);
+    }
+  };
+
   const handleFedExTrack = async () => {
     if (!ENABLE_FEDEX_TRACKING_REFRESH) return; // demo safety: avoid calling FedEx tracking
     if (!fedexResult?.trackingNumber) return;
@@ -414,6 +446,8 @@ export default function ShippingModal({
     setFedexTrackLoading(false);
     setFedexTrackError("");
     setFedexLatestStatus("");
+    setFedexCancelLoading(false);
+    setFedexCancelError("");
     setPackageWeight(1);
     setPackageLength("");
     setPackageWidth("");
@@ -422,7 +456,7 @@ export default function ShippingModal({
   };
 
   const handleClose = () => {
-    if (!submitting && fedexFlowState !== "creating") {
+    if (!submitting && !fedexCancelLoading && fedexFlowState !== "creating") {
       setErrors({});
       onClose();
     }
@@ -763,6 +797,36 @@ export default function ShippingModal({
               </div>
             )}
 
+            {fedexFlowState === "cancelled" && (
+              <div className="space-y-4">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                    <span className="font-semibold text-emerald-900">FedEx cancelled successfully</span>
+                  </div>
+                  <p className="text-sm text-emerald-800">
+                    The FedEx shipment was voided and tracking was cleared on this order. You can create a new label or close this dialog.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="flex-1 min-w-[120px]"
+                    onClick={() => {
+                      resetForm();
+                      onClose();
+                    }}
+                  >
+                    Close
+                  </Button>
+                  <Button type="button" className="flex-1 min-w-[120px]" onClick={() => resetForm()}>
+                    Create new FedEx shipment
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {fedexFlowState === "success" && fedexResult && (
               <div className="space-y-4">
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
@@ -835,22 +899,38 @@ export default function ShippingModal({
                   )}
                 </div>
 
-                <div className="flex gap-3 pt-4 border-t border-gray-200">
+                {fedexCancelError && (
+                  <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                    {fedexCancelError}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200">
                   <Button
                     type="button"
                     variant="secondary"
                     onClick={handleClose}
-                    disabled={submitting}
-                    className="flex-1"
+                    disabled={submitting || fedexCancelLoading}
+                    className="flex-1 min-w-[100px]"
                   >
                     Cancel
                   </Button>
                   <Button
                     type="button"
+                    variant="danger"
+                    onClick={handleFedExCancel}
+                    loading={fedexCancelLoading}
+                    disabled={submitting || fedexCancelLoading}
+                    className="flex-1 min-w-[100px]"
+                  >
+                    Cancel FedEx
+                  </Button>
+                  <Button
+                    type="button"
                     onClick={handleFedExComplete}
                     loading={submitting}
-                    disabled={submitting}
-                    className="flex-1"
+                    disabled={submitting || fedexCancelLoading}
+                    className="flex-1 min-w-[100px]"
                   >
                     <ArrowRight className="w-4 h-4 mr-2" />
                     Complete Shipment
