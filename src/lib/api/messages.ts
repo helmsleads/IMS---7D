@@ -137,6 +137,15 @@ export async function getUnreadCount(): Promise<number> {
       .eq("sender_type", "client");
 
     if (error) {
+      const isTransient =
+        error.message === "Failed to fetch" ||
+        error.message.includes("network") ||
+        error.message.includes("aborted");
+
+      if (isTransient) {
+        return 0;
+      }
+
       // Log real database errors
       console.error("Error fetching unread count:", error.message);
       throw new Error(error.message);
@@ -146,9 +155,8 @@ export async function getUnreadCount(): Promise<number> {
   } catch (err) {
     // Silence transient errors (network, abort from unmount/navigation)
     const isTransient =
-      (err instanceof TypeError && (err.message === "Failed to fetch" || err.message.includes("network"))) ||
-      (err instanceof DOMException && err.name === "AbortError") ||
-      (err instanceof Error && err.message.includes("aborted"));
+      (err instanceof Error && (err.message === "Failed to fetch" || err.message.includes("network") || err.message.includes("aborted"))) ||
+      (err instanceof DOMException && err.name === "AbortError");
 
     if (!isTransient) {
       throw err; // Re-throw real errors

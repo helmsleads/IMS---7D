@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
         label_url: null,
         tracking_number: null,
         carrier: null,
-        shipping_method: 'manual',
+        shipping_method: 'fedex_voided',
         shipping_cost: null,
         client_shipping_cost: null,
       })

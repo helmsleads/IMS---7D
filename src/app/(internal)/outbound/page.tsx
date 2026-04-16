@@ -235,25 +235,36 @@ export default function OutboundPage() {
       key: "shipping",
       header: "Carrier / Tracking",
       render: (order: OutboundOrderWithCount) => {
+        const isFedExActive = order.shipping_method === "fedex_api" && order.fedex_shipment_id;
+        const isFedExVoided = order.shipping_method === "fedex_voided";
         const hasShippingInfo = order.carrier || order.tracking_number;
         const hasPreferred = order.preferred_carrier && !order.carrier;
 
-        if (!hasShippingInfo && !hasPreferred) {
+        if (!isFedExActive && !isFedExVoided && !hasShippingInfo && !hasPreferred) {
           return <span className="text-gray-400">—</span>;
         }
         return (
-          <div className="text-sm">
+          <div className="text-sm flex flex-col gap-0.5">
+            {/* Active FedEx shipment badge */}
+            {isFedExActive && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-700 w-fit">
+                FedEx
+              </span>
+            )}
+            {/* FedEx voided/cancelled badge */}
+            {isFedExVoided && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-600 w-fit">
+                Cancelled
+              </span>
+            )}
             {/* Show preferred carrier if no actual carrier set */}
-            {hasPreferred && (
+            {hasPreferred && !isFedExActive && !isFedExVoided && (
               <span className="text-slate-600 text-xs" title="Customer preferred carrier">
                 Preferred: {order.preferred_carrier}
               </span>
             )}
-            {order.carrier && (
+            {order.carrier && !isFedExActive && (
               <span className="text-gray-900">{order.carrier}</span>
-            )}
-            {order.carrier && order.tracking_number && (
-              <span className="text-gray-400 mx-1">•</span>
             )}
             {order.tracking_number && (
               <span className="text-indigo-600 inline-flex items-center gap-1">
