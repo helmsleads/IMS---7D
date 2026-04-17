@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -521,6 +521,15 @@ export default function OutboundOrderDetailPage() {
   useEffect(() => {
     fetchOrder();
   }, [orderId]);
+
+  // Always refresh order data when the ship modal closes so UI stays in sync
+  const shipModalWasOpen = useRef(false);
+  useEffect(() => {
+    if (shipModalWasOpen.current && !showShipModal) {
+      fetchOrder();
+    }
+    shipModalWasOpen.current = showShipModal;
+  }, [showShipModal]);
 
   const handleStatusUpdate = async (newStatus: string, additionalFields?: { carrier?: string; tracking_number?: string }): Promise<boolean> => {
     if (!order) return false;
