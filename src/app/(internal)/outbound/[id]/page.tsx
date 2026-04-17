@@ -352,6 +352,10 @@ export default function OutboundOrderDetailPage() {
   const [isAlcoholOrder, setIsAlcoholOrder] = useState(false);
   const [fedexConfigured, setFedexConfigured] = useState(false);
 
+  // FedEx cancel state
+  const [cancellingFedex, setCancellingFedex] = useState(false);
+  const [fedexCancelError, setFedexCancelError] = useState("");
+
   // Inline edit mode state
   const [isEditingOrder, setIsEditingOrder] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
@@ -669,6 +673,29 @@ export default function OutboundOrderDetailPage() {
     } catch (err) {
       console.error("Failed to ship order:", err);
       throw err; // Re-throw so ShippingModal can handle the error
+    }
+  };
+
+  const handleCancelFedex = async () => {
+    if (!order || !order.tracking_number) return;
+    setCancellingFedex(true);
+    setFedexCancelError("");
+    try {
+      const res = await fetch("/api/shipping/fedex/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.id, trackingNumber: order.tracking_number }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setFedexCancelError(data.error || "Failed to cancel FedEx shipment.");
+      } else {
+        await fetchOrder();
+      }
+    } catch {
+      setFedexCancelError("Unexpected error cancelling FedEx shipment.");
+    } finally {
+      setCancellingFedex(false);
     }
   };
 
@@ -1621,27 +1648,41 @@ export default function OutboundOrderDetailPage() {
               )}
 
               {order.status === "packed" && (
-                <Button
-                  onClick={() => {
-                    console.log("🚚 Ship Order clicked", {
-                      orderId: order.id,
-                      orderNumber: order.order_number,
-                      status: order.status,
-                      carrier: order.carrier,
-                      trackingNumber: order.tracking_number,
-                    });
-                    setShowShipModal(true);
-                  }}
-                  loading={updating}
-                  disabled={updating}
-                >
-                  <Truck className="w-4 h-4 mr-2" />
-                  Ship Order
-                </Button>
+                <div className="flex gap-3">
+                  <Button
+                    onClick={() => {
+                      setShowShipModal(true);
+                    }}
+                    loading={updating}
+                    disabled={updating}
+                  >
+                    <Truck className="w-4 h-4 mr-2" />
+                    Ship Order
+                  </Button>
+                  {(order as any).shipping_method === "fedex_api" && order.tracking_number && (
+                    <Button
+                      variant="secondary"
+                      onClick={handleCancelFedex}
+                      loading={cancellingFedex}
+                      disabled={cancellingFedex}
+                      className="text-red-600 border-red-200 hover:bg-red-50"
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Cancel FedEx
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {(order as any).shipping_method === "fedex_voided" && order.status === "packed" && (
+                <div className="flex items-center gap-2 text-orange-600 text-sm font-medium">
+                  <XCircle className="w-4 h-4" />
+                  FedEx Label Voided
+                </div>
               )}
 
               {order.status === "shipped" && (
-                <div className="flex gap-3">
+                <div className="flex gap-3 flex-wrap">
                   <Button
                     onClick={() => handleStatusUpdate("delivered")}
                     loading={updating}
@@ -1650,6 +1691,18 @@ export default function OutboundOrderDetailPage() {
                     <CheckCircle2 className="w-4 h-4 mr-2" />
                     Mark Delivered
                   </Button>
+                  {(order as any).shipping_method === "fedex_api" && order.tracking_number && (
+                    <Button
+                      variant="secondary"
+                      onClick={handleCancelFedex}
+                      loading={cancellingFedex}
+                      disabled={cancellingFedex}
+                      className="text-red-600 border-red-200 hover:bg-red-50"
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Cancel FedEx
+                    </Button>
+                  )}
                   <Button
                     variant="secondary"
                     onClick={openDamageModal}
@@ -3028,15 +3081,31 @@ export default function OutboundOrderDetailPage() {
                 )}
 
                 {/* Shipping Info */}
-                {(order.carrier || order.tracking_number) && (
+                {((order.carrier || order.tracking_number) || (order as any).shipping_method === "fedex_voided") && (
                   <div className="pt-4 border-t border-gray-200">
                     <p className="text-sm text-gray-500 mb-2">Shipping Info</p>
-                    {order.carrier && (
-                      <p className="font-medium text-gray-900">{order.carrier}</p>
+                    {(order as any).shipping_method === "fedex_voided" ? (
+                      <div className="flex items-center gap-1.5 text-orange-600">
+                        <XCircle className="w-4 h-4" />
+                        <span className="font-medium">FedEx Cancelled</span>
+                      </div>
+                    ) : (
+                      <>
+                        {order.carrier && (
+                          <p className="font-medium text-gray-900">{order.carrier}</p>
+                        )}
+                        {order.tracking_number && (
+                          <p className="text-blue-600">{order.tracking_number}</p>
+                        )}
+                      </>
                     )}
-                    {order.tracking_number && (
-                      <p className="text-blue-600">{order.tracking_number}</p>
-                    )}
+                  </div>
+                )}
+
+                {/* FedEx cancel error */}
+                {fedexCancelError && (
+                  <div className="pt-2">
+                    <p className="text-sm text-red-600">{fedexCancelError}</p>
                   </div>
                 )}
 

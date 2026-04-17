@@ -59,9 +59,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
-    if (order.status === 'shipped' || order.status === 'delivered') {
+    if (order.status === 'delivered') {
       return NextResponse.json(
-        { error: 'Cannot cancel FedEx after the order is marked shipped or delivered.' },
+        { error: 'Cannot cancel FedEx after the order is marked delivered.' },
         { status: 400 }
       )
     }
@@ -77,6 +77,9 @@ export async function POST(request: NextRequest) {
 
     await cancelShipment(tn, credentials)
 
+    // If the order was already marked shipped, revert it back to packed
+    const statusRevert = order.status === 'shipped' ? { status: 'packed' } : {}
+
     const { error: updateError } = await serviceSupabase
       .from('outbound_orders')
       .update({
@@ -87,6 +90,8 @@ export async function POST(request: NextRequest) {
         shipping_method: 'fedex_voided',
         shipping_cost: null,
         client_shipping_cost: null,
+        shipped_date: order.status === 'shipped' ? null : undefined,
+        ...statusRevert,
       })
       .eq('id', orderId)
 
