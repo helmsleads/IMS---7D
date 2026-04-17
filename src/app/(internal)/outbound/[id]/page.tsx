@@ -3500,6 +3500,7 @@ export default function OutboundOrderDetailPage() {
           country: order.ship_to_country || undefined,
           phone: order.ship_to_phone || undefined,
         } : undefined}
+        onFedexCancelled={fetchOrder}
       />
 
       {/* Confirm Order Modal with Inventory Check */}

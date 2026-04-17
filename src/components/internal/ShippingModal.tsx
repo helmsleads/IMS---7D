@@ -109,6 +109,7 @@ interface ShippingModalProps {
   shipToAddress?: ShipToAddress;
   // Pickup support
   preferredCarrier?: string;
+  onFedexCancelled?: () => void;
 }
 
 export interface ShippingData {
@@ -140,6 +141,7 @@ export default function ShippingModal({
   orderId,
   shipToAddress,
   preferredCarrier,
+  onFedexCancelled,
 }: ShippingModalProps) {
   // Mode: "fedex" (API), "manual", or "pickup"
   const isPickupOrder = preferredCarrier?.toLowerCase() === "pickup" || preferredCarrier?.toLowerCase() === "customer pickup";
@@ -390,6 +392,7 @@ export default function ShippingModal({
       }
       setFedexResult(null);
       setFedexFlowState("cancelled");
+      onFedexCancelled?.();
     } catch (err) {
       setFedexCancelError(err instanceof Error ? err.message : "Network error");
     } finally {
