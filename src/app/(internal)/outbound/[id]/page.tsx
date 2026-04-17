@@ -1648,7 +1648,7 @@ export default function OutboundOrderDetailPage() {
               )}
 
               {order.status === "packed" && (
-                <div className="flex gap-3">
+                <div className="flex items-center gap-3">
                   <Button
                     onClick={() => {
                       setShowShipModal(true);
@@ -1671,13 +1671,12 @@ export default function OutboundOrderDetailPage() {
                       Cancel FedEx
                     </Button>
                   )}
-                </div>
-              )}
-
-              {(order as any).shipping_method === "fedex_voided" && order.status === "packed" && (
-                <div className="flex items-center gap-2 text-orange-600 text-sm font-medium">
-                  <XCircle className="w-4 h-4" />
-                  FedEx Label Voided
+                  {(order as any).shipping_method === "fedex_voided" && (
+                    <div className="flex items-center gap-1.5 text-orange-600 text-sm font-medium">
+                      <XCircle className="w-4 h-4" />
+                      Cancelled
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -3087,7 +3086,7 @@ export default function OutboundOrderDetailPage() {
                     {(order as any).shipping_method === "fedex_voided" ? (
                       <div className="flex items-center gap-1.5 text-orange-600">
                         <XCircle className="w-4 h-4" />
-                        <span className="font-medium">FedEx Cancelled</span>
+                        <span className="font-medium">Cancelled</span>
                       </div>
                     ) : (
                       <>
