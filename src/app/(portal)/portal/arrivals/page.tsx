@@ -33,7 +33,7 @@ import ScheduleArrivalForm from "@/components/portal/ScheduleArrivalForm";
 
 interface InboundOrder {
   id: string;
-  order_number: string;
+  po_number: string;
   status: string;
   created_at: string;
   received_date: string | null;
@@ -48,7 +48,7 @@ interface InboundOrder {
 
 interface ArrivalDetail {
   id: string;
-  order_number: string;
+  po_number: string;
   status: string;
   created_at: string;
   received_date: string | null;
@@ -197,6 +197,10 @@ export default function PortalArrivalsPage() {
   const [modalLoading, setModalLoading] = useState(false);
 
   const fetchArrivalDetail = async (arrivalId: string) => {
+    if (!client || client.id === "staff-preview") {
+      return;
+    }
+
     setModalLoading(true);
 
     const supabase = createClient();
@@ -205,7 +209,7 @@ export default function PortalArrivalsPage() {
       .from("inbound_orders")
       .select(`
         id,
-        order_number,
+        po_number,
         status,
         created_at,
         received_date,
@@ -228,6 +232,7 @@ export default function PortalArrivalsPage() {
         )
       `)
       .eq("id", arrivalId)
+      .eq("client_id", client.id)
       .single();
 
     if (fetchError || !data) {
@@ -238,7 +243,7 @@ export default function PortalArrivalsPage() {
 
     const detail: ArrivalDetail = {
       id: data.id,
-      order_number: data.order_number,
+      po_number: data.po_number,
       status: data.status,
       created_at: data.created_at,
       received_date: data.received_date,
@@ -290,7 +295,7 @@ export default function PortalArrivalsPage() {
       .from("inbound_orders")
       .select(`
         id,
-        order_number,
+        po_number,
         status,
         created_at,
         received_date,
@@ -318,7 +323,7 @@ export default function PortalArrivalsPage() {
       const items = order.items as { qty_expected: number }[];
       return {
         id: order.id,
-        order_number: order.order_number,
+        po_number: order.po_number,
         status: order.status,
         created_at: order.created_at,
         received_date: order.received_date,
@@ -343,7 +348,7 @@ export default function PortalArrivalsPage() {
 
   const filteredArrivals = arrivals.filter((order) => {
     const matchesSearch =
-      order.order_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.po_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (order.tracking_number?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
 
     let matchesStatus = true;
@@ -519,7 +524,7 @@ export default function PortalArrivalsPage() {
                       <div>
                         <div className="flex items-center gap-3 mb-1">
                           <span className="font-mono font-bold text-lg text-slate-900">
-                            {order.order_number}
+                            {order.po_number}
                           </span>
                         </div>
                         <p className="text-sm text-slate-500">
@@ -665,7 +670,7 @@ export default function PortalArrivalsPage() {
       <Modal
         isOpen={!!selectedArrival || modalLoading}
         onClose={closeModal}
-        title={selectedArrival?.order_number || "Loading..."}
+        title={selectedArrival?.po_number || "Loading..."}
         size="xl"
         footer={<Button variant="secondary" onClick={closeModal}>Close</Button>}
       >
