@@ -1368,11 +1368,11 @@ function StepReviewSubmit({
 
       // 4. Create line items
       const lineItems = selectedProducts.map((product) => ({
-        outbound_order_id: orderId,
+        order_id: orderId,
         product_id: product.product_id,
         qty_requested: product.qty_to_ship,
-        qty_picked: 0,
-        status: "pending",
+        qty_shipped: 0,
+        // status: "pending",
       }));
 
       const { error: itemsError } = await supabase
