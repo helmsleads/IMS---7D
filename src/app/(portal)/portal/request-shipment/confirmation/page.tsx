@@ -13,6 +13,7 @@ import {
   FileText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
+import { useClient } from "@/lib/client-auth";
 
 interface OrderDetails {
   id: string;
@@ -37,6 +38,7 @@ interface OrderDetails {
 export default function ShipmentConfirmationPage() {
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
+  const { client } = useClient();
 
   const [order, setOrder] = useState<OrderDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,6 +46,10 @@ export default function ShipmentConfirmationPage() {
 
   useEffect(() => {
     const fetchOrder = async () => {
+      if (!client || client.id === "staff-preview") {
+        return;
+      }
+
       if (!orderId) {
         setError("No order ID provided");
         setLoading(false);
@@ -76,6 +82,7 @@ export default function ShipmentConfirmationPage() {
           )
         `)
         .eq("id", orderId)
+        .eq("client_id", client.id)
         .single();
 
       if (fetchError || !data) {
@@ -113,7 +120,7 @@ export default function ShipmentConfirmationPage() {
     };
 
     fetchOrder();
-  }, [orderId]);
+  }, [client, orderId]);
 
   const totalUnits = order?.items.reduce((sum, item) => sum + item.qty_requested, 0) || 0;
 
