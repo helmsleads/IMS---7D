@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase";
+import { resolveCurrentPortalClientId } from "@/lib/api/portal-client-id";
 
 export interface OrderTimelineEvent {
   id: string;
@@ -44,21 +45,11 @@ export async function getPortalOrderTracking(
 ): Promise<OrderTrackingDetail | null> {
   const supabase = createClient();
 
-  // Get user's client_id
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  const { data: userData } = await supabase
-    .from("users")
-    .select("client_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!userData?.client_id) {
+  const clientId = await resolveCurrentPortalClientId();
+  if (!clientId) {
     throw new Error("Not associated with a client");
   }
 
-  // Get the order
   const { data: order, error: orderError } = await supabase
     .from("outbound_orders")
     .select(`
@@ -81,16 +72,12 @@ export async function getPortalOrderTracking(
       )
     `)
     .eq("id", orderId)
+    .eq("client_id", clientId)
     .single();
 
   if (orderError) {
     if (orderError.code === "PGRST116") return null;
     throw new Error(orderError.message);
-  }
-
-  // Verify access
-  if (order.client_id !== userData.client_id) {
-    throw new Error("Access denied");
   }
 
   // Get cartons
@@ -234,17 +221,8 @@ export async function getPortalRecentOrders(
 }>> {
   const supabase = createClient();
 
-  // Get user's client_id
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  const { data: userData } = await supabase
-    .from("users")
-    .select("client_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!userData?.client_id) {
+  const clientId = await resolveCurrentPortalClientId();
+  if (!clientId) {
     return [];
   }
 
@@ -258,7 +236,7 @@ export async function getPortalRecentOrders(
       shipped_date,
       items:outbound_items(count)
     `)
-    .eq("client_id", userData.client_id)
+    .eq("client_id", clientId)
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -292,17 +270,8 @@ export async function checkPortalOrderAvailability(
 }>> {
   const supabase = createClient();
 
-  // Get user's client_id
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  const { data: userData } = await supabase
-    .from("users")
-    .select("client_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!userData?.client_id) {
+  const clientId = await resolveCurrentPortalClientId();
+  if (!clientId) {
     throw new Error("Not associated with a client");
   }
 
@@ -324,7 +293,7 @@ export async function checkPortalOrderAvailability(
       .eq("id", item.productId)
       .single();
 
-    if (!product || product.client_id !== userData.client_id) {
+    if (!product || product.client_id !== clientId) {
       continue;
     }
 

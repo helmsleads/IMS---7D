@@ -55,7 +55,7 @@ export default function ProductMappingPage() {
 
         // Load in parallel
         const [mappingsData, productsData, shopifyData] = await Promise.all([
-          getProductMappings(shopifyInt.id),
+          getProductMappings(shopifyInt.id, client.id),
           getProducts(client.id),
           fetch(`/api/integrations/shopify/${shopifyInt.id}/products`).then((r) => r.json()),
         ])
@@ -85,20 +85,23 @@ export default function ProductMappingPage() {
   )
 
   const handleCreateMapping = async (shopifyProduct: ShopifyProduct, imsProductId: string) => {
-    if (!integration) return
+    if (!integration || !client) return
 
     setIsSaving(true)
     try {
-      const newMapping = await createProductMapping({
-        integration_id: integration.id,
-        product_id: imsProductId,
-        external_product_id: shopifyProduct.productId,
-        external_variant_id: shopifyProduct.variantId,
-        external_sku: shopifyProduct.sku || undefined,
-        external_title: shopifyProduct.title + (shopifyProduct.variantTitle ? ` - ${shopifyProduct.variantTitle}` : ''),
-        external_image_url: shopifyProduct.imageUrl || undefined,
-        sync_inventory: true,
-      })
+      const newMapping = await createProductMapping(
+        {
+          integration_id: integration.id,
+          product_id: imsProductId,
+          external_product_id: shopifyProduct.productId,
+          external_variant_id: shopifyProduct.variantId,
+          external_sku: shopifyProduct.sku || undefined,
+          external_title: shopifyProduct.title + (shopifyProduct.variantTitle ? ` - ${shopifyProduct.variantTitle}` : ''),
+          external_image_url: shopifyProduct.imageUrl || undefined,
+          sync_inventory: true,
+        },
+        client.id
+      )
       setMappings([...mappings, newMapping])
     } catch (err) {
       alert('Failed to create mapping: ' + (err instanceof Error ? err.message : 'Unknown error'))
@@ -107,10 +110,11 @@ export default function ProductMappingPage() {
   }
 
   const handleDeleteMapping = async (mappingId: string) => {
+    if (!client) return
     if (!confirm('Remove this product mapping?')) return
 
     try {
-      await deleteProductMapping(mappingId)
+      await deleteProductMapping(mappingId, client.id)
       setMappings(mappings.filter((m) => m.id !== mappingId))
     } catch (err) {
       alert('Failed to delete mapping: ' + (err instanceof Error ? err.message : 'Unknown error'))

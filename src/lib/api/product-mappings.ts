@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase'
+import { assertIntegrationOwnedByClient } from '@/lib/api/integrations'
 
 export interface ProductMapping {
   id: string
@@ -22,7 +23,12 @@ export interface ProductMapping {
   }
 }
 
-export async function getProductMappings(integrationId: string): Promise<ProductMapping[]> {
+export async function getProductMappings(
+  integrationId: string,
+  clientId: string
+): Promise<ProductMapping[]> {
+  await assertIntegrationOwnedByClient(integrationId, clientId)
+
   const supabase = createClient()
 
   const { data, error } = await supabase
@@ -35,17 +41,33 @@ export async function getProductMappings(integrationId: string): Promise<Product
   return data || []
 }
 
-export async function createProductMapping(mapping: {
-  integration_id: string
-  product_id: string
-  external_product_id?: string
-  external_variant_id?: string
-  external_sku?: string
-  external_title?: string
-  external_image_url?: string
-  sync_inventory?: boolean
-}): Promise<ProductMapping> {
+export async function createProductMapping(
+  mapping: {
+    integration_id: string
+    product_id: string
+    external_product_id?: string
+    external_variant_id?: string
+    external_sku?: string
+    external_title?: string
+    external_image_url?: string
+    sync_inventory?: boolean
+  },
+  clientId: string
+): Promise<ProductMapping> {
+  await assertIntegrationOwnedByClient(mapping.integration_id, clientId)
+
   const supabase = createClient()
+
+  const { data: product, error: productError } = await supabase
+    .from('products')
+    .select('id')
+    .eq('id', mapping.product_id)
+    .eq('client_id', clientId)
+    .single()
+
+  if (productError || !product) {
+    throw new Error('Product not found or access denied')
+  }
 
   const { data, error } = await supabase
     .from('product_mappings')
@@ -72,9 +94,35 @@ export async function updateProductMapping(
     product_id: string
     sync_inventory: boolean
     sync_price: boolean
-  }>
+  }>,
+  clientId: string
 ): Promise<ProductMapping> {
   const supabase = createClient()
+
+  const { data: mappingRow, error: fetchErr } = await supabase
+    .from('product_mappings')
+    .select('integration_id')
+    .eq('id', id)
+    .single()
+
+  if (fetchErr?.code === 'PGRST116' || !mappingRow) {
+    throw new Error('Mapping not found')
+  }
+
+  await assertIntegrationOwnedByClient(mappingRow.integration_id, clientId)
+
+  if (updates.product_id) {
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('id')
+      .eq('id', updates.product_id)
+      .eq('client_id', clientId)
+      .single()
+
+    if (productError || !product) {
+      throw new Error('Product not found or access denied')
+    }
+  }
 
   const { data, error } = await supabase
     .from('product_mappings')
@@ -87,8 +135,20 @@ export async function updateProductMapping(
   return data
 }
 
-export async function deleteProductMapping(id: string): Promise<void> {
+export async function deleteProductMapping(id: string, clientId: string): Promise<void> {
   const supabase = createClient()
+
+  const { data: mappingRow, error: fetchErr } = await supabase
+    .from('product_mappings')
+    .select('integration_id')
+    .eq('id', id)
+    .single()
+
+  if (fetchErr?.code === 'PGRST116' || !mappingRow) {
+    throw new Error('Mapping not found')
+  }
+
+  await assertIntegrationOwnedByClient(mappingRow.integration_id, clientId)
 
   const { error } = await supabase
     .from('product_mappings')

@@ -189,7 +189,11 @@ function ShopifyCard({
 
         <div className="mt-6">
           {isConnected && integration ? (
-            <ShopifyConnectedStatus integration={integration} onRefresh={onRefresh} />
+            <ShopifyConnectedStatus
+              integration={integration}
+              clientId={clientId}
+              onRefresh={onRefresh}
+            />
           ) : (
             <ShopifyConnectForm clientId={clientId} />
           )}
@@ -283,9 +287,11 @@ function ShopifyConnectForm({ clientId }: { clientId: string | undefined }) {
 
 function ShopifyConnectedStatus({
   integration,
+  clientId,
   onRefresh,
 }: {
   integration: ClientIntegration
+  clientId: string | undefined
   onRefresh: () => void
 }) {
   const [isSyncingOrders, setIsSyncingOrders] = useState(false)
@@ -343,7 +349,10 @@ function ShopifyConnectedStatus({
 
     setIsSavingSettings(true)
     try {
-      await updateIntegrationSettings(integration.id, { [key]: value })
+      if (!clientId || integration.client_id !== clientId) {
+        throw new Error('Invalid client session')
+      }
+      await updateIntegrationSettings(integration.id, { [key]: value }, clientId)
     } catch (error) {
       if (key === 'auto_import_orders') setAutoImportOrders(prev)
       else if (key === 'auto_sync_inventory') setAutoSyncInventory(prev)

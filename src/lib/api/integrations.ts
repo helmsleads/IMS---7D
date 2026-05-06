@@ -1,5 +1,29 @@
 import { createClient } from '@/lib/supabase'
-import type { ClientIntegration, ProductMapping } from '@/types/database'
+import type { ClientIntegration } from '@/types/database'
+
+/**
+ * Ensures the integration row exists and belongs to the given client (portal / tenant scope).
+ */
+export async function assertIntegrationOwnedByClient(
+  integrationId: string,
+  clientId: string
+): Promise<void> {
+  const supabase = createClient()
+
+  const { data, error } = await supabase
+    .from('client_integrations')
+    .select('id')
+    .eq('id', integrationId)
+    .eq('client_id', clientId)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+  if (!data) {
+    throw new Error('Integration not found or access denied')
+  }
+}
 
 /**
  * Get all integrations for a client
@@ -29,15 +53,19 @@ export async function getClientIntegrations(clientId: string): Promise<ClientInt
 }
 
 /**
- * Get a specific integration by ID
+ * Get a specific integration by ID (scoped to client)
  */
-export async function getIntegration(integrationId: string): Promise<ClientIntegration | null> {
+export async function getIntegration(
+  integrationId: string,
+  clientId: string
+): Promise<ClientIntegration | null> {
   const supabase = createClient()
 
   const { data, error } = await supabase
     .from('client_integrations')
     .select('*')
     .eq('id', integrationId)
+    .eq('client_id', clientId)
     .single()
 
   if (error) {
@@ -76,24 +104,30 @@ export async function getClientShopifyIntegration(clientId: string): Promise<Cli
  */
 export async function updateIntegrationSettings(
   integrationId: string,
-  settings: Partial<ClientIntegration['settings']>
+  settings: Partial<ClientIntegration['settings']>,
+  clientId: string
 ): Promise<ClientIntegration> {
   const supabase = createClient()
 
-  // Get current settings
-  const { data: current } = await supabase
+  const { data: current, error: fetchError } = await supabase
     .from('client_integrations')
     .select('settings')
     .eq('id', integrationId)
+    .eq('client_id', clientId)
     .single()
+
+  if (fetchError || !current) {
+    throw new Error(fetchError?.message || 'Integration not found or access denied')
+  }
 
   const { data, error } = await supabase
     .from('client_integrations')
     .update({
-      settings: { ...current?.settings, ...settings },
+      settings: { ...current.settings, ...settings },
       updated_at: new Date().toISOString(),
     })
     .eq('id', integrationId)
+    .eq('client_id', clientId)
     .select()
     .single()
 
@@ -106,9 +140,9 @@ export async function updateIntegrationSettings(
 }
 
 /**
- * Disconnect/delete an integration
+ * Disconnect an integration (scoped to client)
  */
-export async function disconnectIntegration(integrationId: string): Promise<void> {
+export async function disconnectIntegration(integrationId: string, clientId: string): Promise<void> {
   const supabase = createClient()
 
   const { error } = await supabase
@@ -119,83 +153,10 @@ export async function disconnectIntegration(integrationId: string): Promise<void
       updated_at: new Date().toISOString(),
     })
     .eq('id', integrationId)
+    .eq('client_id', clientId)
 
   if (error) {
     console.error('Error disconnecting integration:', error)
-    throw new Error(error.message)
-  }
-}
-
-/**
- * Get product mappings for an integration
- */
-export async function getProductMappings(integrationId: string): Promise<ProductMapping[]> {
-  const supabase = createClient()
-
-  const { data, error } = await supabase
-    .from('product_mappings')
-    .select(`
-      *,
-      product:products(id, sku, name, image_url)
-    `)
-    .eq('integration_id', integrationId)
-    .order('created_at', { ascending: false })
-
-  if (error) {
-    console.error('Error fetching product mappings:', error)
-    throw new Error(error.message)
-  }
-
-  return data || []
-}
-
-/**
- * Create a product mapping
- */
-export async function createProductMapping(
-  integrationId: string,
-  mapping: {
-    product_id: string
-    external_product_id: string
-    external_variant_id: string
-    external_sku?: string
-    external_inventory_item_id?: string
-    external_title?: string
-    sync_inventory?: boolean
-  }
-): Promise<ProductMapping> {
-  const supabase = createClient()
-
-  const { data, error } = await supabase
-    .from('product_mappings')
-    .insert({
-      integration_id: integrationId,
-      ...mapping,
-    })
-    .select()
-    .single()
-
-  if (error) {
-    console.error('Error creating product mapping:', error)
-    throw new Error(error.message)
-  }
-
-  return data
-}
-
-/**
- * Delete a product mapping
- */
-export async function deleteProductMapping(mappingId: string): Promise<void> {
-  const supabase = createClient()
-
-  const { error } = await supabase
-    .from('product_mappings')
-    .delete()
-    .eq('id', mappingId)
-
-  if (error) {
-    console.error('Error deleting product mapping:', error)
     throw new Error(error.message)
   }
 }
@@ -205,20 +166,12 @@ export async function deleteProductMapping(mappingId: string): Promise<void> {
  */
 export async function autoMapProductsBySku(
   integrationId: string,
+  clientId: string,
   shopifyProducts: Array<{ variant_id: string; sku: string; product_id: string; title: string; inventory_item_id: string }>
 ): Promise<{ mapped: number; skipped: number }> {
+  await assertIntegrationOwnedByClient(integrationId, clientId)
+
   const supabase = createClient()
-
-  // Get the integration to find client_id
-  const { data: integration } = await supabase
-    .from('client_integrations')
-    .select('client_id')
-    .eq('id', integrationId)
-    .single()
-
-  if (!integration) {
-    throw new Error('Integration not found')
-  }
 
   // Get existing mappings
   const { data: existingMappings } = await supabase
@@ -232,7 +185,7 @@ export async function autoMapProductsBySku(
   const { data: products } = await supabase
     .from('products')
     .select('id, sku')
-    .eq('client_id', integration.client_id)
+    .eq('client_id', clientId)
     .eq('active', true)
 
   const productsBySku = new Map(products?.map((p) => [p.sku?.toLowerCase(), p]) || [])

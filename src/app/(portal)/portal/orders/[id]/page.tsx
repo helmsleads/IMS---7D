@@ -206,6 +206,16 @@ export default function OrderDetailPage() {
 
       const supabase = createClient();
 
+      // Resolve allowed orders first (primary client + multi-client product ownership).
+      const { data: allowedOrderIds, error: allowedIdsError } = await supabase
+        .rpc("get_client_order_ids", { p_client_id: client.id });
+
+      if (allowedIdsError || !allowedOrderIds || allowedOrderIds.length === 0) {
+        setError("You don't have permission to view this order");
+        setLoading(false);
+        return;
+      }
+
       const { data, error: fetchError } = await supabase
         .from("outbound_orders")
         .select(`
@@ -249,6 +259,7 @@ export default function OrderDetailPage() {
           )
         `)
         .eq("id", orderId)
+        .in("id", allowedOrderIds)
         .single();
 
       if (fetchError || !data) {

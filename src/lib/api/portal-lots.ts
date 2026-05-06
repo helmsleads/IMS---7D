@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase";
+import { resolveCurrentPortalClientId } from "@/lib/api/portal-client-id";
 
 export interface PortalLot {
   id: string;
@@ -30,17 +31,8 @@ export async function getPortalLots(
 ): Promise<PortalLot[]> {
   const supabase = createClient();
 
-  // Get user's client_id
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  const { data: userData, error: userError } = await supabase
-    .from("users")
-    .select("client_id")
-    .eq("id", user.id)
-    .single();
-
-  if (userError || !userData?.client_id) {
+  const clientId = await resolveCurrentPortalClientId();
+  if (!clientId) {
     throw new Error("Not associated with a client");
   }
 
@@ -48,7 +40,7 @@ export async function getPortalLots(
   const { data: products } = await supabase
     .from("products")
     .select("id")
-    .eq("client_id", userData.client_id);
+    .eq("client_id", clientId);
 
   const productIds = products?.map(p => p.id) || [];
   if (productIds.length === 0) {
@@ -128,17 +120,8 @@ export async function getPortalExpiringLotsSummary(): Promise<{
 }> {
   const supabase = createClient();
 
-  // Get user's client_id
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  const { data: userData } = await supabase
-    .from("users")
-    .select("client_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!userData?.client_id) {
+  const clientId = await resolveCurrentPortalClientId();
+  if (!clientId) {
     return { expiring7Days: 0, expiring30Days: 0, expiring90Days: 0, expired: 0 };
   }
 
@@ -146,7 +129,7 @@ export async function getPortalExpiringLotsSummary(): Promise<{
   const { data: products } = await supabase
     .from("products")
     .select("id")
-    .eq("client_id", userData.client_id);
+    .eq("client_id", clientId);
 
   const productIds = products?.map(p => p.id) || [];
   if (productIds.length === 0) {
@@ -212,17 +195,8 @@ export async function getPortalLotDetail(lotId: string): Promise<{
 } | null> {
   const supabase = createClient();
 
-  // Get user's client_id
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  const { data: userData } = await supabase
-    .from("users")
-    .select("client_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!userData?.client_id) {
+  const clientId = await resolveCurrentPortalClientId();
+  if (!clientId) {
     throw new Error("Not associated with a client");
   }
 
@@ -243,7 +217,7 @@ export async function getPortalLotDetail(lotId: string): Promise<{
 
   // Verify the lot belongs to the client
   const product = lot.product as { client_id: string };
-  if (product.client_id !== userData.client_id) {
+  if (product.client_id !== clientId) {
     throw new Error("Access denied");
   }
 

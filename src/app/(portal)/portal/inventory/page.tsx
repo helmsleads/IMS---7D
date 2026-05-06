@@ -10,7 +10,6 @@ import FetchError from "@/components/ui/FetchError";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
 import { getMyProductValues, updateMyProductValue, ProductValue } from "@/lib/api/portal-profitability";
-import { updateProduct } from "@/lib/api/products";
 import { handleApiError } from "@/lib/utils/error-handler";
 
 interface InventoryItem {
@@ -190,6 +189,8 @@ export default function PortalInventoryPage() {
   };
 
   const handleToggleActive = async (item: InventoryItem) => {
+    if (!client) return;
+
     const newActive = !item.active;
     // Optimistic update
     setInventory((prev) =>
@@ -197,7 +198,16 @@ export default function PortalInventoryPage() {
     );
     setTogglingActiveIds((prev) => new Set(prev).add(item.product_id));
     try {
-      await updateProduct(item.product_id, { active: newActive });
+      const supabase = createClient();
+      const { error: updateError } = await supabase
+        .from("products")
+        .update({ active: newActive })
+        .eq("id", item.product_id)
+        .eq("client_id", client.id);
+
+      if (updateError) {
+        throw updateError;
+      }
     } catch (err) {
       // Revert on error
       setInventory((prev) =>

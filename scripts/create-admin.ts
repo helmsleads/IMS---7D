@@ -54,6 +54,7 @@ async function createAdminUser() {
         // Add to users table
         const { error: insertError } = await supabase.from("users").insert({
           id: signInData.user.id,
+          auth_id: signInData.user.id,
           email,
           name: "Sam",
           role: "super_admin",
@@ -83,6 +84,7 @@ async function createAdminUser() {
   // Add to users table
   const { error: insertError } = await supabase.from("users").insert({
     id: authData.user.id,
+    auth_id: authData.user.id,
     email,
     name: "Sam",
     role: "super_admin",

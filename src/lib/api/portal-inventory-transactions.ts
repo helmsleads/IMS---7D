@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase";
+import { resolveCurrentPortalClientId } from "@/lib/api/portal-client-id";
 
 export interface PortalInventoryTransaction {
   id: string;
@@ -34,17 +35,8 @@ export async function getPortalInventoryTransactions(
 ): Promise<PortalInventoryTransaction[]> {
   const supabase = createClient();
 
-  // Get user's client_id
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  const { data: userData, error: userError } = await supabase
-    .from("users")
-    .select("client_id")
-    .eq("id", user.id)
-    .single();
-
-  if (userError || !userData?.client_id) {
+  const clientId = await resolveCurrentPortalClientId();
+  if (!clientId) {
     throw new Error("Not associated with a client");
   }
 
@@ -52,7 +44,7 @@ export async function getPortalInventoryTransactions(
   const { data: products, error: productsError } = await supabase
     .from("products")
     .select("id")
-    .eq("client_id", userData.client_id);
+    .eq("client_id", clientId);
 
   if (productsError) {
     throw new Error(productsError.message);
@@ -126,17 +118,8 @@ export async function getPortalTransactionSummary(
 }> {
   const supabase = createClient();
 
-  // Get user's client_id
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  const { data: userData, error: userError } = await supabase
-    .from("users")
-    .select("client_id")
-    .eq("id", user.id)
-    .single();
-
-  if (userError || !userData?.client_id) {
+  const clientId = await resolveCurrentPortalClientId();
+  if (!clientId) {
     throw new Error("Not associated with a client");
   }
 
@@ -144,7 +127,7 @@ export async function getPortalTransactionSummary(
   const { data: products } = await supabase
     .from("products")
     .select("id")
-    .eq("client_id", userData.client_id);
+    .eq("client_id", clientId);
 
   const productIds = products?.map(p => p.id) || [];
   if (productIds.length === 0) {

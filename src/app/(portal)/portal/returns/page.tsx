@@ -118,7 +118,7 @@ export default function PortalReturnsPage() {
       try {
         const [ordersData, productsData] = await Promise.all([
           getReturnableOrders(client.id),
-          getProducts(),
+          getProducts(client.id),
         ]);
 
         setReturnableOrders(ordersData);

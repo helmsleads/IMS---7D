@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
       .from("users")
       .insert({
         id: authData.user.id,
+        auth_id: authData.user.id,
         name,
         email: email.toLowerCase(),
         role,
