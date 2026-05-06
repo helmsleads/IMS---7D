@@ -14,20 +14,16 @@ export default function ClientProtectedRoute({
 
   useEffect(() => {
     if (!loading && !client) {
-      router.push("/client-login");
+      router.replace("/client-login");
     }
   }, [client, loading, router]);
 
-  if (loading) {
+  if (loading || !client) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
       </div>
     );
-  }
-
-  if (!client) {
-    return null;
   }
 
   return <>{children}</>;
