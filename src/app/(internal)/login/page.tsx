@@ -53,6 +53,28 @@ export default function LoginPage() {
         return;
       }
 
+      const [{ data: factorData, error: factorError }, { data: aalData, error: aalError }] =
+        await Promise.all([
+          supabase.auth.mfa.listFactors(),
+          supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+        ]);
+
+      if (factorError || aalError) {
+        setError("Unable to complete MFA check. Please try again.");
+        return;
+      }
+
+      const hasVerifiedTotp = (factorData?.totp ?? []).some(
+        (factor) => factor.status === "verified"
+      );
+      const isMfaVerified = aalData?.currentLevel === "aal2";
+
+      if (!isMfaVerified) {
+        const nextRoute = hasVerifiedTotp ? "/mfa/verify" : "/mfa/setup";
+        router.push(`${nextRoute}?redirect=${encodeURIComponent(redirectTo)}`);
+        return;
+      }
+
       router.push(redirectTo);
     } catch {
       setError("An unexpected error occurred");
