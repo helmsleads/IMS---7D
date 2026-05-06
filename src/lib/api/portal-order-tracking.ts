@@ -302,7 +302,7 @@ export async function checkPortalOrderAvailability(
       .from("inventory")
       .select("qty_on_hand, qty_reserved")
       .eq("product_id", item.productId)
-      .eq("stage", "available");
+      .eq("status", "available");
 
     const totalOnHand = (inventory || []).reduce((sum, inv) => sum + inv.qty_on_hand, 0);
     const totalReserved = (inventory || []).reduce((sum, inv) => sum + inv.qty_reserved, 0);

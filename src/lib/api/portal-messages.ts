@@ -279,16 +279,47 @@ export async function sendPortalMessage(
 export async function getMyUnreadCount(clientId: string): Promise<number> {
   const supabase = createClient();
 
-  // Single query: count unread staff messages in client's conversations via inner join
+  // Resolve the client's conversation IDs first, then count unread staff messages.
+  // This avoids fragile joined-count behavior with head/count queries.
+  const { data: conversations, error: convError } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("client_id", clientId);
+
+  if (convError) {
+    // Do not crash portal header/widgets when unread count can't be fetched.
+    // Return 0 for transient/network/auth policy issues.
+    const isTransient =
+      convError.message === "Failed to fetch" ||
+      convError.message.toLowerCase().includes("network") ||
+      convError.message.toLowerCase().includes("aborted");
+    if (!isTransient) {
+      console.error("Error fetching conversations for unread count:", convError);
+    }
+    return 0;
+  }
+
+  const conversationIds = (conversations || []).map((c) => c.id);
+  if (conversationIds.length === 0) {
+    return 0;
+  }
+
   const { count, error } = await supabase
     .from("messages")
-    .select("*, conversation:conversations!inner(id)", { count: "exact", head: true })
-    .eq("conversation.client_id", clientId)
+    .select("id", { count: "exact", head: true })
+    .in("conversation_id", conversationIds)
     .eq("sender_type", "user")
     .is("read_at", null);
 
   if (error) {
-    throw new Error(error.message);
+    const isTransient =
+      error.message === "Failed to fetch" ||
+      error.message.toLowerCase().includes("network") ||
+      error.message.toLowerCase().includes("aborted");
+    if (!isTransient) {
+      console.error("Error fetching unread message count:", error);
+    }
+    return 0;
   }
 
   return count || 0;

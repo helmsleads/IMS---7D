@@ -407,11 +407,11 @@ export async function getClientInventoryValueOverTime(
       .from("inventory_transactions")
       .select(`
         qty_change,
-        unit_cost,
         created_at,
         product:products!inner (
           id,
-          client_id
+          client_id,
+          unit_cost
         )
       `)
       .eq("product.client_id", clientId)
@@ -431,7 +431,9 @@ export async function getClientInventoryValueOverTime(
       transactions.forEach((t) => {
         const date = new Date(t.created_at);
         const key = `${date.getFullYear()}-${date.getMonth()}`;
-        const change = (t.qty_change || 0) * (t.unit_cost || 0);
+        const product = Array.isArray(t.product) ? t.product[0] : t.product;
+        const unitCost = (product as { unit_cost?: number } | null)?.unit_cost || 0;
+        const change = (t.qty_change || 0) * unitCost;
         monthlyValue.set(key, (monthlyValue.get(key) || 0) + change);
       });
 
