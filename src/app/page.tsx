@@ -66,15 +66,27 @@ export default function LoginPage() {
       }
     }
 
-    // Check if user is a client (in clients table)
-    const { data: clientUser } = await supabase
+    // Check if user has portal access via client_users
+    const { data: clientUserAccess } = await supabase
+      .from("client_users")
+      .select("id")
+      .eq("user_id", authData.user.id)
+      .limit(1);
+
+    if (clientUserAccess && clientUserAccess.length > 0) {
+      // Client user - redirect to client portal
+      router.push("/portal");
+      return;
+    }
+
+    // Fall back to legacy portal mapping via clients.auth_id
+    const { data: legacyClient } = await supabase
       .from("clients")
       .select("id")
-      .eq("email", email)
-      .single();
+      .eq("auth_id", authData.user.id)
+      .maybeSingle();
 
-    if (clientUser) {
-      // Client user - redirect to client portal
+    if (legacyClient) {
       router.push("/portal");
       return;
     }
