@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PackagePlus, Package, Boxes, DollarSign, AlertTriangle, XCircle, ScanLine, Grid3X3, MoveRight, ChevronDown, ChevronRight, RefreshCw, ExternalLink, FileWarning, MapPin, Building2, Upload } from "lucide-react";
+import { PackagePlus, Package, Boxes, DollarSign, AlertTriangle, XCircle, ScanLine, Grid3X3, MoveRight, ChevronDown, ChevronRight, RefreshCw, ExternalLink, FileWarning, MapPin, Building2, Upload, Download, FileText } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -19,7 +19,8 @@ import { getSublocations, SublocationWithLocation } from "@/lib/api/sublocations
 import { getDamageReportsByProduct, DamageReportWithProduct } from "@/lib/api/damage-reports";
 import { handleApiError } from "@/lib/utils/error-handler";
 import { formatCurrency, formatNumber } from "@/lib/utils/formatting";
-import { getContainerBadge, getUnitLabel } from "@/lib/labels";
+import { CONTAINER_TYPE_LABELS, getContainerBadge, getUnitLabel } from "@/lib/labels";
+import { downloadInventoryCsv, downloadInventoryPdf, type InventoryExportFilterLine } from "@/lib/inventory-export";
 import StockAdjustmentModal from "@/components/internal/StockAdjustmentModal";
 import ScannerModal from "@/components/internal/ScannerModal";
 import Pagination from "@/components/ui/Pagination";
@@ -70,6 +71,7 @@ export default function InventoryPage() {
   const [selectedStockLevel, setSelectedStockLevel] = useState("");
   const [selectedInventoryStatus, setSelectedInventoryStatus] = useState("");
   const [selectedClient, setSelectedClient] = useState("");
+  const [selectedContainerType, setSelectedContainerType] = useState("");
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -218,6 +220,23 @@ export default function InventoryPage() {
     return opts;
   }, [clients, inventory]);
 
+  const containerTypeOptions = useMemo(() => {
+    const keys = new Set<string>();
+    inventory.forEach((item) => {
+      keys.add(item.product.container_type || "other");
+    });
+    return Array.from(keys)
+      .sort((a, b) => {
+        const la = CONTAINER_TYPE_LABELS[a]?.label ?? a;
+        const lb = CONTAINER_TYPE_LABELS[b]?.label ?? b;
+        return la.localeCompare(lb);
+      })
+      .map((key) => ({
+        value: key,
+        label: CONTAINER_TYPE_LABELS[key]?.label ?? key,
+      }));
+  }, [inventory]);
+
   const stockLevelOptions = [
     { value: "available", label: "In Stock" },
     { value: "low", label: "Low Stock" },
@@ -278,9 +297,80 @@ export default function InventoryPage() {
           if (item.product.client_id !== selectedClient) return false;
         }
       }
+      if (selectedContainerType) {
+        const ct = item.product.container_type || "other";
+        if (ct !== selectedContainerType) {
+          return false;
+        }
+      }
       return true;
     });
-  }, [inventory, selectedLocation, selectedSublocation, selectedStockLevel, selectedInventoryStatus, selectedClient, activeTab]);
+  }, [inventory, selectedLocation, selectedSublocation, selectedStockLevel, selectedInventoryStatus, selectedClient, selectedContainerType, activeTab]);
+
+  const inventoryPdfFilterLines = useMemo((): InventoryExportFilterLine[] => {
+    const lines: InventoryExportFilterLine[] = [];
+    if (activeTab === "damaged") {
+      lines.push({ name: "View", value: "Damaged" });
+    } else if (activeTab === "quarantine") {
+      lines.push({ name: "View", value: "Quarantine" });
+    } else if (activeTab === "byLocation") {
+      lines.push({ name: "View", value: "By Location" });
+    }
+    if (activeTab === "byLocation") {
+      return lines;
+    }
+    if (selectedLocation) {
+      lines.push({
+        name: "Location",
+        value: locations.find((l) => l.id === selectedLocation)?.name ?? selectedLocation,
+      });
+    }
+    if (selectedSublocation) {
+      lines.push({
+        name: "Sublocation",
+        value: sublocationOptions.find((o) => o.value === selectedSublocation)?.label ?? selectedSublocation,
+      });
+    }
+    if (selectedClient) {
+      lines.push({
+        name: "Client",
+        value: clientOptions.find((o) => o.value === selectedClient)?.label ?? selectedClient,
+      });
+    }
+    if (activeTab === "all" && selectedInventoryStatus) {
+      lines.push({
+        name: "Inventory status",
+        value:
+          inventoryStatusOptions.find((o) => o.value === selectedInventoryStatus)?.label ??
+          selectedInventoryStatus,
+      });
+    }
+    if (activeTab === "all" && selectedStockLevel) {
+      lines.push({
+        name: "Stock level",
+        value: stockLevelOptions.find((o) => o.value === selectedStockLevel)?.label ?? selectedStockLevel,
+      });
+    }
+    if (selectedContainerType) {
+      lines.push({
+        name: "Product type",
+        value: containerTypeOptions.find((o) => o.value === selectedContainerType)?.label ?? selectedContainerType,
+      });
+    }
+    return lines;
+  }, [
+    activeTab,
+    selectedLocation,
+    selectedSublocation,
+    selectedClient,
+    selectedContainerType,
+    selectedInventoryStatus,
+    selectedStockLevel,
+    locations,
+    sublocationOptions,
+    clientOptions,
+    containerTypeOptions,
+  ]);
 
   // Group inventory by location for "By Location" tab
   const inventoryByLocation = useMemo(() => {
@@ -303,7 +393,7 @@ export default function InventoryPage() {
   // Reset to page 1 when filters or tab change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedLocation, selectedSublocation, selectedStockLevel, selectedInventoryStatus, selectedClient, activeTab]);
+  }, [selectedLocation, selectedSublocation, selectedStockLevel, selectedInventoryStatus, selectedClient, selectedContainerType, activeTab]);
 
   // Clear status filter when switching to damaged/quarantine tabs
   useEffect(() => {
@@ -1083,6 +1173,16 @@ export default function InventoryPage() {
                 />
               </div>
             )}
+            <div className="w-44">
+              <Select
+                name="containerType"
+                options={containerTypeOptions}
+                value={selectedContainerType}
+                onChange={(e) => setSelectedContainerType(e.target.value)}
+                placeholder="All Types"
+                disabled={containerTypeOptions.length === 0}
+              />
+            </div>
             {!showSublocationColumn && (
               <button
                 onClick={() => setShowSublocationColumn(true)}
@@ -1092,6 +1192,26 @@ export default function InventoryPage() {
                 Show Sublocation Column
               </button>
             )}
+            <div className="w-full sm:w-auto sm:ms-auto flex flex-wrap gap-2 justify-end">
+              <Button
+                variant="secondary"
+                onClick={() => downloadInventoryCsv(filteredInventory, clients)}
+                disabled={filteredInventory.length === 0}
+                title="Download all rows matching the current filters (not only this page)"
+              >
+                <Download className="w-4 h-4 mr-1" />
+                Download CSV
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => downloadInventoryPdf(filteredInventory, clients, inventoryPdfFilterLines)}
+                disabled={filteredInventory.length === 0}
+                title="Download all rows matching the current filters as PDF (not only this page)"
+              >
+                <FileText className="w-4 h-4 mr-1" />
+                Download PDF
+              </Button>
+            </div>
           </div>
           <Card padding="none">
             <Table
