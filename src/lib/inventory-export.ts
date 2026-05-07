@@ -169,13 +169,36 @@ export function downloadInventoryPdf(
     startY: y,
     head: [[...INVENTORY_EXPORT_HEADERS]],
     body: rows.map((r) => r.map((c) => String(c))),
-    styles: { fontSize: 6, cellPadding: 1.5 },
-    headStyles: { fillColor: [51, 65, 85], fontStyle: "bold" },
+    styles: {
+      fontSize: 7,
+      cellPadding: 2,
+      overflow: "linebreak",
+      valign: "top",
+    },
+    headStyles: {
+      fillColor: [51, 65, 85],
+      fontStyle: "bold",
+      textColor: 255,
+      overflow: "linebreak",
+      valign: "middle",
+    },
+    bodyStyles: {
+      overflow: "linebreak",
+      valign: "top",
+    },
     alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { minCellWidth: 28 },
+      1: { minCellWidth: 16 },
+      2: { minCellWidth: 22 },
+      3: { minCellWidth: 24 },
+      4: { minCellWidth: 18 },
+    },
     margin: { left: 14, right: 14 },
     tableWidth: "auto",
-    horizontalPageBreak: true,
+    horizontalPageBreak: false,
     showHead: "everyPage",
+    rowPageBreak: "avoid",
   });
 
   doc.save(`inventory-export-${dateStr}.pdf`);
