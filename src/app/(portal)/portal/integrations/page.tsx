@@ -104,6 +104,7 @@ export default function IntegrationsHubPage() {
             integration={shopifyIntegration}
             clientId={client?.id}
             onRefresh={handleRefresh}
+            onConnectError={(text) => setMessage({ type: 'error', text })}
           />
 
           {/* Amazon Coming Soon */}
@@ -153,10 +154,12 @@ function ShopifyCard({
   integration,
   clientId,
   onRefresh,
+  onConnectError,
 }: {
   integration: ClientIntegration | undefined
   clientId: string | undefined
   onRefresh: () => void
+  onConnectError: (message: string) => void
 }) {
   const isConnected = integration?.status === 'active'
 
@@ -195,7 +198,7 @@ function ShopifyCard({
               onRefresh={onRefresh}
             />
           ) : (
-            <ShopifyConnectForm clientId={clientId} />
+            <ShopifyConnectForm clientId={clientId} onConnectError={onConnectError} />
           )}
         </div>
       </div>
@@ -205,17 +208,23 @@ function ShopifyCard({
 
 /* ─── Shopify Connect Form ─── */
 
-function ShopifyConnectForm({ clientId }: { clientId: string | undefined }) {
+function ShopifyConnectForm({
+  clientId,
+  onConnectError,
+}: {
+  clientId: string | undefined
+  onConnectError: (message: string) => void
+}) {
   const [shopDomain, setShopDomain] = useState('')
   const [isConnecting, setIsConnecting] = useState(false)
   const [showForm, setShowForm] = useState(false)
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     if (!shopDomain || !clientId) return
 
     setIsConnecting(true)
 
-    let cleanDomain = shopDomain
+    const cleanDomain = shopDomain
       .replace('https://', '')
       .replace('http://', '')
       .replace('.myshopify.com', '')
@@ -223,8 +232,33 @@ function ShopifyConnectForm({ clientId }: { clientId: string | undefined }) {
       .trim()
 
     const state = btoa(JSON.stringify({ clientId, timestamp: Date.now() }))
+    const params = new URLSearchParams({
+      shop: cleanDomain,
+      state,
+      preflight: '1',
+    })
 
-    window.location.href = `/api/integrations/shopify/auth?shop=${cleanDomain}&state=${state}`
+    try {
+      const res = await fetch(`/api/integrations/shopify/auth?${params}`, {
+        credentials: 'include',
+      })
+      const data = (await res.json()) as { error?: string; redirectUrl?: string }
+
+      if (!res.ok) {
+        onConnectError(data.error || `Could not start connection (${res.status})`)
+        setIsConnecting(false)
+        return
+      }
+      if (!data.redirectUrl) {
+        onConnectError('Could not start Shopify authorization')
+        setIsConnecting(false)
+        return
+      }
+      window.location.href = data.redirectUrl
+    } catch {
+      onConnectError('Could not start Shopify connection. Please try again.')
+      setIsConnecting(false)
+    }
   }
 
   if (!showForm) {

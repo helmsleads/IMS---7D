@@ -35,6 +35,8 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const shop = searchParams.get('shop')
   const state = searchParams.get('state')
+  /** Portal uses fetch first so errors show in-app instead of a blank JSON page */
+  const preflight = searchParams.get('preflight') === '1'
 
   if (!shop) {
     return NextResponse.json({ error: 'Missing shop parameter' }, { status: 400 })
@@ -120,17 +122,21 @@ export async function GET(request: NextRequest) {
   authUrl.searchParams.set('redirect_uri', `${APP_URL}/api/integrations/shopify/callback`)
   authUrl.searchParams.set('state', `${nonce}:${state}`)
 
-  // Create response with redirect
-  const response = NextResponse.redirect(authUrl.toString())
-
-  // Store nonce in cookie for validation in callback
-  response.cookies.set('shopify_oauth_nonce', nonce, {
+  const nonceCookie = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'lax' as const,
     maxAge: 600, // 10 minutes
     path: '/',
-  })
+  }
 
+  if (preflight) {
+    const response = NextResponse.json({ redirectUrl: authUrl.toString() })
+    response.cookies.set('shopify_oauth_nonce', nonce, nonceCookie)
+    return response
+  }
+
+  const response = NextResponse.redirect(authUrl.toString())
+  response.cookies.set('shopify_oauth_nonce', nonce, nonceCookie)
   return response
 }
