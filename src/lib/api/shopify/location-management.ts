@@ -11,6 +11,15 @@ import { createShopifyClient, ShopifyApiError } from './client'
 
 const DEFAULT_LOCATION_NAME = '7 Degrees Co'
 
+/**
+ * REST Location payloads often omit `fulfills_online_orders` even when the location
+ * ships online (Shopify Admin controls this via delivery/shipping profiles). Treat
+ * missing as true so we only warn when Shopify explicitly sends false.
+ */
+function normalizeLocationFulfillsOnline(loc: { fulfills_online_orders?: boolean }): boolean {
+  return loc.fulfills_online_orders !== false
+}
+
 export interface ShopifyLocation {
   id: number
   name: string
@@ -141,7 +150,12 @@ export async function getShopifyLocations(
     '/locations.json'
   )
 
-  return locations.filter((loc) => loc.active)
+  return locations
+    .filter((loc) => loc.active)
+    .map((loc) => ({
+      ...loc,
+      fulfills_online_orders: normalizeLocationFulfillsOnline(loc),
+    }))
 }
 
 /**
@@ -166,7 +180,11 @@ export async function getShopifyLocation(
     const { location } = await client.get<{ location: ShopifyLocation }>(
       `/locations/${locationId}.json`
     )
-    return location.active ? location : null
+    if (!location.active) return null
+    return {
+      ...location,
+      fulfills_online_orders: normalizeLocationFulfillsOnline(location),
+    }
   } catch (error) {
     if (error instanceof ShopifyApiError && error.status === 404) {
       return null

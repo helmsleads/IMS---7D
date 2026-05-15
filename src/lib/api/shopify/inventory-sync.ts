@@ -1,6 +1,11 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { createShopifyClient } from './client'
 import { decryptToken } from '@/lib/encryption'
+import {
+  fetchInventoryItemLegacyIdsByVariantIds,
+  fetchProductVariantsForInventorySync,
+  variantIdToNumericString,
+} from './graphql/products-mapping'
 import { logSyncResult } from './sync-logger'
 import { batchUpdateInventory } from './bulk-inventory'
 import type { SyncTrigger } from '@/types/database'
@@ -41,36 +46,48 @@ export async function syncInventoryToShopify(
     throw new Error('Integration not properly configured')
   }
 
-  // Get Shopify location ID from settings
-  const locationId = integration.settings?.shopify_location_id
-  if (!locationId) {
-    // Try to get the primary location from Shopify
-    const client = createShopifyClient({
-      shopDomain: integration.shop_domain,
-      accessToken: decryptToken(integration.access_token),
-    })
+  const accessToken = decryptToken(integration.access_token)
+  const client = createShopifyClient({
+    shopDomain: integration.shop_domain,
+    accessToken,
+  })
 
-    const locationsResponse = await client.get<{ locations: Array<{ id: number; primary: boolean }> }>(
-      '/locations.json'
-    )
+  // Portal "Inventory location" saves `shopify_location_id` on the row; older code used
+  // `settings.shopify_location_id`. Support both. REST locations often omit `primary`, so
+  // fall back to the first active location instead of failing.
+  let shopifyLocationId =
+    (integration.shopify_location_id && String(integration.shopify_location_id).trim()) ||
+    (integration.settings?.shopify_location_id &&
+      String(integration.settings.shopify_location_id).trim()) ||
+    null
 
-    const primaryLocation = locationsResponse.locations.find((l) => l.primary)
-    if (!primaryLocation) {
-      throw new Error('No Shopify location found. Please configure a location ID.')
+  if (!shopifyLocationId) {
+    const { locations } = await client.get<{
+      locations: Array<{ id: number; name?: string; active?: boolean; primary?: boolean }>
+    }>('/locations.json')
+
+    const activeList = (locations || []).filter((l) => l.active !== false)
+    const picked = activeList.find((l) => l.primary === true) ?? activeList[0]
+
+    if (!picked) {
+      throw new Error(
+        'No Shopify location found. Open Integrations → Shopify → Inventory location and select a location (your store needs at least one active location).'
+      )
     }
 
-    // Save the location ID for future use
+    shopifyLocationId = String(picked.id)
     await supabase
       .from('client_integrations')
       .update({
+        shopify_location_id: shopifyLocationId,
+        shopify_location_name: picked.name ?? integration.shopify_location_name,
         settings: {
-          ...integration.settings,
-          shopify_location_id: String(primaryLocation.id),
+          ...(integration.settings ?? {}),
+          shopify_location_id: shopifyLocationId,
         },
+        updated_at: new Date().toISOString(),
       })
       .eq('id', integrationId)
-
-    integration.settings.shopify_location_id = String(primaryLocation.id)
   }
 
   // Build query for product mappings
@@ -102,16 +119,33 @@ export async function syncInventoryToShopify(
     return { updated: 0, failed: 0, errors: [] }
   }
 
-  const client = createShopifyClient({
-    shopDomain: integration.shop_domain,
-    accessToken: decryptToken(integration.access_token),
-  })
+  // Manual portal mappings often omit external_inventory_item_id; auto-map sets it.
+  // Resolve from Shopify variant and persist so inventory sync + webhooks work.
+  const mappingsNeedingInvId = mappings.filter((m) => !m.external_inventory_item_id && m.external_variant_id)
+  if (mappingsNeedingInvId.length > 0) {
+    const invByVariant = await fetchInventoryItemLegacyIdsByVariantIds(
+      client,
+      mappingsNeedingInvId.map((m) => String(m.external_variant_id))
+    )
+
+    for (const m of mappingsNeedingInvId) {
+      const vid = variantIdToNumericString(String(m.external_variant_id))
+      const invId = invByVariant.get(vid)
+      if (!invId) continue
+      const { error } = await supabase
+        .from('product_mappings')
+        .update({ external_inventory_item_id: invId })
+        .eq('id', m.id)
+      if (!error) {
+        ;(m as { external_inventory_item_id: string | null }).external_inventory_item_id = invId
+      }
+    }
+  }
 
   const results: SyncResult = { updated: 0, failed: 0, errors: [] }
   const inventoryBuffer = integration.settings?.inventory_buffer || 0
   const shouldSyncPrices = integration.settings?.auto_sync_prices === true
   let pricesSynced = 0
-  const shopifyLocationId = integration.settings.shopify_location_id
 
   // Phase 1: Collect all inventory updates + compute quantities
   const inventoryUpdates: Array<{
@@ -123,9 +157,12 @@ export async function syncInventoryToShopify(
 
   for (const mapping of mappings) {
     if (!mapping.external_inventory_item_id) {
+      const hint = mapping.external_variant_id
+        ? 'Could not resolve Shopify inventory item for this variant (variant removed or not trackable?)'
+        : 'Missing Shopify variant on mapping; re-map this product in Integrations → Shopify → Products'
       results.errors.push({
         productId: mapping.product_id,
-        error: 'Missing external_inventory_item_id',
+        error: `Missing external_inventory_item_id. ${hint}`,
       })
       results.failed++
       continue
@@ -298,46 +335,7 @@ export async function fetchShopifyProducts(
     accessToken: decryptToken(integration.access_token),
   })
 
-  // Fetch all products
-  const response = await client.get<{
-    products: Array<{
-      id: number
-      title: string
-      variants: Array<{
-        id: number
-        title: string
-        sku: string
-        inventory_item_id: number
-        inventory_quantity: number
-      }>
-    }>
-  }>('/products.json?limit=250')
-
-  const products: Array<{
-    product_id: string
-    variant_id: string
-    title: string
-    variant_title: string
-    sku: string
-    inventory_item_id: string
-    inventory_quantity: number
-  }> = []
-
-  for (const product of response.products) {
-    for (const variant of product.variants) {
-      products.push({
-        product_id: String(product.id),
-        variant_id: String(variant.id),
-        title: product.title,
-        variant_title: variant.title,
-        sku: variant.sku || '',
-        inventory_item_id: String(variant.inventory_item_id),
-        inventory_quantity: variant.inventory_quantity,
-      })
-    }
-  }
-
-  return products
+  return fetchProductVariantsForInventorySync(client)
 }
 
 function sleep(ms: number): Promise<void> {

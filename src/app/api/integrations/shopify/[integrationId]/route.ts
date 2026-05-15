@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { createServiceClient } from '@/lib/supabase-service'
 import { decryptToken } from '@/lib/encryption'
 import { deactivateShopifyLocation } from '@/lib/api/shopify/location-management'
+import { SHOPIFY_ADMIN_API_VERSION } from '@/lib/api/shopify/constants'
 
 /**
  * Delete/disconnect a Shopify integration
@@ -123,7 +124,7 @@ async function deregisterShopifyWebhooks(
   try {
     // Fetch all webhooks registered for this app
     const listResponse = await fetch(
-      `https://${shopDomain}/admin/api/2024-01/webhooks.json`,
+      `https://${shopDomain}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/webhooks.json`,
       {
         headers: {
           'X-Shopify-Access-Token': accessToken,
@@ -150,7 +151,7 @@ async function deregisterShopifyWebhooks(
     for (const webhook of webhooks) {
       try {
         const deleteResponse = await fetch(
-          `https://${shopDomain}/admin/api/2024-01/webhooks/${webhook.id}.json`,
+          `https://${shopDomain}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/webhooks/${webhook.id}.json`,
           {
             method: 'DELETE',
             headers: {

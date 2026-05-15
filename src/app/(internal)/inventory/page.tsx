@@ -654,6 +654,11 @@ export default function InventoryPage() {
                 {item.product.sku}
                 {client && <span className="ml-2 text-gray-400">· {client.company_name}</span>}
               </div>
+              {item.shopify_listing_title && (
+                <div className="text-xs text-gray-500 mt-1 line-clamp-2" title={item.shopify_listing_title}>
+                  <span className="text-gray-400">Shopify:</span> {item.shopify_listing_title}
+                </div>
+              )}
             </div>
           );
         },

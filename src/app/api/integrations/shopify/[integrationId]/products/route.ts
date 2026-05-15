@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { createServiceClient } from '@/lib/supabase-service'
+import { decryptToken } from '@/lib/encryption'
+import { createShopifyClient } from '@/lib/api/shopify/client'
+import { fetchProductsForIntegrationMapping } from '@/lib/api/shopify/graphql/products-mapping'
 
 /**
  * Get products from Shopify store
@@ -55,55 +58,15 @@ export async function GET(
       return NextResponse.json({ error: 'Integration not found' }, { status: 404 })
     }
 
-    // Fetch products from Shopify
-    const products: Array<{
-      id: string
-      title: string
-      variants: Array<{
-        id: string
-        title: string
-        sku: string
-        barcode: string | null
-        inventory_item_id: string
-      }>
-      image: { src: string } | null
-    }> = []
-
-    let url = `https://${integration.shop_domain}/admin/api/2024-01/products.json?limit=250`
-
-    while (url) {
-      const response = await fetch(url, {
-        headers: {
-          'X-Shopify-Access-Token': integration.access_token,
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error(`Shopify API error: ${response.status}`)
-      }
-
-      const data = await response.json()
-      products.push(...data.products)
-
-      // Check for pagination
-      const linkHeader = response.headers.get('Link')
-      const nextLink = linkHeader?.match(/<([^>]+)>;\s*rel="next"/)
-      url = nextLink ? nextLink[1] : ''
+    if (!integration.access_token || !integration.shop_domain) {
+      return NextResponse.json({ error: 'Integration not properly configured' }, { status: 400 })
     }
 
-    // Transform to simpler format
-    const shopifyProducts = products.flatMap((product) =>
-      product.variants.map((variant) => ({
-        productId: String(product.id),
-        variantId: String(variant.id),
-        title: product.title,
-        variantTitle: variant.title !== 'Default Title' ? variant.title : null,
-        sku: variant.sku || null,
-        barcode: variant.barcode || null,
-        inventoryItemId: String(variant.inventory_item_id),
-        imageUrl: product.image?.src || null,
-      }))
-    )
+    const client = createShopifyClient({
+      shopDomain: integration.shop_domain,
+      accessToken: decryptToken(integration.access_token),
+    })
+    const shopifyProducts = await fetchProductsForIntegrationMapping(client)
 
     return NextResponse.json({ products: shopifyProducts })
   } catch (error) {

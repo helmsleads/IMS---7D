@@ -1,6 +1,6 @@
 /**
- * Shopify REST API Client
- * Handles all communication with the Shopify Admin API
+ * Shopify Admin API client (REST + GraphQL).
+ * Uses the same versioned base URL: /admin/api/{version}/...
  *
  * Features:
  * - Distributed rate limiting via Upstash Redis (proactive)
@@ -9,6 +9,8 @@
  */
 
 import { checkShopifyApiRateLimit } from '@/lib/rate-limit'
+import { SHOPIFY_ADMIN_API_VERSION } from './constants'
+import { normalizeShopifyShopDomain } from './shop-domain'
 
 export interface ShopifyClientConfig {
   shopDomain: string
@@ -18,16 +20,22 @@ export interface ShopifyClientConfig {
 
 export class ShopifyClient {
   private baseUrl: string
-  private headers: HeadersInit
+  /** JSON write operations only — do not send on GET (some proxies mishandle it). */
+  private jsonHeaders: HeadersInit
+  private readonly accessToken: string
   private shopDomain: string
 
   constructor(config: ShopifyClientConfig) {
-    const apiVersion = config.apiVersion || '2024-01'
-    this.shopDomain = config.shopDomain
-    this.baseUrl = `https://${config.shopDomain}/admin/api/${apiVersion}`
-    this.headers = {
+    const apiVersion = config.apiVersion || SHOPIFY_ADMIN_API_VERSION
+    this.shopDomain = normalizeShopifyShopDomain(config.shopDomain)
+    this.baseUrl = `https://${this.shopDomain}/admin/api/${apiVersion}`
+    this.accessToken = config.accessToken.trim()
+    if (!this.accessToken) {
+      throw new Error('Shopify access token is empty')
+    }
+    this.jsonHeaders = {
       'Content-Type': 'application/json',
-      'X-Shopify-Access-Token': config.accessToken,
+      'X-Shopify-Access-Token': this.accessToken,
     }
   }
 
@@ -35,8 +43,11 @@ export class ShopifyClient {
     await this.checkRateLimit()
 
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      cache: 'no-store',
       method: 'GET',
-      headers: this.headers,
+      headers: {
+        'X-Shopify-Access-Token': this.accessToken,
+      },
     })
 
     await this.handleResponseRateLimit(response)
@@ -53,8 +64,9 @@ export class ShopifyClient {
     await this.checkRateLimit()
 
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      cache: 'no-store',
       method: 'POST',
-      headers: this.headers,
+      headers: this.jsonHeaders,
       body: JSON.stringify(data),
     })
 
@@ -72,8 +84,9 @@ export class ShopifyClient {
     await this.checkRateLimit()
 
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      cache: 'no-store',
       method: 'PUT',
-      headers: this.headers,
+      headers: this.jsonHeaders,
       body: JSON.stringify(data),
     })
 
@@ -91,8 +104,9 @@ export class ShopifyClient {
     await this.checkRateLimit()
 
     const response = await fetch(`${this.baseUrl}/graphql.json`, {
+      cache: 'no-store',
       method: 'POST',
-      headers: this.headers,
+      headers: this.jsonHeaders,
       body: JSON.stringify({ query, variables }),
     })
 
@@ -118,8 +132,11 @@ export class ShopifyClient {
     await this.checkRateLimit()
 
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      cache: 'no-store',
       method: 'DELETE',
-      headers: this.headers,
+      headers: {
+        'X-Shopify-Access-Token': this.accessToken,
+      },
     })
 
     await this.handleResponseRateLimit(response)

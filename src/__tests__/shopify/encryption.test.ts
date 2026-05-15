@@ -63,6 +63,16 @@ describe('Token Encryption', () => {
     expect(isTokenEncrypted(encryptedToken)).toBe(true)
   })
 
+  it('should trim ciphertext and decrypted output', async () => {
+    const { encryptToken, decryptToken } = await import('@/lib/encryption')
+
+    const originalToken = 'shpat_trim_test'
+    const encrypted = encryptToken(originalToken)
+    const decrypted = decryptToken(`  ${encrypted}  `)
+
+    expect(decrypted).toBe(originalToken)
+  })
+
   it('should throw on invalid encrypted format', async () => {
     const { decryptToken } = await import('@/lib/encryption')
 

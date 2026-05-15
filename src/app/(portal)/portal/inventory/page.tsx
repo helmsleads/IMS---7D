@@ -22,6 +22,8 @@ interface InventoryItem {
   image_url: string | null;
   category: string | null;
   active: boolean;
+  /** From product_mappings.external_title when linked to Shopify */
+  shopify_listing_title: string | null;
 }
 
 interface CartItem {
@@ -32,6 +34,7 @@ interface CartItem {
   qty_to_ship: number;
   qty_available: number;
   image_url: string | null;
+  shopify_listing_title?: string | null;
 }
 
 type StockStatusFilter = "all" | "in_stock" | "low_stock" | "out_of_stock";
@@ -95,8 +98,8 @@ export default function PortalInventoryPage() {
 
     const supabase = createClient();
 
-    // Fetch inventory rows and all client products in parallel
-    const [invResult, productsResult] = await Promise.all([
+    // Fetch inventory rows, all client products, and active Shopify integrations in parallel
+    const [invResult, productsResult, integrationsResult] = await Promise.all([
       supabase
         .from("inventory")
         .select(`
@@ -119,6 +122,12 @@ export default function PortalInventoryPage() {
         .from("products")
         .select("id, name, sku, image_url, reorder_point, category, active")
         .eq("client_id", client.id),
+      supabase
+        .from("client_integrations")
+        .select("id")
+        .eq("client_id", client.id)
+        .eq("platform", "shopify")
+        .eq("status", "active"),
     ]);
 
     if (invResult.error) {
@@ -128,12 +137,30 @@ export default function PortalInventoryPage() {
       return;
     }
 
+    const integrationIds = (integrationsResult.data || []).map((row) => row.id);
+    const shopifyTitleByProductId = new Map<string, string>();
+    if (integrationIds.length > 0) {
+      const { data: mappings } = await supabase
+        .from("product_mappings")
+        .select("product_id, external_title")
+        .in("integration_id", integrationIds);
+      for (const row of mappings || []) {
+        const pid = row.product_id as string | undefined;
+        const title = typeof row.external_title === "string" ? row.external_title.trim() : "";
+        if (!pid || !title) continue;
+        if (!shopifyTitleByProductId.has(pid)) {
+          shopifyTitleByProductId.set(pid, title);
+        }
+      }
+    }
+
     const inventoryItems = (invResult.data || []).map((item) => {
       const product = Array.isArray(item.product) ? item.product[0] : item.product;
+      const productId = product?.id || "";
 
       return {
         id: item.id,
-        product_id: product?.id || "",
+        product_id: productId,
         product_name: product?.name || "Unknown",
         sku: product?.sku || "",
         qty_on_hand: item.qty_on_hand,
@@ -141,6 +168,7 @@ export default function PortalInventoryPage() {
         image_url: product?.image_url || null,
         category: product?.category || null,
         active: product?.active !== false,
+        shopify_listing_title: shopifyTitleByProductId.get(productId) ?? null,
       };
     });
 
@@ -158,6 +186,7 @@ export default function PortalInventoryPage() {
           image_url: product.image_url || null,
           category: product.category || null,
           active: product.active !== false,
+          shopify_listing_title: shopifyTitleByProductId.get(product.id) ?? null,
         });
       }
     }
@@ -302,7 +331,9 @@ export default function PortalInventoryPage() {
     // Search filter
     const matchesSearch =
       item.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.sku.toLowerCase().includes(searchQuery.toLowerCase());
+      item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.shopify_listing_title &&
+        item.shopify_listing_title.toLowerCase().includes(searchQuery.toLowerCase()));
 
     // Category filter
     const matchesCategory =
@@ -356,6 +387,7 @@ export default function PortalInventoryPage() {
       qty_to_ship: quickAddQty,
       qty_available: selectedItem.qty_on_hand,
       image_url: selectedItem.image_url,
+      shopify_listing_title: selectedItem.shopify_listing_title,
     };
 
     setCart((prevCart) => {
@@ -408,6 +440,7 @@ export default function PortalInventoryPage() {
       sku: item.sku,
       qty_to_ship: item.qty_to_ship,
       qty_available: item.qty_available,
+      shopify_listing_title: item.shopify_listing_title ?? null,
     }));
 
     localStorage.setItem("shipment_cart", JSON.stringify(shipmentItems));
@@ -472,7 +505,7 @@ export default function PortalInventoryPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
           <input
             type="text"
-            placeholder="Search by product name or SKU..."
+            placeholder="Search by product name, SKU, or Shopify listing..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
@@ -682,6 +715,11 @@ export default function PortalInventoryPage() {
                       {item.product_name}
                     </Link>
                     <p className="text-sm text-slate-500 font-mono mt-1">{item.sku}</p>
+                    {item.shopify_listing_title && (
+                      <p className="text-xs text-slate-500 mt-1 line-clamp-2" title={item.shopify_listing_title}>
+                        <span className="text-slate-400">Shopify:</span> {item.shopify_listing_title}
+                      </p>
+                    )}
 
                     {/* Active Toggle */}
                     <div className="mt-3 flex items-center gap-2">
@@ -881,16 +919,26 @@ export default function PortalInventoryPage() {
                         <td className="py-4 px-4">
                           <Link
                             href={`/portal/inventory/${item.product_id}`}
-                            className="flex items-center gap-3 group"
+                            className="flex items-center gap-3 min-w-0 group"
                           >
                             <ProductThumbnail
                               src={item.image_url}
                               alt={item.product_name}
                               size="md"
                             />
-                            <span className="font-medium text-slate-900 group-hover:text-cyan-600 transition-colors">
-                              {item.product_name}
-                            </span>
+                            <div className="min-w-0">
+                              <span className="font-medium text-slate-900 group-hover:text-cyan-600 transition-colors block truncate">
+                                {item.product_name}
+                              </span>
+                              {item.shopify_listing_title && (
+                                <p
+                                  className="text-xs text-slate-500 mt-0.5 truncate"
+                                  title={item.shopify_listing_title}
+                                >
+                                  <span className="text-slate-400">Shopify:</span> {item.shopify_listing_title}
+                                </p>
+                              )}
+                            </div>
                           </Link>
                         </td>
                         <td className="py-4 px-4">
@@ -1122,6 +1170,11 @@ export default function PortalInventoryPage() {
                       {selectedItem.product_name}
                     </h3>
                     <p className="text-sm text-slate-500 font-mono">{selectedItem.sku}</p>
+                    {selectedItem.shopify_listing_title && (
+                      <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                        <span className="text-slate-400">Shopify:</span> {selectedItem.shopify_listing_title}
+                      </p>
+                    )}
                     <p className="text-sm text-slate-400 mt-1">
                       {selectedItem.qty_on_hand.toLocaleString()} available
                     </p>

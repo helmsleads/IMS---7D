@@ -13,6 +13,27 @@ interface TotpEnrollment {
   uri: string | null;
 }
 
+const MFA_TOTP_FRIENDLY_NAME = "Internal Login";
+
+/** Unverified TOTP factors block re-enrollment with the same friendly name — remove them first. */
+async function removeUnverifiedTotpFactors(
+  supabase: ReturnType<typeof createClient>
+): Promise<{ error: Error | null }> {
+  const { data: factorData, error: listError } = await supabase.auth.mfa.listFactors();
+  if (listError) {
+    return { error: new Error(listError.message) };
+  }
+  const all = factorData?.all ?? [];
+  for (const factor of all) {
+    if (factor.factor_type !== "totp" || factor.status !== "unverified") continue;
+    const { error } = await supabase.auth.mfa.unenroll({ factorId: factor.id });
+    if (error) {
+      return { error: new Error(error.message) };
+    }
+  }
+  return { error: null };
+}
+
 export default function MfaSetupPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -83,21 +104,42 @@ export default function MfaSetupPage() {
     setEnrolling(true);
     setError("");
     try {
+      const { error: cleanupError } = await removeUnverifiedTotpFactors(supabase);
+      if (cleanupError) {
+        setError(cleanupError.message || "Unable to reset MFA enrollment.");
+        return;
+      }
+
       const { data, error: enrollError } = await supabase.auth.mfa.enroll({
         factorType: "totp",
-        friendlyName: "Internal Login",
+        friendlyName: MFA_TOTP_FRIENDLY_NAME,
       });
 
-      if (enrollError || !data) {
-        setError(enrollError?.message || "Unable to start MFA enrollment.");
+      let enrollData = data;
+      let finalEnrollError = enrollError;
+
+      if (
+        finalEnrollError &&
+        /already exists|friendly name/i.test(finalEnrollError.message)
+      ) {
+        const { data: retryData, error: retryError } = await supabase.auth.mfa.enroll({
+          factorType: "totp",
+          friendlyName: `${MFA_TOTP_FRIENDLY_NAME} (${Date.now()})`,
+        });
+        enrollData = retryData;
+        finalEnrollError = retryError;
+      }
+
+      if (finalEnrollError || !enrollData) {
+        setError(finalEnrollError?.message || "Unable to start MFA enrollment.");
         return;
       }
 
       setEnrollment({
-        factorId: data.id,
-        qrCode: data.totp.qr_code ?? null,
-        secret: data.totp.secret ?? null,
-        uri: data.totp.uri ?? null,
+        factorId: enrollData.id,
+        qrCode: enrollData.totp.qr_code ?? null,
+        secret: enrollData.totp.secret ?? null,
+        uri: enrollData.totp.uri ?? null,
       });
     } finally {
       setEnrolling(false);

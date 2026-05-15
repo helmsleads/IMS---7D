@@ -29,6 +29,8 @@ interface InventoryItem {
   sku: string;
   qty_available: number;
   image_url: string | null;
+  /** Shopify listing title from product_mappings.external_title when linked */
+  shopify_listing_title: string | null;
 }
 
 interface SelectedProduct {
@@ -38,6 +40,7 @@ interface SelectedProduct {
   sku: string;
   qty_to_ship: number;
   qty_available: number;
+  shopify_listing_title?: string | null;
 }
 
 interface AdditionalInfo {
@@ -122,15 +125,43 @@ export default function RequestShipmentPage() {
         .gt("qty_on_hand", 0)
         .order("qty_on_hand", { ascending: false });
 
+      const { data: shopifyIntegrations } = await supabase
+        .from("client_integrations")
+        .select("id")
+        .eq("client_id", client.id)
+        .eq("platform", "shopify")
+        .eq("status", "active");
+
+      const integrationIds = (shopifyIntegrations || []).map((row) => row.id);
+      const shopifyTitleByProductId = new Map<string, string>();
+
+      if (integrationIds.length > 0) {
+        const { data: mappings } = await supabase
+          .from("product_mappings")
+          .select("product_id, external_title")
+          .in("integration_id", integrationIds);
+
+        for (const row of mappings || []) {
+          const pid = row.product_id as string | undefined;
+          const title = typeof row.external_title === "string" ? row.external_title.trim() : "";
+          if (!pid || !title) continue;
+          if (!shopifyTitleByProductId.has(pid)) {
+            shopifyTitleByProductId.set(pid, title);
+          }
+        }
+      }
+
       const items = (data || []).map((item) => {
         const product = Array.isArray(item.product) ? item.product[0] : item.product;
+        const productId = product?.id || "";
         return {
           id: item.id,
-          product_id: product?.id || "",
+          product_id: productId,
           product_name: product?.name || "Unknown",
           sku: product?.sku || "",
           qty_available: item.qty_on_hand,
           image_url: product?.image_url || null,
+          shopify_listing_title: shopifyTitleByProductId.get(productId) ?? null,
         };
       });
 
@@ -153,6 +184,8 @@ export default function RequestShipmentPage() {
                 ...cartItem,
                 qty_available: inventoryItem?.qty_available || cartItem.qty_available,
                 qty_to_ship: Math.min(cartItem.qty_to_ship, inventoryItem?.qty_available || cartItem.qty_to_ship),
+                shopify_listing_title:
+                  inventoryItem?.shopify_listing_title ?? cartItem.shopify_listing_title ?? null,
               };
             });
 
@@ -263,6 +296,7 @@ export default function RequestShipmentPage() {
               sku: item.product_sku,
               qty_to_ship: Math.min(item.quantity, invItem.qty_available),
               qty_available: invItem.qty_available,
+              shopify_listing_title: invItem.shopify_listing_title ?? null,
             });
           }
         }
@@ -326,6 +360,7 @@ export default function RequestShipmentPage() {
             sku: item.product_sku,
             qty_to_ship: Math.min(item.quantity, invItem.qty_available),
             qty_available: invItem.qty_available,
+            shopify_listing_title: invItem.shopify_listing_title ?? null,
           });
         }
       }
@@ -673,6 +708,7 @@ function StepSelectProducts({
             sku: item.sku,
             qty_to_ship: validQty,
             qty_available: item.qty_available,
+            shopify_listing_title: item.shopify_listing_title,
           },
         ]);
       }
@@ -711,6 +747,7 @@ function StepSelectProducts({
             sku: item.sku,
             qty_to_ship: clampedQty,
             qty_available: item.qty_available,
+            shopify_listing_title: item.shopify_listing_title,
           },
         ]);
       }
@@ -731,11 +768,14 @@ function StepSelectProducts({
 
   const hasErrors = Object.keys(inputErrors).length > 0;
 
-  const filteredItems = inventoryItems.filter(
-    (item) =>
-      item.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.sku.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredItems = inventoryItems.filter((item) => {
+    const q = searchQuery.toLowerCase();
+    return (
+      item.product_name.toLowerCase().includes(q) ||
+      item.sku.toLowerCase().includes(q) ||
+      (item.shopify_listing_title && item.shopify_listing_title.toLowerCase().includes(q))
+    );
+  });
 
   const totalItems = selectedProducts.reduce((sum, p) => sum + p.qty_to_ship, 0);
   const totalProducts = selectedProducts.length;
@@ -761,7 +801,7 @@ function StepSelectProducts({
       <div className="relative">
         <input
           type="text"
-          placeholder="Search products..."
+          placeholder="Search by product name, SKU, or Shopify listing..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
@@ -807,6 +847,12 @@ function StepSelectProducts({
                         <div>
                           <p className="font-medium text-slate-900">{item.product_name}</p>
                           <p className="text-sm text-slate-500 font-mono">{item.sku}</p>
+                          {item.shopify_listing_title && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              <span className="text-slate-400">Shopify:</span>{" "}
+                              {item.shopify_listing_title}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -1467,6 +1513,11 @@ function StepReviewSubmit({
                 >
                   <td className="py-3 px-4">
                     <span className="font-medium text-slate-900">{product.product_name}</span>
+                    {product.shopify_listing_title && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        <span className="text-slate-400">Shopify:</span> {product.shopify_listing_title}
+                      </p>
+                    )}
                   </td>
                   <td className="py-3 px-4">
                     <span className="text-sm text-slate-500 font-mono">{product.sku}</span>

@@ -47,6 +47,7 @@ export async function createProductMapping(
     product_id: string
     external_product_id?: string
     external_variant_id?: string
+    external_inventory_item_id?: string
     external_sku?: string
     external_title?: string
     external_image_url?: string
@@ -76,6 +77,7 @@ export async function createProductMapping(
       product_id: mapping.product_id,
       external_product_id: mapping.external_product_id || null,
       external_variant_id: mapping.external_variant_id || null,
+      external_inventory_item_id: mapping.external_inventory_item_id || null,
       external_sku: mapping.external_sku || null,
       external_title: mapping.external_title || null,
       external_image_url: mapping.external_image_url || null,

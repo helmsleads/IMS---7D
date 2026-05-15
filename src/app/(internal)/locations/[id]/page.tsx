@@ -233,6 +233,11 @@ export default function LocationDetailPage() {
         <div>
           <span className="font-medium text-gray-900">{item.product?.name || "Unknown"}</span>
           <span className="block text-sm text-gray-500 font-mono">{item.product?.sku}</span>
+          {item.shopify_listing_title && (
+            <span className="block text-xs text-gray-500 mt-1 line-clamp-2" title={item.shopify_listing_title}>
+              <span className="text-gray-400">Shopify:</span> {item.shopify_listing_title}
+            </span>
+          )}
         </div>
       ),
     },

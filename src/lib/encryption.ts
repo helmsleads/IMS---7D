@@ -60,14 +60,19 @@ export function encryptToken(plaintext: string): string {
  * Expects format: "iv:encryptedData" (both hex encoded)
  */
 export function decryptToken(ciphertext: string): string {
+  const trimmed = ciphertext.trim()
+
   // Handle unencrypted tokens (backwards compatibility during migration)
-  if (!ciphertext.includes(':')) {
+  const firstColon = trimmed.indexOf(':')
+  if (firstColon === -1) {
     console.warn('Token appears to be unencrypted (legacy format)')
-    return ciphertext
+    return trimmed
   }
 
   const key = getEncryptionKey()
-  const [ivHex, encrypted] = ciphertext.split(':')
+  // Only the first ':' separates IV from ciphertext (ciphertext is hex; must not use String.split(':'))
+  const ivHex = trimmed.slice(0, firstColon)
+  const encrypted = trimmed.slice(firstColon + 1)
 
   if (!ivHex || !encrypted) {
     throw new Error('Invalid encrypted token format')
@@ -79,7 +84,7 @@ export function decryptToken(ciphertext: string): string {
   let decrypted = decipher.update(encrypted, 'hex', 'utf8')
   decrypted += decipher.final('utf8')
 
-  return decrypted
+  return decrypted.replace(/^\uFEFF/, '').trim()
 }
 
 /**
@@ -87,10 +92,12 @@ export function decryptToken(ciphertext: string): string {
  * Encrypted tokens have format "iv:data" where iv is 32 hex chars
  */
 export function isTokenEncrypted(token: string): boolean {
-  if (!token.includes(':')) {
+  const t = token.trim()
+  const colon = t.indexOf(':')
+  if (colon === -1) {
     return false
   }
-  const [ivHex] = token.split(':')
+  const ivHex = t.slice(0, colon)
   // IV should be 16 bytes = 32 hex characters
   return ivHex.length === 32 && /^[0-9a-f]+$/i.test(ivHex)
 }

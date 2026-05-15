@@ -3,6 +3,8 @@ import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase-service'
 import { encryptToken, isEncryptionConfigured } from '@/lib/encryption'
 import { ensureShopifyLocation } from '@/lib/api/shopify/location-management'
+import { SHOPIFY_ADMIN_API_VERSION } from '@/lib/api/shopify/constants'
+import { normalizeShopifyShopDomain } from '@/lib/api/shopify/shop-domain'
 
 const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID!
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET!
@@ -45,6 +47,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${APP_URL}/portal/integrations?error=invalid_hmac`)
   }
 
+  const shopDomain = normalizeShopifyShopDomain(shop)
+
   // Verify nonce from state
   const nonceCookie = request.cookies.get('shopify_oauth_nonce')?.value
   const [stateNonce, stateData] = state.split(':')
@@ -68,7 +72,7 @@ export async function GET(request: NextRequest) {
   // Exchange code for access token
   let tokenData: { access_token: string; scope: string }
   try {
-    const tokenResponse = await fetch(`https://${shop}/admin/oauth/access_token`, {
+    const tokenResponse = await fetch(`https://${shopDomain}/admin/oauth/access_token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -91,14 +95,14 @@ export async function GET(request: NextRequest) {
   }
 
   // Get shop info
-  let shopName = shop
+  let shopName = shopDomain
   try {
-    const shopResponse = await fetch(`https://${shop}/admin/api/2024-01/shop.json`, {
+    const shopResponse = await fetch(`https://${shopDomain}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/shop.json`, {
       headers: { 'X-Shopify-Access-Token': tokenData.access_token },
     })
     if (shopResponse.ok) {
       const shopInfo = await shopResponse.json()
-      shopName = shopInfo.shop?.name || shop
+      shopName = shopInfo.shop?.name || shopDomain
     }
   } catch (e) {
     console.warn('Failed to fetch shop info:', e)
@@ -111,7 +115,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const locationResult = await ensureShopifyLocation(
-      shop,
+      shopDomain,
       tokenData.access_token,
       locationName
     )
@@ -176,7 +180,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Register webhooks with Shopify
-  await registerShopifyWebhooks(integration.id, shop, tokenData.access_token)
+  await registerShopifyWebhooks(integration.id, shopDomain, tokenData.access_token)
 
   // Update webhooks_registered flag
   await supabase
@@ -210,7 +214,7 @@ async function registerShopifyWebhooks(
 
   for (const topic of webhookTopics) {
     try {
-      const response = await fetch(`https://${shop}/admin/api/2024-01/webhooks.json`, {
+      const response = await fetch(`https://${shop}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/webhooks.json`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

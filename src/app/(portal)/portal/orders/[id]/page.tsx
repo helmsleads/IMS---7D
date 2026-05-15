@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
+import { getOutboundServiceOptionLabel } from "@/lib/outbound-service-options";
 import { getContainerBadge, getUnitLabel } from "@/lib/labels";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FetchError from "@/components/ui/FetchError";
@@ -929,9 +930,12 @@ export default function OrderDetailPage() {
               {order.preferred_carrier && (
                 <div className="flex justify-between">
                   <span className="text-slate-500">Preferred Carrier</span>
-                  <span className="text-slate-900">{order.preferred_carrier}</span>
+                  <span className="text-slate-900">
+                    {getOutboundServiceOptionLabel(order.preferred_carrier)}
+                  </span>
                 </div>
               )}
+              </div>
             </div>
           </div>
         </div>

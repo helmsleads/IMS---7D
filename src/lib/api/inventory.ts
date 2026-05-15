@@ -52,6 +52,51 @@ export interface InventoryWithDetails {
     name: string | null;
     zone: string | null;
   } | null;
+  /** Set when loaded via getInventory + Shopify product_mappings */
+  shopify_listing_title?: string | null;
+}
+
+async function attachShopifyListingTitles(
+  supabase: ReturnType<typeof createClient>,
+  rows: InventoryWithDetails[]
+): Promise<InventoryWithDetails[]> {
+  if (rows.length === 0) return rows;
+
+  const clientIds = [
+    ...new Set(rows.map((r) => r.product?.client_id).filter((id): id is string => Boolean(id))),
+  ];
+  const titleByProductId = new Map<string, string>();
+
+  if (clientIds.length > 0) {
+    const { data: integrations } = await supabase
+      .from("client_integrations")
+      .select("id")
+      .in("client_id", clientIds)
+      .eq("platform", "shopify")
+      .eq("status", "active");
+
+    const integrationIds = (integrations || []).map((i) => i.id);
+    if (integrationIds.length > 0) {
+      const { data: mappings } = await supabase
+        .from("product_mappings")
+        .select("product_id, external_title")
+        .in("integration_id", integrationIds);
+
+      for (const row of mappings || []) {
+        const pid = row.product_id as string | undefined;
+        const title = typeof row.external_title === "string" ? row.external_title.trim() : "";
+        if (!pid || !title) continue;
+        if (!titleByProductId.has(pid)) {
+          titleByProductId.set(pid, title);
+        }
+      }
+    }
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    shopify_listing_title: titleByProductId.get(r.product_id) ?? null,
+  }));
 }
 
 export async function getInventory(): Promise<InventoryWithDetails[]> {
@@ -91,7 +136,13 @@ export async function getInventory(): Promise<InventoryWithDetails[]> {
     throw new Error(error.message);
   }
 
-  return data || [];
+  const rows: InventoryWithDetails[] = (data || []).map((row) => {
+    const p = row.product as unknown;
+    const product = (Array.isArray(p) ? p[0] : p) as InventoryWithDetails["product"];
+    return { ...row, product };
+  });
+
+  return attachShopifyListingTitles(supabase, rows);
 }
 
 export async function getInventoryByLocation(

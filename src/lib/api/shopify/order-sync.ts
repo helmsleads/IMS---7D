@@ -1,5 +1,7 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { decryptToken } from '@/lib/encryption'
+import { createShopifyClient, ShopifyApiError } from './client'
+import { fetchOrdersForSync } from './graphql/orders-sync'
 import { logSyncResult } from './sync-logger'
 import type { ClientIntegration, ShopifyOrder, ShopifyLineItem, ShopifyAddress, SyncTrigger } from '@/types/database'
 
@@ -200,34 +202,25 @@ export async function syncShopifyOrders(
     throw new Error('Integration not properly configured')
   }
 
-  // Build query params
-  const params = new URLSearchParams({
-    status: 'open',
-    fulfillment_status: 'unfulfilled',
-    limit: '250',
+  const accessToken = decryptToken(integration.access_token)
+  const client = createShopifyClient({
+    shopDomain: integration.shop_domain,
+    accessToken,
   })
 
-  if (since) {
-    params.set('created_at_min', since.toISOString())
-  }
-
-  // Fetch orders from Shopify (decrypt token for API call)
-  const accessToken = decryptToken(integration.access_token)
-  const response = await fetch(
-    `https://${integration.shop_domain}/admin/api/2024-01/orders.json?${params}`,
-    {
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-      },
+  let orders: ShopifyOrder[]
+  try {
+    orders = await fetchOrdersForSync(client, since)
+  } catch (e) {
+    if (e instanceof ShopifyApiError && e.status === 401) {
+      const snippet = e.body.length > 400 ? `${e.body.slice(0, 400)}…` : e.body
+      throw new Error(
+        `Shopify returned 401 for ${integration.shop_domain}. ${snippet} If the token is invalid, disconnect and reconnect Shopify in Portal. If you recently changed TOKEN_ENCRYPTION_KEY, reconnect so a new token is stored.`,
+        { cause: e }
+      )
     }
-  )
-
-  if (!response.ok) {
-    throw new Error(`Shopify API error: ${response.status}`)
+    throw e
   }
-
-  const data = await response.json()
-  const orders = data.orders || []
 
   const results = { imported: 0, skipped: 0, failed: 0 }
 
@@ -246,7 +239,7 @@ export async function syncShopifyOrders(
         continue
       }
 
-      await processShopifyOrder(order, integration)
+      await processShopifyOrder(order as unknown as Record<string, unknown>, integration)
       results.imported++
     } catch (e) {
       console.error(`Failed to import order ${order.name}:`, e)

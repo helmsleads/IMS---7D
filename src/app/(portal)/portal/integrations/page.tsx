@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Card from '@/components/ui/Card'
 import Toggle from '@/components/ui/Toggle'
+import Modal from '@/components/ui/Modal'
 import { useClient } from '@/lib/client-auth'
 import { getClientIntegrations, updateIntegrationSettings } from '@/lib/api/integrations'
 import type { ClientIntegration, IntegrationSyncLog } from '@/types/database'
@@ -54,16 +55,17 @@ export default function IntegrationsHubPage() {
 
   const shopifyIntegration = integrations.find((i) => i.platform === 'shopify')
 
-  const handleRefresh = async () => {
+  const handleRefresh = async (opts?: { silent?: boolean }) => {
     if (!client?.id) return
-    setIsLoading(true)
+    const silent = opts?.silent === true
+    if (!silent) setIsLoading(true)
     try {
       const data = await getClientIntegrations(client.id)
       setIntegrations(data)
     } catch (error) {
       console.error('Failed to refresh:', error)
     }
-    setIsLoading(false)
+    if (!silent) setIsLoading(false)
   }
 
   return (
@@ -158,7 +160,7 @@ function ShopifyCard({
 }: {
   integration: ClientIntegration | undefined
   clientId: string | undefined
-  onRefresh: () => void
+  onRefresh: (opts?: { silent?: boolean }) => void | Promise<void>
   onConnectError: (message: string) => void
 }) {
   const isConnected = integration?.status === 'active'
@@ -326,7 +328,7 @@ function ShopifyConnectedStatus({
 }: {
   integration: ClientIntegration
   clientId: string | undefined
-  onRefresh: () => void
+  onRefresh: (opts?: { silent?: boolean }) => void | Promise<void>
 }) {
   const [isSyncingOrders, setIsSyncingOrders] = useState(false)
   const [isSyncingInventory, setIsSyncingInventory] = useState(false)
@@ -346,6 +348,11 @@ function ShopifyConnectedStatus({
   const [isLoadingLogs, setIsLoadingLogs] = useState(false)
   const [showActivity, setShowActivity] = useState(false)
   const [logsOffset, setLogsOffset] = useState(0)
+  const [syncResultModal, setSyncResultModal] = useState<{
+    title: string
+    variant: 'success' | 'warning' | 'error'
+    lines: string[]
+  } | null>(null)
 
   const fetchSyncLogs = useCallback(async (offset = 0, append = false) => {
     setIsLoadingLogs(true)
@@ -416,11 +423,30 @@ function ShopifyConnectedStatus({
         method: 'POST',
       })
       const result = await response.json()
-      alert(`Synced ${result.imported} orders, ${result.skipped} skipped, ${result.failed} failed`)
-      onRefresh()
+      if (!response.ok) {
+        setSyncResultModal({
+          title: 'Order sync failed',
+          variant: 'error',
+          lines: [typeof result.error === 'string' ? result.error : `Request failed (${response.status})`],
+        })
+      } else {
+        const imported = Number(result.imported) || 0
+        const skipped = Number(result.skipped) || 0
+        const failed = Number(result.failed) || 0
+        setSyncResultModal({
+          title: 'Order sync complete',
+          variant: failed > 0 ? 'warning' : 'success',
+          lines: [`Imported: ${imported}`, `Skipped: ${skipped}`, `Failed: ${failed}`],
+        })
+      }
+      void onRefresh({ silent: true })
       fetchSyncLogs()
     } catch (error) {
-      alert('Sync failed: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      setSyncResultModal({
+        title: 'Order sync failed',
+        variant: 'error',
+        lines: [error instanceof Error ? error.message : 'Unknown error'],
+      })
     }
     setIsSyncingOrders(false)
   }
@@ -432,15 +458,42 @@ function ShopifyConnectedStatus({
         method: 'POST',
       })
       const result = await response.json()
-      if (response.ok) {
-        alert(`Inventory synced: ${result.updated} updated, ${result.failed} failed`)
+      if (!response.ok) {
+        setSyncResultModal({
+          title: 'Inventory sync failed',
+          variant: 'error',
+          lines: [typeof result.error === 'string' ? result.error : `Request failed (${response.status})`],
+        })
       } else {
-        alert('Sync failed: ' + (result.error || 'Unknown error'))
+        const updated = Number(result.updated) || 0
+        const failed = Number(result.failed) || 0
+        const errs = Array.isArray(result.errors) ? result.errors : []
+        const lines = [`Updated in Shopify: ${updated}`, `Failed: ${failed}`]
+        if (errs.length > 0) {
+          lines.push('')
+          lines.push('Details:')
+          for (const e of errs.slice(0, 20)) {
+            const row = e as { productId?: string; error?: string }
+            lines.push(`• ${String(row.productId ?? 'unknown')}: ${String(row.error ?? '')}`)
+          }
+          if (errs.length > 20) {
+            lines.push(`… and ${errs.length - 20} more`)
+          }
+        }
+        setSyncResultModal({
+          title: 'Inventory sync complete',
+          variant: failed > 0 ? 'warning' : 'success',
+          lines,
+        })
       }
-      onRefresh()
+      void onRefresh({ silent: true })
       fetchSyncLogs()
     } catch (error) {
-      alert('Sync failed: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      setSyncResultModal({
+        title: 'Inventory sync failed',
+        variant: 'error',
+        lines: [error instanceof Error ? error.message : 'Unknown error'],
+      })
     }
     setIsSyncingInventory(false)
   }
@@ -459,7 +512,7 @@ function ShopifyConnectedStatus({
         const data = await response.json()
         throw new Error(data.error || 'Failed to disconnect')
       }
-      onRefresh()
+      void onRefresh({ silent: true })
     } catch (error) {
       alert('Failed to disconnect: ' + (error instanceof Error ? error.message : 'Unknown error'))
     }
@@ -711,11 +764,48 @@ function ShopifyConnectedStatus({
           />
         </div>
       </div>
+
+      {syncResultModal && (
+        <Modal
+          isOpen
+          onClose={() => setSyncResultModal(null)}
+          title={syncResultModal.title}
+          size="lg"
+          footer={
+            <button
+              type="button"
+              onClick={() => setSyncResultModal(null)}
+              className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+            >
+              Close
+            </button>
+          }
+        >
+          <div
+            className={`rounded-lg p-4 text-sm border ${
+              syncResultModal.variant === 'success'
+                ? 'bg-green-50 text-green-900 border-green-100'
+                : syncResultModal.variant === 'warning'
+                  ? 'bg-amber-50 text-amber-950 border-amber-100'
+                  : 'bg-red-50 text-red-900 border-red-100'
+            }`}
+          >
+            <ul className="space-y-2 break-words">
+              {syncResultModal.lines.map((line, i) => (
+                <li
+                  key={i}
+                  className={line.startsWith('•') ? 'pl-1 text-slate-800' : line === '' ? 'h-2' : 'font-medium'}
+                >
+                  {line === '' ? null : line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }
-
-/* ─── Sync Log Entry ─── */
 
 const syncTypeIcons: Record<string, string> = {
   inventory: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',

@@ -11,6 +11,7 @@ export type InventoryExportFilterLine = { name: string; value: string };
 export const INVENTORY_EXPORT_HEADERS = [
   "Product Name",
   "SKU",
+  "Shopify listing",
   "Client",
   "Location",
   "Sublocation",
@@ -88,6 +89,7 @@ export function buildInventoryExportRows(
     return [
       item.product.name,
       item.product.sku,
+      item.shopify_listing_title ?? "",
       client?.company_name ?? (item.product.client_id ? "" : "No Client"),
       locLine ? `${item.location.name} (${locLine})` : item.location.name,
       sub,
@@ -191,8 +193,9 @@ export function downloadInventoryPdf(
       0: { minCellWidth: 28 },
       1: { minCellWidth: 16 },
       2: { minCellWidth: 22 },
-      3: { minCellWidth: 24 },
-      4: { minCellWidth: 18 },
+      3: { minCellWidth: 22 },
+      4: { minCellWidth: 24 },
+      5: { minCellWidth: 18 },
     },
     margin: { left: 14, right: 14 },
     tableWidth: "auto",

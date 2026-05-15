@@ -95,6 +95,7 @@ export default function ProductMappingPage() {
           product_id: imsProductId,
           external_product_id: shopifyProduct.productId,
           external_variant_id: shopifyProduct.variantId,
+          external_inventory_item_id: shopifyProduct.inventoryItemId,
           external_sku: shopifyProduct.sku || undefined,
           external_title: shopifyProduct.title + (shopifyProduct.variantTitle ? ` - ${shopifyProduct.variantTitle}` : ''),
           external_image_url: shopifyProduct.imageUrl || undefined,
