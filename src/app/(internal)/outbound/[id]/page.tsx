@@ -86,6 +86,12 @@ import type { DamageResolution } from "@/types/database";
 import { downloadBOL, printBOL, BOLData } from "@/lib/generate-bol";
 import { formatStreetAddress, formatCity, formatState, formatName, formatZip } from "@/lib/format-address";
 import { getSystemSetting } from "@/lib/api/settings";
+import {
+  getPreferredCarrierLabel,
+  getImsShippingMethodLabel,
+  normalizePreferredCarrierForSelect,
+  PREFERRED_CARRIER_OPTIONS,
+} from "@/lib/outbound-service-options";
 import { Download } from "lucide-react";
 
 const STATUS_STEPS = [
@@ -1144,7 +1150,7 @@ export default function OutboundOrderDetailPage() {
       ship_to_state: (order as any).ship_to_state || "",
       ship_to_zip: (order as any).ship_to_zip || "",
       ship_to_country: (order as any).ship_to_country || "",
-      preferred_carrier: (order as any).preferred_carrier || "",
+      preferred_carrier: normalizePreferredCarrierForSelect((order as any).preferred_carrier),
       carrier: order.carrier || "",
       tracking_number: order.tracking_number || "",
       notes: order.notes || "",
@@ -2774,19 +2780,14 @@ export default function OutboundOrderDetailPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Carrier</label>
                   <Select
-                    name="edit-carrier"
-                    value={editForm.preferred_carrier}
+                    label="Preferred carrier"
+                    name="edit-preferred-carrier"
+                    value={editForm.preferred_carrier ?? ""}
                     onChange={(e) => setEditForm({ ...editForm, preferred_carrier: e.target.value })}
-                    options={[
-                      { value: "", label: "No preference" },
-                      { value: "UPS", label: "UPS" },
-                      { value: "FedEx", label: "FedEx" },
-                      { value: "USPS", label: "USPS" },
-                      { value: "DHL", label: "DHL" },
-                      { value: "Freight", label: "Freight" },
-                    ]}
+                    options={PREFERRED_CARRIER_OPTIONS}
+                    placeholder="No preference"
+                    hint=""
                   />
                 </div>
 
@@ -2795,7 +2796,7 @@ export default function OutboundOrderDetailPage() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Carrier</label>
                       <Input
-                        name="edit-carrier"
+                        name="edit-ship-carrier"
                         value={editForm.carrier}
                         onChange={(e) => setEditForm({ ...editForm, carrier: e.target.value })}
                         placeholder="e.g. FedEx, UPS"
@@ -3241,7 +3242,7 @@ export default function OutboundOrderDetailPage() {
                       )}
                     </div>
                     <p className="text-sm text-blue-800 mt-1 font-semibold">
-                      {effectivePreferredCarrier}
+                      {getPreferredCarrierLabel(effectivePreferredCarrier)}
                     </p>
                     {order.carrier && order.carrier !== effectivePreferredCarrier && (
                       <p className="text-xs text-orange-600 mt-1 flex items-center gap-1">
@@ -3274,6 +3275,19 @@ export default function OutboundOrderDetailPage() {
               </div>
             </Card>
           )}
+
+          <Card>
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">IMS fulfillment</h2>
+            <p className="text-sm text-gray-700">
+              <span className="text-gray-500">Shipping method (IMS):</span>{" "}
+              <span className="font-medium text-gray-900">
+                {getImsShippingMethodLabel(order.shipping_method)}
+              </span>
+            </p>
+            <p className="text-xs text-gray-500 mt-2">
+              Set when shipping via FedEx API, pickup, or manual. This is not the same as preferred carrier above.
+            </p>
+          </Card>
 
           {/* Fulfillment Summary */}
           <Card>

@@ -19,6 +19,7 @@ import {
   CreateOutboundOrderData,
   CreateOutboundItemData,
 } from "@/lib/api/outbound";
+import { NEW_ORDER_PREFERRED_CARRIER_OPTIONS } from "@/lib/outbound-service-options";
 import { getContainerBadge, getUnitLabel } from "@/lib/labels";
 import { formatStreetAddress, formatCity, formatState, formatName, formatZip } from "@/lib/format-address";
 interface OrderItem {
@@ -520,16 +521,9 @@ export default function NewOutboundOrderPage() {
 
                 <div className="border-t border-gray-200 pt-4">
                   <Select
-                    label="Shipping Method"
-                    name="shipping_method"
-                    options={[
-                      { value: "ground", label: "Ground" },
-                      { value: "2day", label: "2-Day" },
-                      { value: "overnight", label: "Overnight" },
-                      { value: "freight", label: "Freight / LTL" },
-                      { value: "pickup", label: "Customer Pickup" },
-                      { value: "other", label: "Other" },
-                    ]}
+                    label="Preferred carrier"
+                    name="preferred_carrier"
+                    options={NEW_ORDER_PREFERRED_CARRIER_OPTIONS}
                     value={shippingMethod}
                     onChange={(e) => setShippingMethod(e.target.value)}
                     placeholder="Select shipping method"
