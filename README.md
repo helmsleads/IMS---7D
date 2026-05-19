@@ -111,6 +111,7 @@ CRON_SECRET=               # Authorization token for cron endpoints
 
 All cron endpoints require `Authorization: Bearer <CRON_SECRET>`.
 
+
 ## Key Concepts
 
 - **Outbound Orders** - Pick, pack, ship workflow for client orders
