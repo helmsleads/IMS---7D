@@ -25,10 +25,10 @@
 ## Frameworks
 
 **Core:**
-- Next.js 16.1.1 - Full-stack framework (App Router, API routes, middleware)
+- Next.js 16.1.1 - Full-stack framework (App Router, API routes, proxy)
   - App Router for page routing (`src/app/` directory structure)
   - API routes in `src/app/api/` for backend endpoints and webhooks
-  - Middleware in `src/middleware.ts` for authentication/session handling
+  - Proxy in `src/proxy.ts` for authentication/session handling (renamed from `middleware.ts` in Next.js 16)
   - Image optimization via `next/image` with custom remote patterns
   - Environment variables loaded from `.env.local` and `.env`
 
