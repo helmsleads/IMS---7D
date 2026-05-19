@@ -3236,28 +3236,43 @@ export default function OutboundOrderDetailPage() {
                 )}
 
                 {/* Carrier Preference */}
-                {effectivePreferredCarrier && (
-                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
-                    <div className="flex items-center gap-2">
-                      <Truck className="w-4 h-4 text-blue-600" />
-                      <span className="text-sm font-medium text-gray-700">Preferred Carrier</span>
-                      {orderPreferredCarrier && (
-                        <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
-                          From Order
-                        </span>
+                {effectivePreferredCarrier && (() => {
+                  // Compare canonical forms so the free-text `order.carrier`
+                  // ("FedEx") does not falsely "differ" from a canonical
+                  // preferred_carrier key ("fedex"). Also only warn when the
+                  // preference is an actual carrier (FedEx/UPS/USPS/DHL) —
+                  // speed/service preferences like "ground" or "2day" are
+                  // satisfied by any carrier so a mismatch there is meaningless.
+                  const CARRIER_KEYS = new Set(["fedex", "ups", "usps", "dhl"]);
+                  const canonPref = normalizePreferredCarrierForSelect(effectivePreferredCarrier);
+                  const canonCarrier = normalizePreferredCarrierForSelect(order.carrier);
+                  const carrierDiffers =
+                    !!order.carrier &&
+                    CARRIER_KEYS.has(canonPref) &&
+                    canonPref !== canonCarrier;
+                  return (
+                    <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                      <div className="flex items-center gap-2">
+                        <Truck className="w-4 h-4 text-blue-600" />
+                        <span className="text-sm font-medium text-gray-700">Preferred Carrier</span>
+                        {orderPreferredCarrier && (
+                          <span className="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
+                            From Order
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-blue-800 mt-1 font-semibold">
+                        {getPreferredCarrierLabel(effectivePreferredCarrier)}
+                      </p>
+                      {carrierDiffers && (
+                        <p className="text-xs text-orange-600 mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          Order carrier differs from preference
+                        </p>
                       )}
                     </div>
-                    <p className="text-sm text-blue-800 mt-1 font-semibold">
-                      {getPreferredCarrierLabel(effectivePreferredCarrier)}
-                    </p>
-                    {order.carrier && order.carrier !== effectivePreferredCarrier && (
-                      <p className="text-xs text-orange-600 mt-1 flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3" />
-                        Order carrier differs from preference
-                      </p>
-                    )}
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Special Instructions */}
                 {specialInstructions && (
