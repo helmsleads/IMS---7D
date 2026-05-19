@@ -451,7 +451,13 @@ export default function OrderDetailPage() {
     return {
       orderNumber: order.order_number,
       date: new Date(order.created_at).toLocaleDateString("en-US"),
-      carrier: order.carrier || order.preferred_carrier || "TBD",
+      // `order.carrier` is the actual shipping carrier (free-text, already human-readable
+      // like "FedEx"). `preferred_carrier` is a canonical key that may be either lowercase
+      // ("fedex") or legacy mixed-case ("FedEx") — route it through the label resolver so
+      // the BOL always shows a friendly value regardless of how it was stored.
+      carrier:
+        order.carrier ||
+        (order.preferred_carrier ? getOutboundServiceOptionLabel(order.preferred_carrier) : "TBD"),
       trackingNumber: order.tracking_number || undefined,
       shipper: {
         company: shipperCompany,

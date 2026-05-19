@@ -13,6 +13,7 @@ import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
 import { formatDate } from "@/lib/utils/formatting";
 import { handleApiError } from "@/lib/utils/error-handler";
+import { getPreferredCarrierLabel } from "@/lib/outbound-service-options";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import Spinner from "@/components/ui/Spinner";
@@ -398,7 +399,7 @@ export default function PortalOrdersPage() {
                           <span className="font-mono text-sm text-slate-900">{order.tracking_number}</span>
                         </div>
                         {order.carrier && (
-                          <p className="text-sm text-slate-500">{order.carrier}</p>
+                          <p className="text-sm text-slate-500">{getPreferredCarrierLabel(order.carrier)}</p>
                         )}
                       </div>
                     )}

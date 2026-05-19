@@ -14,6 +14,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { getOutboundOrders, deleteOutboundOrder, OutboundOrderWithClient } from "@/lib/api/outbound";
 import { handleApiError } from "@/lib/utils/error-handler";
 import { formatDate, formatStatus } from "@/lib/utils/formatting";
+import { getPreferredCarrierLabel } from "@/lib/outbound-service-options";
 import StatusBadge from "@/components/ui/StatusBadge";
 
 const ITEMS_PER_PAGE = 25;
@@ -260,7 +261,7 @@ export default function OutboundPage() {
             {/* Show preferred carrier if no actual carrier set */}
             {hasPreferred && !isFedExActive && !isFedExVoided && (
               <span className="text-slate-600 text-xs" title="Customer preferred carrier">
-                Preferred: {order.preferred_carrier}
+                Preferred: {getPreferredCarrierLabel(order.preferred_carrier)}
               </span>
             )}
             {order.carrier && !isFedExActive && (

@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase-service";
 import { orderConfirmedEmail } from "@/lib/email-templates/order-confirmed";
 import { orderShippedEmail } from "@/lib/email-templates/order-shipped";
 import { orderDeliveredEmail } from "@/lib/email-templates/order-delivered";
+import { getPreferredCarrierLabel } from "@/lib/outbound-service-options";
 
 interface SendEmailResult {
   success: boolean;
@@ -175,7 +176,12 @@ export async function sendOrderShippedEmail(
     return { success: false, error: "Client email not found" };
   }
 
-  const effectiveCarrier = order.carrier || order.preferred_carrier;
+  // Prefer the actual carrier (free-text, already human-readable). When falling back to
+  // preferred_carrier, route through the label resolver so customers don't see internal
+  // keys like "fedex" in their shipping confirmation email.
+  const effectiveCarrier =
+    order.carrier ||
+    (order.preferred_carrier ? getPreferredCarrierLabel(order.preferred_carrier) : null);
   if (!order.tracking_number || !effectiveCarrier) {
     return { success: false, error: "Missing tracking information" };
   }
