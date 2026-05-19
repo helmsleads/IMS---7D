@@ -192,7 +192,15 @@ async function handleOrderCreate(
   payload: Record<string, unknown>,
   integration: Record<string, unknown>
 ): Promise<void> {
-  // Skip if already fulfilled
+  // Respect the portal's "Auto-import new orders" toggle.
+  // When disabled, the order can still be pulled in manually via the Sync Orders button.
+  const settings = (integration as { settings?: { auto_import_orders?: boolean } }).settings
+  if (settings?.auto_import_orders === false) {
+    console.log(`Auto-import disabled for integration, skipping order ${payload.name}`)
+    return
+  }
+
+  // Skip if already fulfilled (e.g. a historical order replayed by Shopify)
   if (payload.fulfillment_status === 'fulfilled') {
     console.log(`Order ${payload.name} already fulfilled, skipping`)
     return
@@ -203,6 +211,8 @@ async function handleOrderCreate(
     console.log(`Test order ${payload.name}, processing anyway for dev`)
   }
 
+  // processShopifyOrder inserts into outbound_orders with status='pending'
+  // so the order shows up in the IMS the moment Shopify fires the checkout webhook.
   await processShopifyOrder(payload, integration)
 }
 
