@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase-service'
-import { processShopifyOrder } from '@/lib/api/shopify/order-sync'
+import { processShopifyOrder, syncShopifyOrderStatusFromPayload } from '@/lib/api/shopify/order-sync'
 import { checkWebhookRateLimit } from '@/lib/rate-limit'
 import { logSyncResult } from '@/lib/api/shopify/sync-logger'
 
@@ -135,6 +135,9 @@ export async function POST(
       case 'orders/updated':
         await handleOrderUpdated(payload, integration)
         break
+      case 'orders/fulfilled':
+        await handleOrderFulfilled(payload, integration)
+        break
       case 'orders/cancelled':
         await handleOrderCancelled(payload, integration)
         break
@@ -200,12 +203,6 @@ async function handleOrderCreate(
     return
   }
 
-  // Skip if already fulfilled (e.g. a historical order replayed by Shopify)
-  if (payload.fulfillment_status === 'fulfilled') {
-    console.log(`Order ${payload.name} already fulfilled, skipping`)
-    return
-  }
-
   // Skip test orders if not in test mode
   if (payload.test === true) {
     console.log(`Test order ${payload.name}, processing anyway for dev`)
@@ -222,7 +219,6 @@ async function handleOrderUpdated(
 ): Promise<void> {
   const supabase = createServiceClient()
 
-  // Find existing IMS order
   const { data: order } = await supabase
     .from('outbound_orders')
     .select('id, status')
@@ -232,17 +228,21 @@ async function handleOrderUpdated(
 
   if (!order) {
     console.log(`Order ${payload.id} not found in IMS, may need to import`)
-    // Could trigger order create if not exists
     return
   }
 
-  // Only update if order is still in early stages
-  if (!['pending', 'confirmed'].includes(order.status)) {
-    console.log(`Order ${order.id} already in progress, not updating from Shopify`)
+  const statusResult = await syncShopifyOrderStatusFromPayload(payload)
+  if (statusResult.updated) {
+    console.log(
+      `Synced Shopify status for order ${order.id} → ${statusResult.status}`
+    )
+  }
+
+  const statusAfterSync = statusResult.status ?? order.status
+  if (!['pending', 'confirmed'].includes(statusAfterSync)) {
     return
   }
 
-  // Update shipping address if changed
   const addr = payload.shipping_address as Record<string, unknown> | null
   if (addr) {
     await supabase
@@ -261,6 +261,16 @@ async function handleOrderUpdated(
       .eq('id', order.id)
 
     console.log(`Updated shipping address for order ${order.id}`)
+  }
+}
+
+async function handleOrderFulfilled(
+  payload: Record<string, unknown>,
+  _integration: Record<string, unknown>
+): Promise<void> {
+  const result = await syncShopifyOrderStatusFromPayload(payload)
+  if (result.updated) {
+    console.log(`Order ${payload.name} marked ${result.status} from Shopify fulfillment`)
   }
 }
 

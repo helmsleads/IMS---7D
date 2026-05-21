@@ -12,7 +12,15 @@
  */
 
 export { ShopifyClient, createShopifyClient, ShopifyApiError } from './client'
-export { processShopifyOrder, syncShopifyOrders } from './order-sync'
+export {
+  processShopifyOrder,
+  syncShopifyOrders,
+  applyShopifyStatusToOrder,
+  syncShopifyOrderStatusFromPayload,
+  mapShopifyFulfillmentToImsStatus,
+  shouldAdvanceImsStatus,
+  extractShopifyTracking,
+} from './order-sync'
 export { syncFulfillmentToShopify } from './fulfillment-sync'
 export { syncInventoryToShopify, fetchShopifyProducts } from './inventory-sync'
 export { syncReturnToShopify } from './returns-sync'

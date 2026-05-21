@@ -3,7 +3,113 @@ import { decryptToken } from '@/lib/encryption'
 import { createShopifyClient, ShopifyApiError } from './client'
 import { fetchOrdersForSync } from './graphql/orders-sync'
 import { logSyncResult } from './sync-logger'
-import type { ClientIntegration, ShopifyOrder, ShopifyLineItem, ShopifyAddress, SyncTrigger } from '@/types/database'
+import {
+  mapShopifyFulfillmentToImsStatus,
+  shouldAdvanceImsStatus,
+  extractShopifyTracking,
+} from './order-status-sync'
+import type {
+  ClientIntegration,
+  ShopifyOrder,
+  OutboundStatus,
+  SyncTrigger,
+} from '@/types/database'
+
+export {
+  mapShopifyFulfillmentToImsStatus,
+  shouldAdvanceImsStatus,
+  extractShopifyTracking,
+} from './order-status-sync'
+
+function isShopifyOrderCancelled(shopifyOrder: Record<string, unknown>): boolean {
+  if (shopifyOrder.cancelled_at) return true
+  const status = String(shopifyOrder.status ?? '').toLowerCase()
+  return status === 'cancelled'
+}
+
+/**
+ * Apply Shopify fulfillment/cancel state to an existing IMS outbound order.
+ * Status only moves forward (except cancel). Tracking is filled when Shopify ships.
+ */
+export async function applyShopifyStatusToOrder(
+  imsOrderId: string,
+  shopifyOrder: Record<string, unknown>
+): Promise<{ updated: boolean; status?: string }> {
+  const supabase = createServiceClient()
+
+  const { data: order, error } = await supabase
+    .from('outbound_orders')
+    .select('id, status, notes, tracking_number, carrier, shipped_date')
+    .eq('id', imsOrderId)
+    .single()
+
+  if (error || !order) {
+    throw new Error(error?.message ?? 'Order not found')
+  }
+
+  const fulfillmentStatus = shopifyOrder.fulfillment_status as string | null | undefined
+  const targetStatus = mapShopifyFulfillmentToImsStatus(fulfillmentStatus, {
+    cancelled: isShopifyOrderCancelled(shopifyOrder),
+  })
+
+  if (!shouldAdvanceImsStatus(order.status, targetStatus)) {
+    return { updated: false }
+  }
+
+  const tracking = extractShopifyTracking(shopifyOrder)
+  const update: Record<string, unknown> = { status: targetStatus }
+
+  if (targetStatus === 'shipped') {
+    if (!order.shipped_date) {
+      update.shipped_date = tracking.shipped_at ?? new Date().toISOString()
+    }
+    if (tracking.tracking_number && !order.tracking_number) {
+      update.tracking_number = tracking.tracking_number
+    }
+    if (tracking.carrier && !order.carrier) {
+      update.carrier = tracking.carrier
+    }
+  }
+
+  if (targetStatus === 'cancelled') {
+    const stamp = new Date().toISOString()
+    update.notes = `${order.notes || ''}\n[Status synced from Shopify: cancelled at ${stamp}]`.trim()
+  } else if (targetStatus !== order.status) {
+    const stamp = new Date().toISOString()
+    update.notes = `${order.notes || ''}\n[Status synced from Shopify: ${targetStatus} at ${stamp}]`.trim()
+  }
+
+  const { error: updateError } = await supabase
+    .from('outbound_orders')
+    .update(update)
+    .eq('id', imsOrderId)
+
+  if (updateError) {
+    throw new Error(updateError.message)
+  }
+
+  return { updated: true, status: targetStatus }
+}
+
+/** Webhook / REST payload → status sync for an order matched by Shopify id. */
+export async function syncShopifyOrderStatusFromPayload(
+  payload: Record<string, unknown>
+): Promise<{ updated: boolean; status?: string }> {
+  const supabase = createServiceClient()
+
+  const { data: order } = await supabase
+    .from('outbound_orders')
+    .select('id')
+    .eq('external_order_id', String(payload.id))
+    .eq('external_platform', 'shopify')
+    .single()
+
+  if (!order) {
+    return { updated: false }
+  }
+
+  return applyShopifyStatusToOrder(order.id, payload)
+}
 
 /**
  * Process and import a Shopify order into IMS
@@ -110,14 +216,16 @@ export async function processShopifyOrder(
   // Build notes
   const fullNotes = notes.length > 0 ? notes.join('\n') : null
 
-  // Create the order with full shipping details
-  const { data: newOrder, error: orderError } = await supabase
-    .from('outbound_orders')
-    .insert({
+  const initialStatus = mapShopifyFulfillmentToImsStatus(order.fulfillment_status, {
+    cancelled: !!order.cancelled_at,
+  })
+  const tracking = extractShopifyTracking(order as unknown as Record<string, unknown>)
+
+  const insertRow: Record<string, unknown> = {
       client_id: integrationData.client_id,
       order_number: orderNumber,
       source: 'api',
-      status: 'pending',
+      status: initialStatus,
 
       // External platform tracking
       external_order_id: String(order.id),
@@ -141,7 +249,17 @@ export async function processShopifyOrder(
       is_rush: isRush,
       notes: fullNotes,
       requested_at: new Date().toISOString(),
-    })
+  }
+
+  if (initialStatus === 'shipped') {
+    insertRow.shipped_date = tracking.shipped_at ?? new Date().toISOString()
+    if (tracking.tracking_number) insertRow.tracking_number = tracking.tracking_number
+    if (tracking.carrier) insertRow.carrier = tracking.carrier
+  }
+
+  const { data: newOrder, error: orderError } = await supabase
+    .from('outbound_orders')
+    .insert(insertRow)
     .select()
     .single()
 
@@ -183,7 +301,7 @@ export async function syncShopifyOrders(
   integrationId: string,
   since?: Date,
   triggeredBy: SyncTrigger = 'manual'
-): Promise<{ imported: number; skipped: number; failed: number }> {
+): Promise<{ imported: number; updated: number; skipped: number; failed: number }> {
   const startTime = Date.now()
   const supabase = createServiceClient()
 
@@ -202,6 +320,12 @@ export async function syncShopifyOrders(
     throw new Error('Integration not properly configured')
   }
 
+  const syncSince =
+    since ??
+    (integration.last_order_sync_at
+      ? new Date(integration.last_order_sync_at)
+      : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
+
   const accessToken = decryptToken(integration.access_token)
   const client = createShopifyClient({
     shopDomain: integration.shop_domain,
@@ -210,7 +334,7 @@ export async function syncShopifyOrders(
 
   let orders: ShopifyOrder[]
   try {
-    orders = await fetchOrdersForSync(client, since)
+    orders = await fetchOrdersForSync(client, syncSince)
   } catch (e) {
     if (e instanceof ShopifyApiError && e.status === 401) {
       const snippet = e.body.length > 400 ? `${e.body.slice(0, 400)}…` : e.body
@@ -222,11 +346,12 @@ export async function syncShopifyOrders(
     throw e
   }
 
-  const results = { imported: 0, skipped: 0, failed: 0 }
+  const results = { imported: 0, updated: 0, skipped: 0, failed: 0 }
 
   for (const order of orders) {
     try {
-      // Check if already exists by external ID
+      const payload = order as unknown as Record<string, unknown>
+
       const { data: existing } = await supabase
         .from('outbound_orders')
         .select('id')
@@ -235,14 +360,28 @@ export async function syncShopifyOrders(
         .single()
 
       if (existing) {
+        const statusResult = await applyShopifyStatusToOrder(existing.id, payload)
+        if (statusResult.updated) {
+          results.updated++
+        } else {
+          results.skipped++
+        }
+        continue
+      }
+
+      // Skip fulfilled-with-no-shippable only when there is nothing to import
+      const shippable = (order.line_items || []).some(
+        (item) => item.requires_shipping && item.fulfillable_quantity > 0
+      )
+      if (!shippable && order.fulfillment_status === 'fulfilled') {
         results.skipped++
         continue
       }
 
-      await processShopifyOrder(order as unknown as Record<string, unknown>, integration)
+      await processShopifyOrder(payload, integration)
       results.imported++
     } catch (e) {
-      console.error(`Failed to import order ${order.name}:`, e)
+      console.error(`Failed to sync order ${order.name}:`, e)
       results.failed++
     }
   }
@@ -253,10 +392,10 @@ export async function syncShopifyOrders(
     syncType: 'orders',
     direction: 'inbound',
     triggeredBy,
-    itemsProcessed: results.imported,
+    itemsProcessed: results.imported + results.updated,
     itemsFailed: results.failed,
     durationMs: Date.now() - startTime,
-    metadata: { skipped: results.skipped },
+    metadata: { skipped: results.skipped, imported: results.imported, updated: results.updated },
   })
 
   return results

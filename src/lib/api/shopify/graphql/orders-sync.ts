@@ -1,5 +1,11 @@
 import type { ShopifyClient } from '../client'
-import type { ShopifyAddress, ShopifyLineItem, ShopifyOrder, ShopifyShippingLine } from '@/types/database'
+import type {
+  ShopifyAddress,
+  ShopifyFulfillment,
+  ShopifyLineItem,
+  ShopifyOrder,
+  ShopifyShippingLine,
+} from '@/types/database'
 
 /** Shopify Admin GID → REST-style numeric id (e.g. gid://shopify/LineItem/123 → 123). */
 function numericIdFromGid(gid: string | null | undefined): number {
@@ -30,10 +36,20 @@ const SYNC_ORDERS_QUERY = `#graphql
           updatedAt
           displayFinancialStatus
           displayFulfillmentStatus
+          cancelledAt
           note
           tags
           test
           sourceName
+          fulfillments(first: 10) {
+            createdAt
+            status
+            deliveredAt
+            trackingInfo(first: 5) {
+              number
+              company
+            }
+          }
           totalPriceSet {
             shopMoney {
               amount
@@ -126,6 +142,14 @@ interface GqlShippingAddress {
   phone?: string | null
 }
 
+/** Order.fulfillments is `[Fulfillment!]!` — a list, not a connection. */
+interface GqlFulfillmentNode {
+  createdAt: string
+  status?: string | null
+  deliveredAt?: string | null
+  trackingInfo?: Array<{ number?: string | null; company?: string | null }>
+}
+
 interface GqlOrderNode {
   legacyResourceId: string
   name: string
@@ -133,7 +157,9 @@ interface GqlOrderNode {
   updatedAt: string
   displayFinancialStatus?: string | null
   displayFulfillmentStatus?: string | null
+  cancelledAt?: string | null
   note?: string | null
+  fulfillments?: GqlFulfillmentNode[]
   tags?: string[] | null
   test: boolean
   sourceName?: string | null
@@ -205,6 +231,20 @@ function mapShippingAddress(a: GqlShippingAddress | null | undefined): ShopifyAd
   }
 }
 
+function mapFulfillments(
+  fulfillments: GqlFulfillmentNode[] | undefined
+): ShopifyFulfillment[] {
+  if (!fulfillments?.length) return []
+  return fulfillments.map((f) => {
+    const tracking = f.trackingInfo?.[0]
+    return {
+      created_at: f.createdAt,
+      tracking_number: tracking?.number ?? null,
+      tracking_company: tracking?.company ?? null,
+    }
+  })
+}
+
 function mapOrderNode(node: GqlOrderNode): ShopifyOrder {
   const money = node.totalPriceSet?.shopMoney
   return {
@@ -215,9 +255,11 @@ function mapOrderNode(node: GqlOrderNode): ShopifyOrder {
     updated_at: node.updatedAt,
     financial_status: (node.displayFinancialStatus ?? 'unknown').toLowerCase(),
     fulfillment_status: (node.displayFulfillmentStatus ?? 'unfulfilled').toLowerCase(),
+    cancelled_at: node.cancelledAt ?? null,
     line_items: node.lineItems.edges.map(({ node: li }) => mapLineItem(li)),
     shipping_address: mapShippingAddress(node.shippingAddress),
     shipping_lines: mapShippingLines(node.shippingLines.edges),
+    fulfillments: mapFulfillments(node.fulfillments),
     note: node.note ?? null,
     tags: tagsToCommaString(node.tags ?? []),
     total_price: money?.amount ?? '0',
@@ -231,12 +273,15 @@ function mapOrderNode(node: GqlOrderNode): ShopifyOrder {
  * Build Shopify Admin order search string (same intent as legacy REST:
  * open + unfulfilled, optional created_at lower bound).
  */
+/**
+ * Orders changed since `since` (any fulfillment state) — used to import new rows
+ * and to push status/tracking updates onto existing IMS orders.
+ */
 export function buildOrdersSyncSearchQuery(since?: Date): string {
-  const parts = ['fulfillment_status:unfulfilled', 'status:open']
   if (since && !Number.isNaN(since.getTime())) {
-    parts.push(`created_at:>='${since.toISOString()}'`)
+    return `updated_at:>='${since.toISOString()}'`
   }
-  return parts.join(' AND ')
+  return 'fulfillment_status:unfulfilled AND status:open'
 }
 
 /**

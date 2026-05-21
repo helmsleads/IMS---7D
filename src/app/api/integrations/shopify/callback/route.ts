@@ -208,6 +208,7 @@ async function registerShopifyWebhooks(
   const webhookTopics = [
     'orders/create',
     'orders/updated',
+    'orders/fulfilled',
     'orders/cancelled',
     'inventory_levels/update',
   ]

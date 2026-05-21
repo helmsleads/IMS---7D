@@ -431,12 +431,18 @@ function ShopifyConnectedStatus({
         })
       } else {
         const imported = Number(result.imported) || 0
+        const updated = Number(result.updated) || 0
         const skipped = Number(result.skipped) || 0
         const failed = Number(result.failed) || 0
         setSyncResultModal({
           title: 'Order sync complete',
           variant: failed > 0 ? 'warning' : 'success',
-          lines: [`Imported: ${imported}`, `Skipped: ${skipped}`, `Failed: ${failed}`],
+          lines: [
+            `Imported: ${imported}`,
+            `Status updated: ${updated}`,
+            `Skipped: ${skipped}`,
+            `Failed: ${failed}`,
+          ],
         })
       }
       void onRefresh({ silent: true })

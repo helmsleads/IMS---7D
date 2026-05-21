@@ -1362,6 +1362,12 @@ export interface WebhookEvent {
 }
 
 // Shopify-specific types
+export interface ShopifyFulfillment {
+  created_at: string
+  tracking_number?: string | null
+  tracking_company?: string | null
+}
+
 export interface ShopifyOrder {
   id: number
   name: string
@@ -1370,9 +1376,11 @@ export interface ShopifyOrder {
   updated_at: string
   financial_status: string
   fulfillment_status: string | null
+  cancelled_at?: string | null
   line_items: ShopifyLineItem[]
   shipping_address: ShopifyAddress | null
   shipping_lines: ShopifyShippingLine[]
+  fulfillments?: ShopifyFulfillment[]
   note: string | null
   tags: string
   total_price: string
