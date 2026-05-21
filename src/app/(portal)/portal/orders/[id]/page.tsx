@@ -711,8 +711,11 @@ export default function OrderDetailPage() {
 
       {/* Shipping Info */}
       {(order.status === "shipped" || order.status === "delivered") && order.tracking_number && (() => {
-        const trackingUrl = getTrackingUrl(order.preferred_carrier, order.tracking_number);
-        const carrierName = getCarrierDisplayName(order.preferred_carrier);
+        // Actual shipment carrier (from warehouse/Shopify fulfillment) takes precedence over
+        // preferred_carrier (customer speed/carrier choice at checkout).
+        const effectiveCarrier = order.carrier || order.preferred_carrier;
+        const trackingUrl = getTrackingUrl(effectiveCarrier, order.tracking_number);
+        const carrierName = getCarrierDisplayName(effectiveCarrier);
 
         return (
           <div className="bg-cyan-50 rounded-lg border border-cyan-200 p-6">
