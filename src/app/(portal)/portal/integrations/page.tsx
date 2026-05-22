@@ -336,7 +336,7 @@ function ShopifyConnectedStatus({
   const [isSyncingInventory, setIsSyncingInventory] = useState(false)
   const [isDisconnecting, setIsDisconnecting] = useState(false)
   const [autoImportOrders, setAutoImportOrders] = useState(
-    integration.settings?.auto_import_orders ?? false
+    integration.settings?.auto_import_orders ?? true
   )
   const [autoSyncInventory, setAutoSyncInventory] = useState(
     integration.settings?.auto_sync_inventory ?? false

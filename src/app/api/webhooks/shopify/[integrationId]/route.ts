@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase-service'
-import { processShopifyOrder, syncShopifyOrderStatusFromPayload } from '@/lib/api/shopify/order-sync'
+import {
+  processShopifyOrder,
+  syncShopifyOrderStatusFromPayload,
+} from '@/lib/api/shopify/order-sync'
+import type { IntegrationSettings } from '@/types/database'
+
+function isAutoImportEnabled(integration: Record<string, unknown>): boolean {
+  const settings = (integration.settings ?? {}) as IntegrationSettings
+  // Default true when unset (matches DB default JSON)
+  return settings.auto_import_orders !== false
+}
 import { checkWebhookRateLimit } from '@/lib/rate-limit'
 import { logSyncResult } from '@/lib/api/shopify/sync-logger'
 
@@ -69,6 +79,11 @@ export async function POST(
   if (integrationError || !integration) {
     console.error('Integration not found:', integrationId)
     return new NextResponse('Integration not found', { status: 404 })
+  }
+
+  if (integration.status === 'disconnected') {
+    console.log(`Ignoring webhook for disconnected integration ${integrationId}`)
+    return new NextResponse('Integration disconnected', { status: 200 })
   }
 
   // Parse payload
@@ -195,10 +210,7 @@ async function handleOrderCreate(
   payload: Record<string, unknown>,
   integration: Record<string, unknown>
 ): Promise<void> {
-  // Respect the portal's "Auto-import new orders" toggle.
-  // When disabled, the order can still be pulled in manually via the Sync Orders button.
-  const settings = (integration as { settings?: { auto_import_orders?: boolean } }).settings
-  if (settings?.auto_import_orders === false) {
+  if (!isAutoImportEnabled(integration)) {
     console.log(`Auto-import disabled for integration, skipping order ${payload.name}`)
     return
   }
@@ -227,7 +239,12 @@ async function handleOrderUpdated(
     .single()
 
   if (!order) {
-    console.log(`Order ${payload.id} not found in IMS, may need to import`)
+    if (isAutoImportEnabled(integration)) {
+      console.log(`Order ${payload.id} not in IMS — importing from orders/updated`)
+      await processShopifyOrder(payload, integration)
+    } else {
+      console.log(`Order ${payload.id} not found in IMS; auto-import is off`)
+    }
     return
   }
 

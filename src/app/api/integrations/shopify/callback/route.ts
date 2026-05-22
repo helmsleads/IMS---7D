@@ -6,6 +6,7 @@ import { ensureShopifyLocation } from '@/lib/api/shopify/location-management'
 import { SHOPIFY_ADMIN_API_VERSION } from '@/lib/api/shopify/constants'
 import { normalizeShopifyShopDomain } from '@/lib/api/shopify/shop-domain'
 import { ensureIntegrationWarehouseLocation } from '@/lib/api/shopify/shopify-order-payload'
+import type { IntegrationSettings } from '@/types/database'
 
 const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID!
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET!
@@ -180,7 +181,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${APP_URL}/portal/integrations?error=save_failed`)
   }
 
-  await ensureIntegrationWarehouseLocation(supabase, integration.id)
+  const imsWarehouseId = await ensureIntegrationWarehouseLocation(supabase, integration.id)
+  const existingSettings = (integration.settings ?? {}) as IntegrationSettings
+
+  await supabase
+    .from('client_integrations')
+    .update({
+      settings: {
+        auto_import_orders: existingSettings.auto_import_orders ?? true,
+        auto_sync_inventory: existingSettings.auto_sync_inventory ?? false,
+        auto_sync_prices: existingSettings.auto_sync_prices ?? false,
+        sync_inventory_interval_minutes:
+          existingSettings.sync_inventory_interval_minutes ?? 60,
+        inventory_buffer: existingSettings.inventory_buffer ?? 0,
+        default_location_id:
+          imsWarehouseId ?? existingSettings.default_location_id ?? null,
+        fulfillment_notify_customer:
+          existingSettings.fulfillment_notify_customer ?? true,
+      },
+    })
+    .eq('id', integration.id)
 
   // Register webhooks with Shopify
   await registerShopifyWebhooks(integration.id, shopDomain, tokenData.access_token)
