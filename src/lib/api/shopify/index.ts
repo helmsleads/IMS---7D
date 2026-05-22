@@ -16,11 +16,16 @@ export {
   processShopifyOrder,
   syncShopifyOrders,
   applyShopifyStatusToOrder,
+  syncShopifyOrderLineItems,
   syncShopifyOrderStatusFromPayload,
   mapShopifyFulfillmentToImsStatus,
   shouldAdvanceImsStatus,
   extractShopifyTracking,
 } from './order-sync'
+export {
+  deductInventoryFromShopifyFulfillment,
+  shopifyInventoryQtyToDeduct,
+} from './order-inventory-deduction'
 export { syncFulfillmentToShopify } from './fulfillment-sync'
 export { syncInventoryToShopify, fetchShopifyProducts } from './inventory-sync'
 export { syncReturnToShopify } from './returns-sync'

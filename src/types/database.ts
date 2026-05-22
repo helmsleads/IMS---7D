@@ -1364,6 +1364,8 @@ export interface WebhookEvent {
 // Shopify-specific types
 export interface ShopifyFulfillment {
   created_at: string
+  delivered_at?: string | null
+  display_status?: string | null
   tracking_number?: string | null
   tracking_company?: string | null
 }

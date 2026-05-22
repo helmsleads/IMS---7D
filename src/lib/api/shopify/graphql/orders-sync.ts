@@ -44,6 +44,7 @@ const SYNC_ORDERS_QUERY = `#graphql
           fulfillments(first: 10) {
             createdAt
             status
+            displayStatus
             deliveredAt
             trackingInfo(first: 5) {
               number
@@ -146,6 +147,7 @@ interface GqlShippingAddress {
 interface GqlFulfillmentNode {
   createdAt: string
   status?: string | null
+  displayStatus?: string | null
   deliveredAt?: string | null
   trackingInfo?: Array<{ number?: string | null; company?: string | null }>
 }
@@ -235,14 +237,13 @@ function mapFulfillments(
   fulfillments: GqlFulfillmentNode[] | undefined
 ): ShopifyFulfillment[] {
   if (!fulfillments?.length) return []
-  return fulfillments.map((f) => {
-    const tracking = f.trackingInfo?.[0]
-    return {
-      created_at: f.createdAt,
-      tracking_number: tracking?.number ?? null,
-      tracking_company: tracking?.company ?? null,
-    }
-  })
+  return fulfillments.map((f) => ({
+    created_at: f.createdAt,
+    delivered_at: f.deliveredAt ?? null,
+    display_status: f.displayStatus ?? null,
+    tracking_number: f.trackingInfo?.[0]?.number ?? null,
+    tracking_company: f.trackingInfo?.[0]?.company ?? null,
+  }))
 }
 
 function mapOrderNode(node: GqlOrderNode): ShopifyOrder {

@@ -7,10 +7,14 @@ import {
   mapShopifyFulfillmentToImsStatus,
   shouldAdvanceImsStatus,
   extractShopifyTracking,
+  extractDeliveryDate,
+  shopifyLineItemQtyShipped,
 } from './order-status-sync'
+import { deductInventoryFromShopifyFulfillment } from './order-inventory-deduction'
 import type {
   ClientIntegration,
   ShopifyOrder,
+  ShopifyLineItem,
   OutboundStatus,
   SyncTrigger,
 } from '@/types/database'
@@ -19,6 +23,8 @@ export {
   mapShopifyFulfillmentToImsStatus,
   shouldAdvanceImsStatus,
   extractShopifyTracking,
+  extractDeliveryDate,
+  shopifyLineItemQtyShipped,
 } from './order-status-sync'
 
 function isShopifyOrderCancelled(shopifyOrder: Record<string, unknown>): boolean {
@@ -28,18 +34,103 @@ function isShopifyOrderCancelled(shopifyOrder: Record<string, unknown>): boolean
 }
 
 /**
+ * Sync line item qty_requested / qty_shipped from Shopify line quantities.
+ */
+export async function syncShopifyOrderLineItems(
+  imsOrderId: string,
+  shopifyOrder: Record<string, unknown>,
+  integrationId: string
+): Promise<{ updated: boolean }> {
+  const supabase = createServiceClient()
+  const order = shopifyOrder as unknown as ShopifyOrder
+  const lineItems = order.line_items ?? []
+  if (!lineItems.length) return { updated: false }
+
+  const { data: mappings } = await supabase
+    .from('product_mappings')
+    .select('product_id, external_variant_id, external_sku')
+    .eq('integration_id', integrationId)
+
+  const mappingsByVariant = new Map(
+    (mappings || []).map((m) => [String(m.external_variant_id), m.product_id])
+  )
+  const mappingsBySku = new Map(
+    (mappings || [])
+      .filter((m) => m.external_sku)
+      .map((m) => [m.external_sku!.toLowerCase(), m.product_id])
+  )
+
+  const { data: outboundItems } = await supabase
+    .from('outbound_items')
+    .select('id, product_id, qty_requested, qty_shipped')
+    .eq('order_id', imsOrderId)
+
+  if (!outboundItems?.length) return { updated: false }
+
+  const itemsByProduct = new Map(outboundItems.map((i) => [i.product_id, i]))
+  let updated = false
+
+  for (const item of lineItems) {
+    if (!item.requires_shipping) continue
+
+    const productId = resolveMappedProductId(item, mappingsByVariant, mappingsBySku)
+    if (!productId) continue
+
+    const outboundItem = itemsByProduct.get(productId)
+    if (!outboundItem) continue
+
+    const qtyRequested = item.quantity
+    const qtyShipped = shopifyLineItemQtyShipped(item)
+
+    if (
+      outboundItem.qty_requested === qtyRequested &&
+      outboundItem.qty_shipped === qtyShipped
+    ) {
+      continue
+    }
+
+    const { error: itemError } = await supabase
+      .from('outbound_items')
+      .update({ qty_requested: qtyRequested, qty_shipped: qtyShipped })
+      .eq('id', outboundItem.id)
+
+    if (itemError) {
+      throw new Error(itemError.message)
+    }
+    updated = true
+    outboundItem.qty_requested = qtyRequested
+    outboundItem.qty_shipped = qtyShipped
+  }
+
+  return { updated }
+}
+
+function resolveMappedProductId(
+  item: ShopifyLineItem,
+  mappingsByVariant: Map<string, string>,
+  mappingsBySku: Map<string, string>
+): string | undefined {
+  const byVariant = mappingsByVariant.get(String(item.variant_id))
+  if (byVariant) return byVariant
+  if (item.sku) return mappingsBySku.get(item.sku.toLowerCase())
+  return undefined
+}
+
+/**
  * Apply Shopify fulfillment/cancel state to an existing IMS outbound order.
  * Status only moves forward (except cancel). Tracking is filled when Shopify ships.
  */
 export async function applyShopifyStatusToOrder(
   imsOrderId: string,
   shopifyOrder: Record<string, unknown>
-): Promise<{ updated: boolean; status?: string }> {
+): Promise<{ updated: boolean; status?: string; inventoryDeducted?: boolean }> {
   const supabase = createServiceClient()
 
   const { data: order, error } = await supabase
     .from('outbound_orders')
-    .select('id, status, notes, tracking_number, carrier, shipped_date')
+    .select(
+      'id, status, notes, tracking_number, carrier, shipped_date, delivered_date, integration_id'
+    )
     .eq('id', imsOrderId)
     .single()
 
@@ -47,48 +138,90 @@ export async function applyShopifyStatusToOrder(
     throw new Error(error?.message ?? 'Order not found')
   }
 
+  const fulfillments = shopifyOrder.fulfillments as
+    | Array<Record<string, unknown>>
+    | undefined
+
   const fulfillmentStatus = shopifyOrder.fulfillment_status as string | null | undefined
   const targetStatus = mapShopifyFulfillmentToImsStatus(fulfillmentStatus, {
     cancelled: isShopifyOrderCancelled(shopifyOrder),
+    fulfillments,
   })
 
-  if (!shouldAdvanceImsStatus(order.status, targetStatus)) {
+  const tracking = extractShopifyTracking(shopifyOrder)
+  let headerUpdated = false
+  let appliedStatus: string | undefined
+
+  if (shouldAdvanceImsStatus(order.status, targetStatus)) {
+    const update: Record<string, unknown> = { status: targetStatus }
+
+    if (targetStatus === 'shipped' || targetStatus === 'delivered') {
+      if (!order.shipped_date) {
+        update.shipped_date = tracking.shipped_at ?? new Date().toISOString()
+      }
+      if (tracking.tracking_number && !order.tracking_number) {
+        update.tracking_number = tracking.tracking_number
+      }
+      if (tracking.carrier && !order.carrier) {
+        update.carrier = tracking.carrier
+      }
+    }
+
+    if (targetStatus === 'delivered' && !order.delivered_date) {
+      update.delivered_date =
+        extractDeliveryDate(shopifyOrder) ?? new Date().toISOString()
+    }
+
+    if (targetStatus === 'cancelled') {
+      const stamp = new Date().toISOString()
+      update.notes =
+        `${order.notes || ''}\n[Status synced from Shopify: cancelled at ${stamp}]`.trim()
+    } else if (targetStatus !== order.status) {
+      const stamp = new Date().toISOString()
+      update.notes =
+        `${order.notes || ''}\n[Status synced from Shopify: ${targetStatus} at ${stamp}]`.trim()
+    }
+
+    const { error: updateError } = await supabase
+      .from('outbound_orders')
+      .update(update)
+      .eq('id', imsOrderId)
+
+    if (updateError) {
+      throw new Error(updateError.message)
+    }
+
+    headerUpdated = true
+    appliedStatus = targetStatus
+  }
+
+  const inventoryResult =
+    order.integration_id != null && !isShopifyOrderCancelled(shopifyOrder)
+      ? await deductInventoryFromShopifyFulfillment(
+          imsOrderId,
+          shopifyOrder,
+          order.integration_id
+        )
+      : { deducted: false, linesProcessed: 0 }
+
+  const lineResult =
+    order.integration_id != null
+      ? await syncShopifyOrderLineItems(
+          imsOrderId,
+          shopifyOrder,
+          order.integration_id
+        )
+      : { updated: false }
+
+  if (!headerUpdated && !lineResult.updated && !inventoryResult.deducted) {
     return { updated: false }
   }
 
-  const tracking = extractShopifyTracking(shopifyOrder)
-  const update: Record<string, unknown> = { status: targetStatus }
-
-  if (targetStatus === 'shipped') {
-    if (!order.shipped_date) {
-      update.shipped_date = tracking.shipped_at ?? new Date().toISOString()
-    }
-    if (tracking.tracking_number && !order.tracking_number) {
-      update.tracking_number = tracking.tracking_number
-    }
-    if (tracking.carrier && !order.carrier) {
-      update.carrier = tracking.carrier
-    }
+  return {
+    updated: true,
+    status: appliedStatus,
+    inventoryDeducted: inventoryResult.deducted,
   }
-
-  if (targetStatus === 'cancelled') {
-    const stamp = new Date().toISOString()
-    update.notes = `${order.notes || ''}\n[Status synced from Shopify: cancelled at ${stamp}]`.trim()
-  } else if (targetStatus !== order.status) {
-    const stamp = new Date().toISOString()
-    update.notes = `${order.notes || ''}\n[Status synced from Shopify: ${targetStatus} at ${stamp}]`.trim()
-  }
-
-  const { error: updateError } = await supabase
-    .from('outbound_orders')
-    .update(update)
-    .eq('id', imsOrderId)
-
-  if (updateError) {
-    throw new Error(updateError.message)
-  }
-
-  return { updated: true, status: targetStatus }
 }
 
 /** Webhook / REST payload → status sync for an order matched by Shopify id. */
@@ -159,14 +292,14 @@ export async function processShopifyOrder(
   const lineItems: Array<{
     product_id: string
     qty_requested: number
+    qty_shipped: number
     unit_price: number
   }> = []
 
   const unmappedItems: string[] = []
 
   for (const item of order.line_items || []) {
-    // Skip non-shippable items
-    if (!item.requires_shipping || item.fulfillable_quantity <= 0) {
+    if (!item.requires_shipping || item.quantity <= 0) {
       continue
     }
 
@@ -183,7 +316,8 @@ export async function processShopifyOrder(
 
     lineItems.push({
       product_id: mapping.product_id,
-      qty_requested: item.fulfillable_quantity,
+      qty_requested: item.quantity,
+      qty_shipped: 0,
       unit_price: parseFloat(item.price),
     })
   }
@@ -218,6 +352,7 @@ export async function processShopifyOrder(
 
   const initialStatus = mapShopifyFulfillmentToImsStatus(order.fulfillment_status, {
     cancelled: !!order.cancelled_at,
+    fulfillments: order.fulfillments,
   })
   const tracking = extractShopifyTracking(order as unknown as Record<string, unknown>)
 
@@ -251,10 +386,15 @@ export async function processShopifyOrder(
       requested_at: new Date().toISOString(),
   }
 
-  if (initialStatus === 'shipped') {
+  if (initialStatus === 'shipped' || initialStatus === 'delivered') {
     insertRow.shipped_date = tracking.shipped_at ?? new Date().toISOString()
     if (tracking.tracking_number) insertRow.tracking_number = tracking.tracking_number
     if (tracking.carrier) insertRow.carrier = tracking.carrier
+  }
+  if (initialStatus === 'delivered') {
+    insertRow.delivered_date =
+      extractDeliveryDate(order as unknown as Record<string, unknown>) ??
+      new Date().toISOString()
   }
 
   const { data: newOrder, error: orderError } = await supabase
@@ -275,6 +415,7 @@ export async function processShopifyOrder(
         order_id: newOrder.id,
         product_id: item.product_id,
         qty_requested: item.qty_requested,
+        qty_shipped: item.qty_shipped,
         unit_price: item.unit_price,
       }))
     )
@@ -282,6 +423,19 @@ export async function processShopifyOrder(
     if (itemsError) {
       console.error('Failed to create order items:', itemsError)
       // Don't throw - order was created, items can be added manually
+    } else {
+      const hasShopifyShipped = (order.line_items || []).some(
+        (item) => item.requires_shipping && shopifyLineItemQtyShipped(item) > 0
+      )
+      if (hasShopifyShipped) {
+        const payload = order as unknown as Record<string, unknown>
+        await deductInventoryFromShopifyFulfillment(
+          newOrder.id,
+          payload,
+          integrationData.id
+        )
+        await syncShopifyOrderLineItems(newOrder.id, payload, integrationData.id)
+      }
     }
   }
 
@@ -371,7 +525,7 @@ export async function syncShopifyOrders(
 
       // Skip fulfilled-with-no-shippable only when there is nothing to import
       const shippable = (order.line_items || []).some(
-        (item) => item.requires_shipping && item.fulfillable_quantity > 0
+        (item) => item.requires_shipping && item.quantity > 0
       )
       if (!shippable && order.fulfillment_status === 'fulfilled') {
         results.skipped++
