@@ -53,7 +53,9 @@ export default function IntegrationsHubPage() {
     loadIntegrations()
   }, [client?.id])
 
-  const shopifyIntegration = integrations.find((i) => i.platform === 'shopify')
+  const shopifyIntegration = integrations.find(
+    (i) => i.platform === 'shopify' && i.status === 'active'
+  )
 
   const handleRefresh = async (opts?: { silent?: boolean }) => {
     if (!client?.id) return

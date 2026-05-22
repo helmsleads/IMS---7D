@@ -150,6 +150,10 @@ export async function disconnectIntegration(integrationId: string, clientId: str
     .update({
       status: 'disconnected',
       access_token: null,
+      refresh_token: null,
+      webhook_secret: null,
+      webhooks_registered: false,
+      status_message: 'Disconnected by user',
       updated_at: new Date().toISOString(),
     })
     .eq('id', integrationId)

@@ -12,7 +12,7 @@ import { SHOPIFY_ADMIN_API_VERSION } from '@/lib/api/shopify/constants'
  * This endpoint:
  * 1. Verifies user authentication and authorization
  * 2. Deregisters webhooks from Shopify (cleanup)
- * 3. Deletes the integration record from database
+ * 3. Marks the integration disconnected (preserves orders, mappings, and sync history)
  */
 export async function DELETE(
   request: NextRequest,
@@ -73,34 +73,47 @@ export async function DELETE(
       .eq('id', integrationId)
       .single()
 
-    // Attempt to clean up in Shopify (best effort - don't fail if this fails)
+    // Attempt to clean up in Shopify (best effort - don't fail disconnect if this fails)
     if (integration?.access_token && integration?.shop_domain) {
-      const accessToken = decryptToken(integration.access_token)
+      try {
+        const accessToken = decryptToken(integration.access_token)
 
-      // Deregister webhooks
-      await deregisterShopifyWebhooks(integration.shop_domain, accessToken)
+        await deregisterShopifyWebhooks(integration.shop_domain, accessToken)
 
-      // Deactivate location if we created it
-      if (integration.location_created_by_us && integration.shopify_location_id) {
-        await deactivateShopifyLocation(
-          integration.shop_domain,
-          accessToken,
-          integration.shopify_location_id
-        ).catch((err) =>
-          console.warn('Failed to deactivate location (best effort):', err)
-        )
+        if (integration.location_created_by_us && integration.shopify_location_id) {
+          await deactivateShopifyLocation(
+            integration.shop_domain,
+            accessToken,
+            integration.shopify_location_id
+          ).catch((err) =>
+            console.warn('Failed to deactivate location (best effort):', err)
+          )
+        }
+      } catch (cleanupErr) {
+        console.warn('Shopify cleanup skipped (token/decrypt):', cleanupErr)
       }
     }
 
-    // Delete the integration (product mappings are preserved via FK with SET NULL or kept)
+    // Soft disconnect — do not DELETE: outbound_orders.integration_id references this row
     const { error } = await supabase
       .from('client_integrations')
-      .delete()
+      .update({
+        status: 'disconnected',
+        access_token: null,
+        refresh_token: null,
+        webhook_secret: null,
+        webhooks_registered: false,
+        status_message: 'Disconnected by user',
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', integrationId)
 
     if (error) {
-      console.error('Failed to delete integration:', error)
-      return NextResponse.json({ error: 'Failed to disconnect integration' }, { status: 500 })
+      console.error('Failed to disconnect integration:', error)
+      return NextResponse.json(
+        { error: 'Failed to disconnect integration', details: error.message },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({ success: true })
