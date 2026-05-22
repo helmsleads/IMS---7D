@@ -44,7 +44,7 @@ src/app/(portal)/portal/integrations/
 |------|-----------|---------|-------------|
 | `inventory` | outbound | event, cron, manual | Push IMS stock levels to Shopify |
 | `price` | outbound | event, cron, manual | Push product prices to Shopify variants |
-| `orders` | inbound | manual, webhook | Import Shopify orders; sync status/tracking; deduct 7D stock on Shopify fulfill when `default_location_id` is set |
+| `orders` | inbound | manual, webhook | Import Shopify orders; sync status/tracking; deduct 7D stock on Shopify fulfill (uses `settings.default_location_id` or first active pickable 7D location) |
 | `fulfillment` | outbound | event | Notify Shopify when orders are shipped |
 | `return` | outbound | event | Create Shopify refunds for processed returns |
 | `incoming` | outbound | event | Update Shopify inventory for incoming ASNs |

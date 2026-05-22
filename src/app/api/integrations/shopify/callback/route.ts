@@ -5,6 +5,7 @@ import { encryptToken, isEncryptionConfigured } from '@/lib/encryption'
 import { ensureShopifyLocation } from '@/lib/api/shopify/location-management'
 import { SHOPIFY_ADMIN_API_VERSION } from '@/lib/api/shopify/constants'
 import { normalizeShopifyShopDomain } from '@/lib/api/shopify/shop-domain'
+import { ensureIntegrationWarehouseLocation } from '@/lib/api/shopify/shopify-order-payload'
 
 const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID!
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET!
@@ -178,6 +179,8 @@ export async function GET(request: NextRequest) {
     console.error('Failed to save integration:', dbError)
     return NextResponse.redirect(`${APP_URL}/portal/integrations?error=save_failed`)
   }
+
+  await ensureIntegrationWarehouseLocation(supabase, integration.id)
 
   // Register webhooks with Shopify
   await registerShopifyWebhooks(integration.id, shopDomain, tokenData.access_token)

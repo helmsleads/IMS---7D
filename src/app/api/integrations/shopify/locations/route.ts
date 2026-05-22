@@ -13,6 +13,8 @@ import {
   getShopifyLocations,
   verifyLocationExists,
 } from '@/lib/api/shopify/location-management'
+import { ensureIntegrationWarehouseLocation } from '@/lib/api/shopify/shopify-order-payload'
+import type { IntegrationSettings } from '@/types/database'
 
 /**
  * GET /api/integrations/shopify/locations
@@ -203,13 +205,23 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // Update the integration with the new location
+    const imsWarehouseId = await ensureIntegrationWarehouseLocation(
+      serviceClient,
+      integration.id
+    )
+    const settings = (integration.settings ?? {}) as IntegrationSettings
+
+    // Update the integration with the new Shopify + 7D warehouse locations
     const { error: updateError } = await serviceClient
       .from('client_integrations')
       .update({
         shopify_location_id: locationId,
         shopify_location_name: selectedLocation.name,
         location_created_by_us: false,
+        settings: {
+          ...settings,
+          default_location_id: imsWarehouseId ?? settings.default_location_id,
+        },
         updated_at: new Date().toISOString(),
       })
       .eq('id', integration.id)

@@ -11,6 +11,10 @@ import {
   shopifyLineItemQtyShipped,
 } from './order-status-sync'
 import { deductInventoryFromShopifyFulfillment } from './order-inventory-deduction'
+import {
+  normalizeShopifyOrderPayload,
+  ensureIntegrationWarehouseLocation,
+} from './shopify-order-payload'
 import type {
   ClientIntegration,
   ShopifyOrder,
@@ -125,6 +129,7 @@ export async function applyShopifyStatusToOrder(
   shopifyOrder: Record<string, unknown>
 ): Promise<{ updated: boolean; status?: string; inventoryDeducted?: boolean }> {
   const supabase = createServiceClient()
+  const normalizedOrder = normalizeShopifyOrderPayload(shopifyOrder)
 
   const { data: order, error } = await supabase
     .from('outbound_orders')
@@ -138,17 +143,17 @@ export async function applyShopifyStatusToOrder(
     throw new Error(error?.message ?? 'Order not found')
   }
 
-  const fulfillments = shopifyOrder.fulfillments as
+  const fulfillments = normalizedOrder.fulfillments as
     | Array<Record<string, unknown>>
     | undefined
 
-  const fulfillmentStatus = shopifyOrder.fulfillment_status as string | null | undefined
+  const fulfillmentStatus = normalizedOrder.fulfillment_status as string | null | undefined
   const targetStatus = mapShopifyFulfillmentToImsStatus(fulfillmentStatus, {
-    cancelled: isShopifyOrderCancelled(shopifyOrder),
+    cancelled: isShopifyOrderCancelled(normalizedOrder),
     fulfillments,
   })
 
-  const tracking = extractShopifyTracking(shopifyOrder)
+  const tracking = extractShopifyTracking(normalizedOrder)
   let headerUpdated = false
   let appliedStatus: string | undefined
 
@@ -169,7 +174,7 @@ export async function applyShopifyStatusToOrder(
 
     if (targetStatus === 'delivered' && !order.delivered_date) {
       update.delivered_date =
-        extractDeliveryDate(shopifyOrder) ?? new Date().toISOString()
+        extractDeliveryDate(normalizedOrder) ?? new Date().toISOString()
     }
 
     if (targetStatus === 'cancelled') {
@@ -196,10 +201,10 @@ export async function applyShopifyStatusToOrder(
   }
 
   const inventoryResult =
-    order.integration_id != null && !isShopifyOrderCancelled(shopifyOrder)
+    order.integration_id != null && !isShopifyOrderCancelled(normalizedOrder)
       ? await deductInventoryFromShopifyFulfillment(
           imsOrderId,
-          shopifyOrder,
+          normalizedOrder,
           order.integration_id
         )
       : { deducted: false, linesProcessed: 0 }
@@ -208,7 +213,7 @@ export async function applyShopifyStatusToOrder(
     order.integration_id != null
       ? await syncShopifyOrderLineItems(
           imsOrderId,
-          shopifyOrder,
+          normalizedOrder,
           order.integration_id
         )
       : { updated: false }
@@ -229,6 +234,7 @@ export async function syncShopifyOrderStatusFromPayload(
   payload: Record<string, unknown>
 ): Promise<{ updated: boolean; status?: string }> {
   const supabase = createServiceClient()
+  const normalized = normalizeShopifyOrderPayload(payload)
 
   const { data: order } = await supabase
     .from('outbound_orders')
@@ -241,7 +247,7 @@ export async function syncShopifyOrderStatusFromPayload(
     return { updated: false }
   }
 
-  return applyShopifyStatusToOrder(order.id, payload)
+  return applyShopifyStatusToOrder(order.id, normalized)
 }
 
 /**
@@ -407,6 +413,8 @@ export async function processShopifyOrder(
     console.error('Failed to create order:', orderError)
     throw new Error(`Failed to create order: ${orderError.message}`)
   }
+
+  await ensureIntegrationWarehouseLocation(supabase, integrationData.id)
 
   // Create line items
   if (lineItems.length > 0) {

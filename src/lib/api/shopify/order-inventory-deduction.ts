@@ -1,5 +1,9 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { shopifyLineItemQtyShipped } from './order-status-sync'
+import {
+  normalizeShopifyOrderPayload,
+  resolveWarehouseLocationForIntegration,
+} from './shopify-order-payload'
 import type { ShopifyLineItem, ShopifyOrder } from '@/types/database'
 
 /** Additional units to deduct in 7D based on Shopify fulfilled qty vs current qty_shipped. */
@@ -21,10 +25,32 @@ function resolveMappedProductId(
   return undefined
 }
 
+async function shipQtyAlreadyRecorded(
+  supabase: ReturnType<typeof createServiceClient>,
+  imsOrderId: string,
+  productId: string,
+  targetQty: number
+): Promise<number> {
+  const { data: txs } = await supabase
+    .from('inventory_transactions')
+    .select('qty_change')
+    .eq('reference_type', 'outbound_order')
+    .eq('reference_id', imsOrderId)
+    .eq('product_id', productId)
+    .eq('transaction_type', 'ship')
+
+  if (!txs?.length) return 0
+
+  const deducted = txs.reduce(
+    (sum, tx) => sum + Math.abs(Number(tx.qty_change) || 0),
+    0
+  )
+  return Math.max(0, targetQty - deducted)
+}
+
 /**
  * Deduct 7D warehouse inventory when Shopify reports fulfilled quantities.
- * Uses integration settings.default_location_id. Idempotent: only deducts the
- * delta between Shopify shipped qty and outbound_items.qty_shipped.
+ * Idempotent via qty_shipped delta and existing ship transactions.
  */
 export async function deductInventoryFromShopifyFulfillment(
   imsOrderId: string,
@@ -32,30 +58,22 @@ export async function deductInventoryFromShopifyFulfillment(
   integrationId: string
 ): Promise<{ deducted: boolean; linesProcessed: number }> {
   const supabase = createServiceClient()
-  const order = shopifyOrder as unknown as ShopifyOrder
+  const normalized = normalizeShopifyOrderPayload(shopifyOrder)
+  const order = normalized as unknown as ShopifyOrder
   const lineItems = order.line_items ?? []
 
   if (!lineItems.length) {
     return { deducted: false, linesProcessed: 0 }
   }
 
-  const { data: integration, error: intError } = await supabase
-    .from('client_integrations')
-    .select('settings')
-    .eq('id', integrationId)
-    .single()
-
-  if (intError || !integration) {
-    console.warn(`deductInventoryFromShopifyFulfillment: integration ${integrationId} not found`)
-    return { deducted: false, linesProcessed: 0 }
-  }
-
-  const locationId = (integration.settings as { default_location_id?: string | null })
-    ?.default_location_id
+  const locationId = await resolveWarehouseLocationForIntegration(
+    supabase,
+    integrationId
+  )
 
   if (!locationId) {
     console.warn(
-      `deductInventoryFromShopifyFulfillment: no default_location_id on integration ${integrationId}, skipping inventory deduct`
+      `deductInventoryFromShopifyFulfillment: no 7D warehouse location for integration ${integrationId}`
     )
     return { deducted: false, linesProcessed: 0 }
   }
@@ -98,10 +116,22 @@ export async function deductInventoryFromShopifyFulfillment(
     if (!outboundItem) continue
 
     const targetQty = shopifyLineItemQtyShipped(line)
-    const qtyToDeduct = shopifyInventoryQtyToDeduct(
+    if (targetQty <= 0) continue
+
+    let qtyToDeduct = shopifyInventoryQtyToDeduct(
       targetQty,
       outboundItem.qty_shipped ?? 0
     )
+
+    // Recover if line qty was synced without a prior ship transaction
+    if (qtyToDeduct <= 0) {
+      qtyToDeduct = await shipQtyAlreadyRecorded(
+        supabase,
+        imsOrderId,
+        productId,
+        targetQty
+      )
+    }
 
     if (qtyToDeduct <= 0) continue
 
@@ -117,20 +147,23 @@ export async function deductInventoryFromShopifyFulfillment(
       })
 
       if (releaseError) {
-        const { error: txError } = await supabase.rpc('update_inventory_with_transaction', {
-          p_product_id: productId,
-          p_location_id: locationId,
-          p_qty_change: -qtyToDeduct,
-          p_transaction_type: 'ship',
-          p_reference_type: 'outbound_order',
-          p_reference_id: imsOrderId,
-          p_lot_id: null,
-          p_sublocation_id: null,
-          p_reason: 'Shopify fulfillment sync',
-          p_notes: null,
-          p_performed_by: null,
-          p_fill_status: 'full',
-        })
+        const { error: txError } = await supabase.rpc(
+          'update_inventory_with_transaction',
+          {
+            p_product_id: productId,
+            p_location_id: locationId,
+            p_qty_change: -qtyToDeduct,
+            p_transaction_type: 'ship',
+            p_reference_type: 'outbound_order',
+            p_reference_id: imsOrderId,
+            p_lot_id: null,
+            p_sublocation_id: null,
+            p_reason: 'Shopify fulfillment sync',
+            p_notes: null,
+            p_performed_by: null,
+            p_fill_status: 'full',
+          }
+        )
 
         if (txError) {
           console.error(
@@ -139,6 +172,20 @@ export async function deductInventoryFromShopifyFulfillment(
           )
           continue
         }
+      }
+
+      const { error: itemUpdateError } = await supabase
+        .from('outbound_items')
+        .update({ qty_shipped: targetQty })
+        .eq('id', outboundItem.id)
+
+      if (itemUpdateError) {
+        console.error(
+          `Shopify qty_shipped update failed for item ${outboundItem.id}:`,
+          itemUpdateError.message
+        )
+      } else {
+        outboundItem.qty_shipped = targetQty
       }
 
       deducted = true
@@ -154,6 +201,7 @@ export async function deductInventoryFromShopifyFulfillment(
           source: 'shopify_fulfillment_sync',
           product_id: productId,
           qty_deducted: qtyToDeduct,
+          qty_shipped: targetQty,
           location_id: locationId,
           order_id: imsOrderId,
         },
