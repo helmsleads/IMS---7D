@@ -11,6 +11,14 @@ interface SendEmailResult {
   error?: string;
 }
 
+/** Resend requires the domain in the From address to be verified at resend.com/domains */
+export function getResendFromAddress(): string {
+  return (
+    process.env.RESEND_FROM_EMAIL?.trim() ||
+    "7 Degrees Co <noreply@7degreesco.com>"
+  );
+}
+
 export async function sendEmail(
   to: string,
   subject: string,
@@ -19,7 +27,7 @@ export async function sendEmail(
   try {
     const resend = getResend();
     const { data, error } = await resend.emails.send({
-      from: "7 Degrees Co <noreply@7degreesco.com>",
+      from: getResendFromAddress(),
       to,
       subject,
       html,

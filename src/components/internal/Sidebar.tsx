@@ -119,6 +119,7 @@ const navGroups: NavGroup[] = [
         path: "/clients",
         children: [
           { label: "All Clients", path: "/clients", icon: Building2 },
+          { label: "Users", path: "/clients/all-users", icon: Users },
           { label: "Portal Users", path: "/clients/users", icon: UserCog },
         ],
       },
