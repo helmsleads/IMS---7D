@@ -2,6 +2,59 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createServiceClient } from "@/lib/supabase-service";
 
+export async function GET(request: NextRequest) {
+  try {
+    // Verify the caller is an authenticated internal user
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() { return request.cookies.getAll(); },
+          setAll() {},
+        },
+      }
+    );
+
+    const { data: { user }, error: authCheckError } = await supabase.auth.getUser();
+    if (authCheckError) {
+      return NextResponse.json({ error: "Auth error: " + authCheckError.message }, { status: 401 });
+    }
+    if (!user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+
+    // Ensure caller is an active internal user
+    const { data: callerUser } = await supabase
+      .from("users")
+      .select("id, active")
+      .eq("id", user.id)
+      .single();
+
+    if (!callerUser || !callerUser.active) {
+      return NextResponse.json({ error: "Internal access required" }, { status: 403 });
+    }
+
+    const serviceClient = createServiceClient();
+    const { data, error } = await serviceClient
+      .from("users")
+      .select("id, name, email, role, active, created_at")
+      .order("name");
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ users: data || [] });
+  } catch (err) {
+    console.error("Internal users GET route error:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Verify the caller is an authenticated admin

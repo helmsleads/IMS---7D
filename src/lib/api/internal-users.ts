@@ -27,18 +27,18 @@ export interface InviteInternalUserData {
  * Get all internal users (staff)
  */
 export async function getInternalUsers(): Promise<InternalUser[]> {
-  const supabase = createClient();
+  const response = await fetch("/api/internal-users", {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
 
-  const { data, error } = await supabase
-    .from("users")
-    .select("id, name, email, role, active, created_at")
-    .order("name");
+  const result = await response.json();
 
-  if (error) {
-    throw new Error(error.message);
+  if (!response.ok) {
+    throw new Error(result.error || "Failed to fetch internal users");
   }
 
-  return data || [];
+  return result.users || [];
 }
 
 /**
