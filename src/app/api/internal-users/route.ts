@@ -2,47 +2,67 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createServiceClient } from "@/lib/supabase-service";
 
+async function getCallerInternalUser(
+  request: NextRequest,
+  fields = "id, auth_id, role, active"
+) {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return request.cookies.getAll(); },
+        setAll() {},
+      },
+    }
+  );
+
+  const { data: { user }, error: authCheckError } = await supabase.auth.getUser();
+  if (authCheckError) {
+    return { supabase, user: null, callerUser: null, error: "Auth error: " + authCheckError.message };
+  }
+  if (!user) {
+    return { supabase, user: null, callerUser: null, error: "Not authenticated" };
+  }
+
+  // Resolve caller with service role (bypass RLS) after auth is verified.
+  // Support both mappings:
+  // - users.id == auth user id (new/default)
+  // - users.auth_id == auth user id (legacy)
+  const serviceClient = createServiceClient();
+  const { data: callerUser } = await serviceClient
+    .from("users")
+    .select(fields)
+    .or(`id.eq.${user.id},auth_id.eq.${user.id}`)
+    .maybeSingle();
+
+  return {
+    supabase,
+    user,
+    callerUser: callerUser as { id: string; auth_id?: string | null; role?: string; active?: boolean | null } | null,
+    error: null,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
-    // Verify the caller is an authenticated internal user
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return request.cookies.getAll(); },
-          setAll() {},
-        },
-      }
-    );
-
-    const { data: { user }, error: authCheckError } = await supabase.auth.getUser();
-    if (authCheckError) {
-      return NextResponse.json({ error: "Auth error: " + authCheckError.message }, { status: 401 });
-    }
-    if (!user) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    const { callerUser, error: authError } = await getCallerInternalUser(request, "id, auth_id, active");
+    if (authError) {
+      return NextResponse.json({ error: authError }, { status: 401 });
     }
 
-    // Ensure caller is an active internal user
-    const { data: callerUser } = await supabase
-      .from("users")
-      .select("id, active")
-      .eq("id", user.id)
-      .single();
-
-    if (!callerUser || !callerUser.active) {
+    if (!callerUser || callerUser.active === false) {
       return NextResponse.json({ error: "Internal access required" }, { status: 403 });
     }
 
     const serviceClient = createServiceClient();
-    const { data, error } = await serviceClient
+    const { data, error: usersError } = await serviceClient
       .from("users")
       .select("id, name, email, role, active, created_at")
       .order("name");
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (usersError) {
+      return NextResponse.json({ error: usersError.message }, { status: 500 });
     }
 
     return NextResponse.json({ users: data || [] });
@@ -57,34 +77,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify the caller is an authenticated admin
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return request.cookies.getAll(); },
-          setAll() {},
-        },
-      }
-    );
-
-    const { data: { user }, error: authCheckError } = await supabase.auth.getUser();
-    if (authCheckError) {
-      console.error("Auth check error:", authCheckError.message);
-      return NextResponse.json({ error: "Auth error: " + authCheckError.message }, { status: 401 });
-    }
-    if (!user) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    const { callerUser, error: authLookupError } = await getCallerInternalUser(request, "id, auth_id, role, active");
+    if (authLookupError) {
+      return NextResponse.json({ error: authLookupError }, { status: 401 });
     }
 
-    const { data: callerUser } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (!callerUser || callerUser.role !== "admin") {
+    if (!callerUser || callerUser.active === false || callerUser.role !== "admin") {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 

@@ -2,7 +2,16 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { Package, Truck, Boxes, PackageCheck, Settings, CalendarCheck, LayoutGrid } from "lucide-react";
+import {
+  Package,
+  Truck,
+  Boxes,
+  PackageCheck,
+  Settings,
+  CalendarCheck,
+  LayoutGrid,
+  MessageSquare,
+} from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import StatCard from "@/components/ui/StatCard";
 import Spinner from "@/components/ui/Spinner";
@@ -38,7 +47,6 @@ interface DashboardStats {
   stockBreakdown: string;
   activeOrders: number;
   recentArrivals: number;
-  accountManagerName: string | null;
 }
 
 interface RecentOrder {
@@ -63,7 +71,6 @@ export default function PortalDashboardPage() {
     stockBreakdown: "",
     activeOrders: 0,
     recentArrivals: 0,
-    accountManagerName: null,
   });
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [activeOrdersList, setActiveOrdersList] = useState<RecentOrder[]>([]);
@@ -151,28 +158,11 @@ export default function PortalDashboardPage() {
         .eq("status", "received")
         .gte("created_at", thirtyDaysAgo.toISOString());
 
-      // Fetch account manager name if assigned
-      let accountManagerName: string | null = null;
-      const { data: clientRecord } = await supabase
-        .from("clients")
-        .select("account_manager_id")
-        .eq("id", client.id)
-        .single();
-      if (clientRecord?.account_manager_id) {
-        const { data: manager } = await supabase
-          .from("users")
-          .select("name")
-          .eq("id", clientRecord.account_manager_id)
-          .single();
-        accountManagerName = manager?.name || null;
-      }
-
       setStats({
         totalProducts,
         stockBreakdown,
         activeOrders: activeOrders || 0,
         recentArrivals: recentArrivals || 0,
-        accountManagerName,
       });
 
       const { data: recentData } = await supabase
@@ -360,11 +350,6 @@ export default function PortalDashboardPage() {
               <p className="text-slate-500 mt-1">
                 Welcome to your 7 Degrees inventory portal. Here&apos;s an overview of your account.
               </p>
-              {stats.accountManagerName && (
-                <p className="text-sm text-slate-500 mt-1">
-                  Your account manager: <span className="font-medium text-slate-700">{stats.accountManagerName}</span>
-                </p>
-              )}
             </div>
             <button
               onClick={() => setShowCustomizer(!showCustomizer)}
@@ -399,6 +384,18 @@ export default function PortalDashboardPage() {
             >
               <Truck className="w-4 h-4" />
               Request Shipment
+            </Link>
+            <Link
+              href="/portal/messages"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-white text-slate-700 font-medium rounded-lg border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors text-sm"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Messages
+              {unreadMessages > 0 && (
+                <span className="ml-1 min-w-[1.25rem] h-5 px-1.5 bg-cyan-600 text-white text-xs font-semibold rounded-full flex items-center justify-center">
+                  {unreadMessages > 99 ? "99+" : unreadMessages}
+                </span>
+              )}
             </Link>
           </div>
         </div>

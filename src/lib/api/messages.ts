@@ -1,6 +1,15 @@
 import { createClient } from "@/lib/supabase";
 import { Conversation, Message, ConversationStatus, SenderType } from "@/types/database";
 
+function notifyInternalUnreadChanged(detail?: {
+  clearedUnreadCount?: number;
+  conversationId?: string;
+}) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("internal-messages-unread-changed", { detail }));
+  }
+}
+
 export interface ConversationFilters {
   clientId?: string;
   status?: ConversationStatus;
@@ -11,6 +20,8 @@ export interface ConversationWithMessages extends Omit<Conversation, 'client' | 
   client: {
     id: string;
     company_name: string;
+    account_manager_id?: string | null;
+    account_manager?: { id: string; name: string } | null;
   };
 }
 
@@ -22,7 +33,12 @@ export async function getConversations(filters?: ConversationFilters): Promise<C
     .select(`
       *,
       messages (*),
-      client:clients (id, company_name)
+      client:clients (
+        id,
+        company_name,
+        account_manager_id,
+        account_manager:users!account_manager_id (id, name)
+      )
     `)
     .order("last_message_at", { ascending: false, nullsFirst: false });
 
@@ -128,6 +144,17 @@ export async function closeConversation(id: string): Promise<Conversation> {
 
 export async function getUnreadCount(): Promise<number> {
   try {
+    // Server fallback first to avoid client-side RLS returning stale 0.
+    try {
+      const response = await fetch("/api/internal/messages?mode=unread");
+      const result = await response.json();
+      if (response.ok) {
+        return result.count || 0;
+      }
+    } catch {
+      // Ignore and continue to direct query fallback.
+    }
+
     const supabase = createClient();
 
     const { count, error } = await supabase
@@ -218,6 +245,25 @@ export async function sendMessage(
     .single();
 
   if (messageError) {
+    if (messageError.message?.toLowerCase().includes("row-level security")) {
+      const response = await fetch("/api/internal/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId,
+          content,
+          senderType,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to send message");
+      }
+      notifyInternalUnreadChanged();
+
+      return result.message;
+    }
     throw new Error(messageError.message);
   }
 
@@ -243,6 +289,7 @@ export async function sendMessage(
     },
   });
 
+  notifyInternalUnreadChanged();
   return message;
 }
 
@@ -263,16 +310,22 @@ export async function markMessageRead(id: string): Promise<Message> {
   return data;
 }
 
-export async function markAllRead(conversationId: string): Promise<void> {
-  const supabase = createClient();
+export async function markAllRead(conversationId: string): Promise<number> {
+  const response = await fetch("/api/internal/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "mark-read",
+      conversationId,
+    }),
+  });
 
-  const { error } = await supabase
-    .from("messages")
-    .update({ read_at: new Date().toISOString() })
-    .eq("conversation_id", conversationId)
-    .is("read_at", null);
-
-  if (error) {
-    throw new Error(error.message);
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || "Failed to mark messages read");
   }
+
+  const clearedCount = result.clearedCount || 0;
+  notifyInternalUnreadChanged({ clearedUnreadCount: clearedCount, conversationId });
+  return clearedCount;
 }

@@ -10,6 +10,7 @@ import {
   Check,
   AlertCircle,
   ChevronLeft,
+  UserCircle,
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
@@ -29,6 +30,9 @@ import {
   PortalConversation,
   PortalConversationWithMessages,
 } from "@/lib/api/portal-messages";
+import PortalAccountManagerInfo, {
+  usePortalAccountManager,
+} from "@/components/portal/PortalAccountManagerInfo";
 
 export default function PortalMessagesPage() {
   const { client } = useClient();
@@ -49,6 +53,7 @@ export default function PortalMessagesPage() {
 
   // Mobile view state
   const [mobileShowThread, setMobileShowThread] = useState(false);
+  const { accountManager } = usePortalAccountManager(client?.id);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -225,7 +230,8 @@ export default function PortalMessagesPage() {
       const message = await sendPortalMessage(
         selectedConversation.id,
         client.id,
-        newMessage.trim()
+        newMessage.trim(),
+        selectedConversation.subject
       );
 
       // Add message to current view
@@ -396,7 +402,9 @@ export default function PortalMessagesPage() {
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Messages</h1>
           <p className="text-slate-500 mt-1">
-            Contact the 7 Degrees team
+            {accountManager
+              ? "Chat with your account manager in the portal"
+              : "Chat with the 7 Degrees team in the portal"}
           </p>
         </div>
         <Button onClick={() => setShowNewModal(true)}>
@@ -404,6 +412,8 @@ export default function PortalMessagesPage() {
           New Conversation
         </Button>
       </div>
+
+      <PortalAccountManagerInfo clientId={client?.id} />
 
       {/* Split View Container */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden min-h-[600px] flex">
@@ -476,7 +486,9 @@ export default function PortalMessagesPage() {
                 <MessageSquare className="w-12 h-12 text-slate-300 mb-3" />
                 <p className="text-slate-500 font-medium">No conversations yet</p>
                 <p className="text-sm text-slate-400 mt-1">
-                  Start a new conversation to contact support
+                  {accountManager
+                    ? `Start a conversation with ${accountManager.name}`
+                    : "Start a conversation with the 7 Degrees team"}
                 </p>
                 <Button
                   variant="ghost"
@@ -511,19 +523,32 @@ export default function PortalMessagesPage() {
                   <p className="font-semibold text-slate-900 truncate">
                     {selectedConversation.subject}
                   </p>
-                  <p className="text-sm text-slate-500">
-                    {selectedConversation.status === "open" ? (
-                      <span className="flex items-center gap-1">
-                        <CheckCircle className="w-3 h-3 text-green-500" />
-                        Open
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-slate-400" />
-                        Closed
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-0.5">
+                    {accountManager && (
+                      <span className="inline-flex items-center gap-1.5 text-sm text-slate-600">
+                        <UserCircle className="w-4 h-4 text-cyan-600 flex-shrink-0" />
+                        <span>
+                          Account manager:{" "}
+                          <span className="font-medium text-slate-800">
+                            {accountManager.name}
+                          </span>
+                        </span>
                       </span>
                     )}
-                  </p>
+                    <p className="text-sm text-slate-500">
+                      {selectedConversation.status === "open" ? (
+                        <span className="flex items-center gap-1">
+                          <CheckCircle className="w-3 h-3 text-green-500" />
+                          Open
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-400" />
+                          Closed
+                        </span>
+                      )}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -656,7 +681,9 @@ export default function PortalMessagesPage() {
                 Select a conversation to view messages
               </p>
               <p className="text-sm text-slate-400 mt-1">
-                Or start a new conversation with the team
+                {accountManager
+                  ? `Or start a new conversation with ${accountManager.name}`
+                  : "Or start a new conversation with the team"}
               </p>
               <Button size="sm" onClick={() => setShowNewModal(true)} className="mt-4">
                 <Plus className="w-4 h-4 mr-2" />
@@ -671,7 +698,11 @@ export default function PortalMessagesPage() {
       <Modal
         isOpen={showNewModal}
         onClose={() => setShowNewModal(false)}
-        title="New Conversation"
+        title={
+          accountManager
+            ? `Message ${accountManager.name}`
+            : "New Conversation"
+        }
         size="lg"
         footer={
           <>
@@ -693,7 +724,11 @@ export default function PortalMessagesPage() {
             label="Subject"
             value={newSubject}
             onChange={(e) => setNewSubject(e.target.value)}
-            placeholder="What can we help you with?"
+            placeholder={
+              accountManager
+                ? "What would you like to discuss with your account manager?"
+                : "What can we help you with?"
+            }
           />
           <Textarea
             label="Message"

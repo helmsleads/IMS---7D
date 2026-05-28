@@ -76,7 +76,7 @@ const formatMessageTime = (dateString: string) => {
 };
 
 export default function MessagesPage() {
-  const { user } = useAuth();
+  const { user, staffUser } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [conversations, setConversations] = useState<ConversationWithMessages[]>([]);
@@ -91,6 +91,7 @@ export default function MessagesPage() {
   // Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | "">("");
+  const [myClientsOnly, setMyClientsOnly] = useState(false);
 
   // New message
   const [newMessage, setNewMessage] = useState("");
@@ -121,18 +122,33 @@ export default function MessagesPage() {
     }
   };
 
+  const markClientMessagesReadLocally = (
+    msgs: Message[],
+    readAt: string
+  ): Message[] =>
+    msgs.map((m) =>
+      m.sender_type === "client" && !m.read_at ? { ...m, read_at: readAt } : m
+    );
+
+  const applyConversationReadLocally = (conversationId: string, readAt: string) => {
+    setMessages((prev) => markClientMessagesReadLocally(prev, readAt));
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === conversationId
+          ? { ...c, messages: markClientMessagesReadLocally(c.messages, readAt) }
+          : c
+      )
+    );
+  };
+
   const fetchMessages = async (conversationId: string) => {
     setLoadingMessages(true);
+    const readAt = new Date().toISOString();
     try {
       const messagesData = await getMessages(conversationId);
       setMessages(messagesData);
-      // Mark all as read
       await markAllRead(conversationId);
-      // Refresh conversations to update unread counts
-      const conversationsData = await getConversations({
-        status: statusFilter || undefined,
-      });
-      setConversations(conversationsData);
+      applyConversationReadLocally(conversationId, readAt);
     } catch (err) {
       setError(handleApiError(err));
     } finally {
@@ -180,7 +196,16 @@ export default function MessagesPage() {
               return [...prev, newMsg];
             });
             // Mark as read since we're viewing
-            markAllRead(selectedConversation.id).catch(() => {});
+            markAllRead(selectedConversation.id)
+              .then((cleared) => {
+                if (cleared > 0) {
+                  applyConversationReadLocally(
+                    selectedConversation.id,
+                    new Date().toISOString()
+                  );
+                }
+              })
+              .catch((err) => console.error("Failed to mark messages read:", err));
           }
         }
       )
@@ -234,14 +259,23 @@ export default function MessagesPage() {
   }, [statusFilter]);
 
   const filteredConversations = useMemo(() => {
-    if (!searchTerm) return conversations;
+    let list = conversations;
+
+    if (myClientsOnly && staffUser) {
+      list = list.filter(
+        (c) => c.client?.account_manager_id === staffUser.id
+      );
+    }
+
+    if (!searchTerm) return list;
     const search = searchTerm.toLowerCase();
-    return conversations.filter(
+    return list.filter(
       (c) =>
         c.subject.toLowerCase().includes(search) ||
-        c.client?.company_name.toLowerCase().includes(search)
+        c.client?.company_name.toLowerCase().includes(search) ||
+        c.client?.account_manager?.name?.toLowerCase().includes(search)
     );
-  }, [conversations, searchTerm]);
+  }, [conversations, searchTerm, myClientsOnly, staffUser]);
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedConversation || !user) return;
@@ -390,7 +424,7 @@ export default function MessagesPage() {
 
   if (error && conversations.length === 0) {
     return (
-      <AppShell title="Messages" subtitle="Client communications">
+      <AppShell title="Messages" subtitle="Client messages — reply in-platform">
         <FetchError message={error} onRetry={fetchConversations} />
       </AppShell>
     );
@@ -399,7 +433,7 @@ export default function MessagesPage() {
   return (
     <AppShell
       title="Messages"
-      subtitle="Client communications"
+      subtitle="Client messages — reply in-platform (no personal numbers)"
       actions={
         <Button onClick={() => setShowNewModal(true)}>
           <Plus className="w-4 h-4 mr-2" />
@@ -422,7 +456,7 @@ export default function MessagesPage() {
                 className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-wrap">
               {statusOptions.map((option) => (
                 <button
                   key={option.value}
@@ -437,6 +471,17 @@ export default function MessagesPage() {
                 </button>
               ))}
             </div>
+            {staffUser && (
+              <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={myClientsOnly}
+                  onChange={(e) => setMyClientsOnly(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                My clients only
+              </label>
+            )}
           </div>
 
           {/* Conversation List */}
@@ -496,6 +541,11 @@ export default function MessagesPage() {
                         <p className={`text-sm truncate ${unreadCount > 0 ? "text-gray-700" : "text-gray-500"}`}>
                           {conversation.subject}
                         </p>
+                        {conversation.client?.account_manager?.name && (
+                          <p className="text-xs text-gray-400 mt-0.5 truncate">
+                            AM: {conversation.client.account_manager.name}
+                          </p>
+                        )}
                         <div className="flex items-center justify-between gap-2 mt-1">
                           <p className="text-xs text-gray-400 truncate flex-1">
                             {lastMessage ? (

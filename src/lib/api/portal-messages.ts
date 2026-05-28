@@ -22,9 +22,103 @@ export interface PortalConversationWithMessages extends Omit<PortalConversation,
   messages: PortalMessage[];
 }
 
-export async function getMyConversations(clientId: string): Promise<PortalConversation[]> {
-  const supabase = createClient();
+export interface PortalAccountManager {
+  id: string;
+  name: string;
+}
 
+function notifyPortalUnreadChanged(detail?: { clearedUnreadCount?: number }) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("portal-messages-unread-changed", { detail }));
+  }
+}
+
+async function notifyAccountManagerViaApi(params: {
+  clientId: string;
+  conversationId: string;
+  subject: string;
+  messagePreview: string;
+  isNewConversation?: boolean;
+}): Promise<void> {
+  try {
+    await fetch("/api/portal/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "notify-account-manager",
+        ...params,
+      }),
+    });
+  } catch {
+    // Non-blocking — email is best-effort
+  }
+}
+
+export async function getPortalAccountManager(
+  clientId: string
+): Promise<PortalAccountManager | null> {
+  try {
+    const response = await fetch(
+      `/api/portal/messages?clientId=${encodeURIComponent(clientId)}&mode=account-manager`
+    );
+    const result = await response.json();
+    if (response.ok) {
+      return result.accountManager || null;
+    }
+  } catch {
+    // Fall through to direct query
+  }
+
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("clients")
+    .select(
+      "account_manager_id, account_manager:users!account_manager_id(id, name)"
+    )
+    .eq("id", clientId)
+    .maybeSingle();
+
+  const raw = data?.account_manager;
+  const manager = Array.isArray(raw) ? raw[0] : raw;
+  if (!data?.account_manager_id || !manager?.name) {
+    return null;
+  }
+
+  return { id: data.account_manager_id, name: manager.name };
+}
+
+async function fetchConversationsViaApi(clientId: string): Promise<PortalConversation[]> {
+  const response = await fetch(`/api/portal/messages?clientId=${encodeURIComponent(clientId)}`);
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || "Failed to fetch conversations");
+  }
+  return result.conversations || [];
+}
+
+async function fetchConversationViaApi(
+  clientId: string,
+  conversationId: string
+): Promise<PortalConversationWithMessages | null> {
+  const response = await fetch(
+    `/api/portal/messages?clientId=${encodeURIComponent(clientId)}&conversationId=${encodeURIComponent(conversationId)}`
+  );
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || "Failed to fetch conversation");
+  }
+  return result.conversation || null;
+}
+
+export async function getMyConversations(clientId: string): Promise<PortalConversation[]> {
+  // Server-first read to avoid client-side RLS/policy filtering issues.
+  try {
+    return await fetchConversationsViaApi(clientId);
+  } catch {
+    // Fall back to direct client query when API route is unavailable.
+  }
+
+  const supabase = createClient();
   const { data, error } = await supabase
     .from("conversations")
     .select(`
@@ -44,19 +138,13 @@ export async function getMyConversations(clientId: string): Promise<PortalConver
     .eq("client_id", clientId)
     .order("last_message_at", { ascending: false, nullsFirst: false });
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
   return (data || []).map((conv) => {
     const messages = conv.messages || [];
-
-    // Count unread messages from users (not from client)
     const unreadCount = messages.filter(
       (m: any) => m.sender_type === "user" && m.read_at === null
     ).length;
-
-    // Get last message preview
     const sortedMessages = [...messages].sort(
       (a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
@@ -81,8 +169,14 @@ export async function getMyConversation(
   clientId: string,
   conversationId: string
 ): Promise<PortalConversationWithMessages | null> {
-  const supabase = createClient();
+  // Server-first read to avoid client-side RLS/policy filtering issues.
+  try {
+    return await fetchConversationViaApi(clientId, conversationId);
+  } catch {
+    // Fall back to direct client query when API route is unavailable.
+  }
 
+  const supabase = createClient();
   const { data, error } = await supabase
     .from("conversations")
     .select(`
@@ -104,13 +198,10 @@ export async function getMyConversation(
     .single();
 
   if (error) {
-    if (error.code === "PGRST116") {
-      return null;
-    }
+    if (error.code === "PGRST116") return null;
     throw new Error(error.message);
   }
 
-  // Sort messages by created_at ascending
   const messages = (data.messages || []).sort(
     (a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
@@ -132,23 +223,26 @@ export async function getMyConversation(
 export async function markConversationRead(
   clientId: string,
   conversationId: string
-): Promise<void> {
-  const supabase = createClient();
-
-  // Get unread message IDs from staff in this conversation
-  const { data: unreadMessages } = await supabase
-    .from("messages")
-    .select("id")
-    .eq("conversation_id", conversationId)
-    .eq("sender_type", "user")
-    .is("read_at", null);
-
-  if (unreadMessages && unreadMessages.length > 0) {
-    await supabase
-      .from("messages")
-      .update({ read_at: new Date().toISOString() })
-      .in("id", unreadMessages.map((m) => m.id));
+): Promise<number> {
+  const response = await fetch("/api/portal/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "mark-read",
+      clientId,
+      conversationId,
+    }),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || "Failed to mark conversation as read");
   }
+
+  const clearedCount = result.clearedCount || 0;
+  if (clearedCount > 0) {
+    notifyPortalUnreadChanged({ clearedUnreadCount: clearedCount });
+  }
+  return clearedCount;
 }
 
 export async function startConversation(
@@ -156,6 +250,26 @@ export async function startConversation(
   subject: string,
   message: string
 ): Promise<PortalConversationWithMessages> {
+  try {
+    const response = await fetch("/api/portal/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "start",
+        clientId,
+        subject,
+        message,
+      }),
+    });
+
+    const result = await response.json();
+    if (response.ok) {
+      return result.conversation;
+    }
+  } catch {
+    // Fall back to direct client write
+  }
+
   const supabase = createClient();
 
   // Create the conversation
@@ -170,7 +284,27 @@ export async function startConversation(
     .select()
     .single();
 
+  // Fallback to server route if direct write is blocked by RLS
   if (convError) {
+    if (convError.message?.toLowerCase().includes("row-level security")) {
+      const response = await fetch("/api/portal/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "start",
+          clientId,
+          subject,
+          message,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to start conversation");
+      }
+      return result.conversation;
+    }
+
     throw new Error(convError.message);
   }
 
@@ -203,6 +337,14 @@ export async function startConversation(
     },
   });
 
+  void notifyAccountManagerViaApi({
+    clientId,
+    conversationId: conversation.id,
+    subject,
+    messagePreview: message,
+    isNewConversation: true,
+  });
+
   return {
     id: conversation.id,
     subject: conversation.subject,
@@ -216,9 +358,50 @@ export async function startConversation(
 export async function sendPortalMessage(
   conversationId: string,
   clientId: string,
-  content: string
+  content: string,
+  conversationSubject?: string
 ): Promise<PortalMessage> {
+  try {
+    const response = await fetch("/api/portal/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "send",
+        clientId,
+        conversationId,
+        content,
+      }),
+    });
+
+    const result = await response.json();
+    if (response.ok) {
+      notifyPortalUnreadChanged();
+      return result.message;
+    }
+  } catch {
+    // Fall back to direct client write
+  }
+
   const supabase = createClient();
+  const fallbackToApi = async (): Promise<PortalMessage> => {
+    const response = await fetch("/api/portal/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "send",
+        clientId,
+        conversationId,
+        content,
+      }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || "Failed to send message");
+    }
+    notifyPortalUnreadChanged();
+    return result.message;
+  };
 
   // Verify client owns this conversation
   const { data: conversation, error: convError } = await supabase
@@ -230,7 +413,10 @@ export async function sendPortalMessage(
 
   if (convError) {
     if (convError.code === "PGRST116") {
-      throw new Error("Conversation not found or access denied");
+      return fallbackToApi();
+    }
+    if (convError.message?.toLowerCase().includes("row-level security")) {
+      return fallbackToApi();
     }
     throw new Error(convError.message);
   }
@@ -251,7 +437,12 @@ export async function sendPortalMessage(
     .select()
     .single();
 
+  // Fallback to server route if direct write is blocked by RLS
   if (msgError) {
+    if (msgError.message?.toLowerCase().includes("row-level security")) {
+      return fallbackToApi();
+    }
+
     throw new Error(msgError.message);
   }
 
@@ -260,6 +451,10 @@ export async function sendPortalMessage(
     .from("conversations")
     .update({ last_message_at: new Date().toISOString() })
     .eq("id", conversationId);
+
+  // Once client sends from an open thread, any prior staff unread should be marked read.
+  await markConversationRead(clientId, conversationId).catch(() => {});
+  notifyPortalUnreadChanged();
 
   // Log activity
   await supabase.from("activity_log").insert({
@@ -273,10 +468,30 @@ export async function sendPortalMessage(
     },
   });
 
+  void notifyAccountManagerViaApi({
+    clientId,
+    conversationId,
+    subject: conversationSubject || "Conversation",
+    messagePreview: content,
+  });
+
   return message;
 }
 
 export async function getMyUnreadCount(clientId: string): Promise<number> {
+  // Server fallback first to avoid client-side RLS returning stale 0.
+  try {
+    const response = await fetch(
+      `/api/portal/messages?clientId=${encodeURIComponent(clientId)}&mode=unread`
+    );
+    const result = await response.json();
+    if (response.ok) {
+      return result.count || 0;
+    }
+  } catch {
+    // Ignore and continue to direct query fallback.
+  }
+
   const supabase = createClient();
 
   // Resolve the client's conversation IDs first, then count unread staff messages.

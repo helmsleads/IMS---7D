@@ -54,6 +54,7 @@ export default function ClientForm({
   const [submitError, setSubmitError] = useState("");
   const [workflowProfiles, setWorkflowProfiles] = useState<WorkflowProfile[]>([]);
   const [staffUsers, setStaffUsers] = useState<InternalUser[]>([]);
+  const [staffUsersError, setStaffUsersError] = useState("");
   const [profilesLoading, setProfilesLoading] = useState(true);
 
   const industries = getAllIndustries();
@@ -74,15 +75,25 @@ export default function ClientForm({
 
   useEffect(() => {
     const fetchData = async () => {
+      setProfilesLoading(true);
+      setStaffUsersError("");
+
       try {
-        const [profiles, users] = await Promise.all([
-          getWorkflowProfiles(),
-          getInternalUsers(),
-        ]);
+        const profiles = await getWorkflowProfiles();
         setWorkflowProfiles(profiles);
-        setStaffUsers(users.filter((u) => u.active));
       } catch (error) {
-        console.error("Failed to fetch form data:", error);
+        console.error("Failed to fetch workflow profiles:", error);
+      }
+
+      try {
+        const users = await getInternalUsers();
+        // Keep users unless explicitly deactivated. Some legacy rows may have null active.
+        setStaffUsers(users.filter((u) => u.active !== false));
+      } catch (error) {
+        console.error("Failed to fetch internal users:", error);
+        setStaffUsersError(
+          error instanceof Error ? error.message : "Failed to load account managers"
+        );
       } finally {
         setProfilesLoading(false);
       }
@@ -384,6 +395,9 @@ export default function ClientForm({
             <p className="mt-1 text-sm text-gray-500">
               Assign a staff member as the primary contact for this client
             </p>
+            {staffUsersError && (
+              <p className="mt-1 text-sm text-red-600">{staffUsersError}</p>
+            )}
           </div>
         </div>
       </Card>

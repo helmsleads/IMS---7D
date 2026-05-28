@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useMobileMenu } from "@/lib/mobile-menu-context";
 import { signOut } from "@/lib/auth";
+import { createClient } from "@/lib/supabase";
 import {
   LayoutDashboard,
   Package,
@@ -188,8 +189,42 @@ export default function Sidebar() {
 
     // Poll every 30 seconds
     const interval = setInterval(fetchUnreadCount, 30000);
+    const onUnreadChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<{ clearedUnreadCount?: number }>;
+      const clearedUnreadCount = customEvent.detail?.clearedUnreadCount;
+      if (typeof clearedUnreadCount === "number" && clearedUnreadCount > 0) {
+        setUnreadMessages((prev) => Math.max(0, prev - clearedUnreadCount));
+      }
+      fetchUnreadCount();
+    };
+    const onWindowFocus = () => {
+      fetchUnreadCount();
+    };
 
-    return () => clearInterval(interval);
+    window.addEventListener("internal-messages-unread-changed", onUnreadChanged);
+    window.addEventListener("focus", onWindowFocus);
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel("internal-sidebar:messages-unread")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        () => fetchUnreadCount()
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages" },
+        () => fetchUnreadCount()
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("internal-messages-unread-changed", onUnreadChanged);
+      window.removeEventListener("focus", onWindowFocus);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Fetch pending checklists count

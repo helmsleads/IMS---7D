@@ -176,7 +176,42 @@ export default function PortalSidebar({ companyName }: { companyName: string }) 
 
     fetchBadgeCounts();
     const interval = setInterval(fetchBadgeCounts, 30000);
-    return () => clearInterval(interval);
+    const onUnreadChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<{ clearedUnreadCount?: number }>;
+      const clearedUnreadCount = customEvent.detail?.clearedUnreadCount;
+      if (typeof clearedUnreadCount === "number" && clearedUnreadCount > 0) {
+        // Optimistic UI update so badge reacts immediately to read actions.
+        setUnreadCount((prev) => Math.max(0, prev - clearedUnreadCount));
+      }
+      fetchBadgeCounts();
+    };
+    const onWindowFocus = () => {
+      fetchBadgeCounts();
+    };
+
+    window.addEventListener("portal-messages-unread-changed", onUnreadChanged);
+    window.addEventListener("focus", onWindowFocus);
+
+    const channel = supabase
+      .channel("portal-sidebar:messages-unread")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        () => fetchBadgeCounts()
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages" },
+        () => fetchBadgeCounts()
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("portal-messages-unread-changed", onUnreadChanged);
+      window.removeEventListener("focus", onWindowFocus);
+      supabase.removeChannel(channel);
+    };
   }, [client]);
 
   // Close dropdown on outside click
