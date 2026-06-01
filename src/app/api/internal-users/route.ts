@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createServiceClient } from "@/lib/supabase-service";
+import {
+  sendUserInvitation,
+  formatInviteSuccessMessage,
+  type InviteFailure,
+} from "@/lib/server/invite-user";
+import type { UserRole } from "@/types/database";
+
+function inviteErrorResponse(failure: InviteFailure, status = 500) {
+  return NextResponse.json(
+    {
+      error: failure.error,
+      details: failure.details,
+      step: failure.step,
+    },
+    { status }
+  );
+}
 
 async function getCallerInternalUser(
   request: NextRequest,
@@ -87,6 +104,105 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const action = body.action as string | undefined;
+
+    if (action === "invite" || action === "resend") {
+      const serviceClient = createServiceClient();
+
+      if (action === "resend") {
+        const userId = (body.userId || body.id || "").trim();
+        const email = (body.email || "").trim().toLowerCase();
+
+        if (!userId || !email) {
+          return NextResponse.json(
+            { error: "userId and email are required" },
+            { status: 400 }
+          );
+        }
+
+        const { data: staff } = await serviceClient
+          .from("users")
+          .select("name, role")
+          .eq("id", userId)
+          .maybeSingle();
+
+        const inviteResult = await sendUserInvitation({
+          email,
+          full_name: staff?.name || email.split("@")[0],
+          user_type: "internal",
+          role: staff?.role,
+          invited_by: callerUser.id,
+          resend_user_id: userId,
+        });
+
+        if (!inviteResult.success) {
+          return inviteErrorResponse(inviteResult);
+        }
+
+        return NextResponse.json({
+          message: formatInviteSuccessMessage(
+            "Invitation processed.",
+            inviteResult
+          ),
+          emailSent: inviteResult.emailSent,
+        });
+      }
+
+      const name = (body.name || "").trim();
+      const email = (body.email || "").trim().toLowerCase();
+      const role = (body.role || "warehouse") as UserRole;
+
+      if (!name || !email) {
+        return NextResponse.json(
+          { error: "Name and email are required" },
+          { status: 400 }
+        );
+      }
+
+      const { data: existing } = await serviceClient
+        .from("users")
+        .select("id, active")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (existing?.active) {
+        return NextResponse.json(
+          { error: "A user with this email already exists." },
+          { status: 409 }
+        );
+      }
+
+      if (existing && !existing.active) {
+        await serviceClient
+          .from("users")
+          .update({ name, role, active: true })
+          .eq("id", existing.id);
+      }
+
+      const inviteResult = await sendUserInvitation({
+        email,
+        full_name: name,
+        user_type: "internal",
+        role,
+        invited_by: callerUser.id,
+        resend_user_id: existing?.id,
+      });
+
+      if (!inviteResult.success) {
+        return inviteErrorResponse(inviteResult);
+      }
+
+      const accountMessage = existing
+        ? "User was reactivated."
+        : "User created successfully.";
+
+      return NextResponse.json({
+        message: formatInviteSuccessMessage(accountMessage, inviteResult),
+        userId: inviteResult.userId,
+        emailSent: inviteResult.emailSent,
+      });
+    }
+
     const { name, email, password, role } = body;
 
     if (!name || !email || !password || !role) {

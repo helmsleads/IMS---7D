@@ -18,6 +18,24 @@ export type InviteFailure = {
   details?: string;
 };
 
+export type InviteSuccess = {
+  success: true;
+  userId: string;
+  emailSent: boolean;
+  emailWarning?: string;
+};
+
+export function formatInviteSuccessMessage(
+  accountMessage: string,
+  result: InviteSuccess
+): string {
+  if (result.emailSent) {
+    return `${accountMessage} Invitation email was sent.`;
+  }
+  const detail = result.emailWarning ? ` (${result.emailWarning})` : "";
+  return `${accountMessage} Invitation email could not be sent${detail} You can resend the invitation later.`;
+}
+
 export interface InviteUserParams {
   email: string;
   full_name: string;
@@ -76,14 +94,6 @@ function checkInviteConfiguration(): InviteFailure | null {
       error: "Supabase is not configured on the server.",
       details:
         "Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment.",
-    };
-  }
-  if (!process.env.RESEND_API_KEY) {
-    return {
-      success: false,
-      step: "configuration",
-      error: "Email service is not configured.",
-      details: "Set RESEND_API_KEY in the environment to send invitation emails.",
     };
   }
   if (!process.env.NEXT_PUBLIC_APP_URL) {
@@ -251,7 +261,7 @@ async function ensurePortalUserRecords(
  */
 export async function sendUserInvitation(
   params: InviteUserParams
-): Promise<{ success: true; userId: string } | InviteFailure> {
+): Promise<InviteSuccess | InviteFailure> {
   const configError = checkInviteConfiguration();
   if (configError) {
     console.error("invite configuration:", configError);
@@ -315,6 +325,19 @@ export async function sendUserInvitation(
       }
     }
 
+    if (!process.env.RESEND_API_KEY) {
+      console.warn(
+        "RESEND_API_KEY not set — user created without invitation email:",
+        params.email
+      );
+      return {
+        success: true,
+        userId,
+        emailSent: false,
+        emailWarning: "Email service is not configured (RESEND_API_KEY).",
+      };
+    }
+
     const emailResult = await sendEmail(
       params.email.trim().toLowerCase(),
       "You're invited to 7 Degrees",
@@ -322,18 +345,18 @@ export async function sendUserInvitation(
     );
 
     if (!emailResult.success) {
-      console.error("Resend email failed:", emailResult.error);
+      console.error("Invitation email failed (user was still created):", emailResult.error);
       return {
-        success: false,
-        step: "email",
-        error: "The invitation link was created but the email could not be sent.",
-        details:
+        success: true,
+        userId,
+        emailSent: false,
+        emailWarning:
           emailResult.error ||
-          "Check RESEND_API_KEY, RESEND_FROM_EMAIL, and verify the sender domain at https://resend.com/domains",
+          "Check RESEND_API_KEY, RESEND_FROM_EMAIL, and your sender domain at resend.com/domains",
       };
     }
 
-    return { success: true, userId };
+    return { success: true, userId, emailSent: true };
   } catch (err) {
     console.error("sendUserInvitation error:", err);
     const message = err instanceof Error ? err.message : String(err);
@@ -341,6 +364,91 @@ export async function sendUserInvitation(
       success: false,
       step: "auth_link",
       error: "An unexpected error occurred while sending the invitation.",
+      details: message,
+    };
+  }
+}
+
+/**
+ * Create portal auth + profile + client access without sending an invite email.
+ */
+export async function createPortalUserWithoutInvite(
+  params: InviteUserParams
+): Promise<{ success: true; userId: string } | InviteFailure> {
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.SUPABASE_SERVICE_ROLE_KEY
+  ) {
+    return {
+      success: false,
+      step: "configuration",
+      error: "Supabase is not configured on the server.",
+    };
+  }
+
+  if (!params.client_id) {
+    return {
+      success: false,
+      step: "portal_record",
+      error: "Client is required for portal users.",
+    };
+  }
+
+  try {
+    const service = createServiceClient();
+    const email = params.email.trim().toLowerCase();
+
+    const { data: existingProfile } = await service
+      .from("user_profiles")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (existingProfile) {
+      const { data: access } = await service
+        .from("client_users")
+        .select("id")
+        .eq("user_id", existingProfile.id)
+        .eq("client_id", params.client_id)
+        .maybeSingle();
+
+      if (access) {
+        return {
+          success: false,
+          step: "portal_record",
+          error: "This user already has access to this client.",
+        };
+      }
+    }
+
+    let userId = existingProfile?.id;
+
+    if (!userId) {
+      const { data: authData, error: authError } =
+        await service.auth.admin.createUser({
+          email,
+          email_confirm: false,
+          user_metadata: { full_name: params.full_name },
+        });
+
+      if (authError || !authData.user) {
+        return {
+          success: false,
+          step: "auth_link",
+          error: authError?.message || "Failed to create user account",
+        };
+      }
+      userId = authData.user.id;
+    }
+
+    await ensurePortalUserRecords(userId, params);
+    return { success: true, userId };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      step: "portal_record",
+      error: "Could not create the portal user.",
       details: message,
     };
   }

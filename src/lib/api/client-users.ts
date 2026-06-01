@@ -457,54 +457,42 @@ export async function invitePortalUser(
   role: ClientUserRole = "member",
   sendEmail: boolean = true
 ): Promise<{ success: boolean; message: string; userId?: string }> {
-  const supabase = createClient();
-
-  // Get the current session for the auth header
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
-    return {
-      success: false,
-      message: "Not authenticated",
-    };
-  }
-
   try {
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/invite-user`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          email: userData.email,
-          full_name: userData.full_name,
-          phone: userData.phone,
-          title: userData.title,
-          user_type: "portal",
-          client_id: clientId,
-          role: role,
-          send_email: sendEmail,
-        }),
-      }
-    );
+    const response = await fetch("/api/portal-users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "invite",
+        clientId,
+        email: userData.email.trim(),
+        full_name: userData.full_name?.trim() || "",
+        phone: userData.phone?.trim() || undefined,
+        title: userData.title?.trim() || undefined,
+        role,
+        send_email: sendEmail,
+      }),
+    });
 
     const result = await response.json();
 
     if (!response.ok) {
+      const main = result.error || "Failed to create user";
+      const details =
+        typeof result.details === "string" ? result.details : "";
       return {
         success: false,
-        message: result.error || "Failed to create user",
+        message: details ? `${main} — ${details}` : main,
       };
     }
 
     return {
       success: true,
-      message: sendEmail
-        ? "Invitation email sent successfully"
-        : "User created successfully. You can send the invitation later.",
-      userId: result.user?.id,
+      message:
+        result.message ||
+        (sendEmail
+          ? "Invitation email sent successfully"
+          : "User created successfully. You can send the invitation later."),
+      userId: result.userId,
     };
   } catch (error) {
     return {
@@ -521,46 +509,32 @@ export async function sendPortalUserInvite(
   userId: string,
   email: string
 ): Promise<{ success: boolean; message: string }> {
-  const supabase = createClient();
-
-  // Get the current session for the auth header
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
-    return {
-      success: false,
-      message: "Not authenticated",
-    };
-  }
-
   try {
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/invite-user`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          email: email,
-          user_type: "portal",
-          resend_user_id: userId,
-        }),
-      }
-    );
+    const response = await fetch("/api/portal-users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "resend",
+        userId,
+        email: email.trim(),
+      }),
+    });
 
     const result = await response.json();
 
     if (!response.ok) {
+      const main = result.error || "Failed to send invitation";
+      const details =
+        typeof result.details === "string" ? result.details : "";
       return {
         success: false,
-        message: result.error || "Failed to send invitation",
+        message: details ? `${main} — ${details}` : main,
       };
     }
 
     return {
       success: true,
-      message: "Invitation email sent successfully",
+      message: result.message || "Invitation email sent successfully",
     };
   } catch (error) {
     return {

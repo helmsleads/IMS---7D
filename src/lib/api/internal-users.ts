@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase";
 import { User, UserRole } from "@/types/database";
+import { parseFetchError } from "@/lib/api/parse-api-error";
 
 export interface InternalUser {
   id: string;
@@ -84,66 +85,82 @@ export async function createInternalUser(
 export async function inviteInternalUser(
   userData: InviteInternalUserData
 ): Promise<{ success: boolean; message: string }> {
-  const supabase = createClient();
-
-  // Check if email already exists in users table
-  const { data: existingUser } = await supabase
-    .from("users")
-    .select("id")
-    .eq("email", userData.email.toLowerCase())
-    .single();
-
-  if (existingUser) {
-    return {
-      success: false,
-      message: "A user with this email already exists.",
-    };
-  }
-
-  // Get the current session for the auth header
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
-    return {
-      success: false,
-      message: "Not authenticated",
-    };
-  }
-
   try {
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/invite-user`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          email: userData.email,
-          full_name: userData.name,
-          user_type: "internal",
-          role: userData.role,
-        }),
-      }
-    );
-
-    const result = await response.json();
+    const response = await fetch("/api/internal-users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "invite",
+        name: userData.name.trim(),
+        email: userData.email.trim(),
+        role: userData.role,
+      }),
+    });
 
     if (!response.ok) {
       return {
         success: false,
-        message: result.error || "Failed to send invitation",
+        message: await parseFetchError(response, "Failed to send invitation"),
       };
     }
 
+    const result = await response.json().catch(() => ({}));
     return {
       success: true,
-      message: "Invitation email sent successfully",
+      message:
+        (result as { message?: string }).message ||
+        "Invitation email sent successfully",
     };
   } catch (error) {
     return {
       success: false,
-      message: error instanceof Error ? error.message : "Failed to send invitation",
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to send invitation",
+    };
+  }
+}
+
+/**
+ * Resend an invitation email to an existing internal user.
+ */
+export async function resendInternalUserInvite(
+  userId: string,
+  email: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const response = await fetch("/api/internal-users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "resend",
+        userId,
+        email: email.trim(),
+      }),
+    });
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message: await parseFetchError(response, "Failed to resend invitation"),
+      };
+    }
+
+    const result = await response.json().catch(() => ({}));
+    return {
+      success: true,
+      message:
+        (result as { message?: string }).message ||
+        "The invitation has been resent.",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Failed to resend invitation",
     };
   }
 }
