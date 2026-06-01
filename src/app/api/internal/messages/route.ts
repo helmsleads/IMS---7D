@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createServiceClient } from "@/lib/supabase-service";
+import type { ConversationStatus } from "@/types/database";
+
+const VALID_STATUSES: ConversationStatus[] = ["open", "closed", "archived"];
 
 async function getAuthenticatedInternalUser(request: NextRequest) {
   const supabase = createServerClient(
@@ -43,6 +46,39 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const action = body?.action;
+
+    if (action === "update-status") {
+      const conversationId = (body?.conversationId || "").trim();
+      const status = body?.status as ConversationStatus | undefined;
+
+      if (!conversationId || !status) {
+        return NextResponse.json(
+          { error: "conversationId and status are required" },
+          { status: 400 }
+        );
+      }
+
+      if (!VALID_STATUSES.includes(status)) {
+        return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+      }
+
+      const service = createServiceClient();
+      const { data: conversation, error: updateError } = await service
+        .from("conversations")
+        .update({ status })
+        .eq("id", conversationId)
+        .select()
+        .single();
+
+      if (updateError || !conversation) {
+        return NextResponse.json(
+          { error: updateError?.message || "Failed to update conversation" },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ conversation });
+    }
 
     if (action === "mark-read") {
       const conversationId = (body?.conversationId || "").trim();

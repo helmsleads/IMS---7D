@@ -105,10 +105,42 @@ export async function createConversation(
   return data;
 }
 
+async function updateConversationStatusViaApi(
+  conversationId: string,
+  status: ConversationStatus
+): Promise<Conversation> {
+  const response = await fetch("/api/internal/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "update-status",
+      conversationId,
+      status,
+    }),
+  });
+
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || "Failed to update conversation");
+  }
+
+  return result.conversation;
+}
+
 export async function updateConversation(
   id: string,
   conversation: Partial<Conversation>
 ): Promise<Conversation> {
+  if (
+    Object.keys(conversation).length === 1 &&
+    conversation.status &&
+    (conversation.status === "open" ||
+      conversation.status === "closed" ||
+      conversation.status === "archived")
+  ) {
+    return updateConversationStatusViaApi(id, conversation.status);
+  }
+
   const supabase = createClient();
 
   const { data, error } = await supabase
@@ -119,6 +151,11 @@ export async function updateConversation(
     .single();
 
   if (error) {
+    if (error.message?.toLowerCase().includes("row-level security")) {
+      if (conversation.status) {
+        return updateConversationStatusViaApi(id, conversation.status);
+      }
+    }
     throw new Error(error.message);
   }
 
@@ -126,20 +163,7 @@ export async function updateConversation(
 }
 
 export async function closeConversation(id: string): Promise<Conversation> {
-  const supabase = createClient();
-
-  const { data, error } = await supabase
-    .from("conversations")
-    .update({ status: "closed" })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data;
+  return updateConversationStatusViaApi(id, "closed");
 }
 
 export async function getUnreadCount(): Promise<number> {

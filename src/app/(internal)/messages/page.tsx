@@ -364,9 +364,12 @@ export default function MessagesPage() {
 
     try {
       await closeConversation(selectedConversation.id);
-      await fetchConversations();
-      // Update selected conversation status locally
       setSelectedConversation({ ...selectedConversation, status: "closed" });
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === selectedConversation.id ? { ...c, status: "closed" } : c
+        )
+      );
     } catch (err) {
       setError(handleApiError(err));
     }
@@ -377,9 +380,12 @@ export default function MessagesPage() {
 
     try {
       await updateConversation(selectedConversation.id, { status: "open" });
-      await fetchConversations();
-      // Update selected conversation status locally
       setSelectedConversation({ ...selectedConversation, status: "open" });
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === selectedConversation.id ? { ...c, status: "open" } : c
+        )
+      );
     } catch (err) {
       setError(handleApiError(err));
     }
