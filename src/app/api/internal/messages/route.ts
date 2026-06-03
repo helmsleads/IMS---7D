@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createServiceClient } from "@/lib/supabase-service";
 import type { ConversationStatus } from "@/types/database";
+import {
+  addWarehouseManagerParticipant,
+  canAddWarehouseManager,
+  listParticipants,
+} from "@/lib/server/conversation-participants";
 
 const VALID_STATUSES: ConversationStatus[] = ["open", "closed", "archived"];
 
@@ -29,7 +34,7 @@ async function getAuthenticatedInternalUser(request: NextRequest) {
   const service = createServiceClient();
   const { data: internalUser } = await service
     .from("users")
-    .select("id, auth_id, active")
+    .select("id, auth_id, active, role, name")
     .or(`id.eq.${user.id},auth_id.eq.${user.id}`)
     .maybeSingle();
 
@@ -78,6 +83,44 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json({ conversation });
+    }
+
+    if (action === "add-participant") {
+      const conversationId = (body?.conversationId || "").trim();
+      const warehouseUserId = (body?.warehouseUserId || "").trim();
+
+      if (!conversationId || !warehouseUserId) {
+        return NextResponse.json(
+          { error: "conversationId and warehouseUserId are required" },
+          { status: 400 }
+        );
+      }
+
+      const permission = await canAddWarehouseManager(
+        conversationId,
+        auth.internalUser.id,
+        auth.internalUser.role || "viewer"
+      );
+
+      if (!permission.allowed) {
+        return NextResponse.json(
+          { error: "Only the account manager or an admin can add participants" },
+          { status: 403 }
+        );
+      }
+
+      const result = await addWarehouseManagerParticipant({
+        conversationId,
+        warehouseUserId,
+        addedByUserId: auth.internalUser.id,
+        addedByName: auth.internalUser.name || "A team member",
+      });
+
+      if (!result.success) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
+
+      return NextResponse.json({ participant: result.participant });
     }
 
     if (action === "mark-read") {
@@ -202,22 +245,100 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const mode = searchParams.get("mode");
-    if (mode !== "unread") {
-      return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
-    }
-
     const service = createServiceClient();
-    const { count, error } = await service
-      .from("messages")
-      .select("id", { count: "exact", head: true })
-      .is("read_at", null)
-      .eq("sender_type", "client");
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (mode === "warehouse-users") {
+      const { data, error } = await service
+        .from("users")
+        .select("id, name, email, role")
+        .eq("role", "warehouse")
+        .eq("active", true)
+        .order("name");
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ users: data || [] });
     }
 
-    return NextResponse.json({ count: count || 0 });
+    if (mode === "participants") {
+      const conversationId = (searchParams.get("conversationId") || "").trim();
+      if (!conversationId) {
+        return NextResponse.json(
+          { error: "conversationId is required" },
+          { status: 400 }
+        );
+      }
+
+      const participants = await listParticipants(conversationId);
+      return NextResponse.json({ participants });
+    }
+
+    if (mode === "list") {
+      const status = searchParams.get("status") as ConversationStatus | null;
+      let query = service
+        .from("conversations")
+        .select(
+          `
+          *,
+          messages (*),
+          client:clients (
+            id,
+            company_name,
+            account_manager_id,
+            account_manager:users!account_manager_id (id, name)
+          ),
+          participants:conversation_participants (
+            id,
+            user_id,
+            participant_role,
+            added_by,
+            added_at,
+            user:users!conversation_participants_user_id_fkey (id, name, email, role)
+          )
+        `
+        )
+        .order("last_message_at", { ascending: false, nullsFirst: false });
+
+      if (status && VALID_STATUSES.includes(status)) {
+        query = query.eq("status", status);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      const conversations = (data || []).map((row) => {
+        const participants = (row.participants || []).map((p: Record<string, unknown>) => {
+          const rawUser = p.user;
+          const user = Array.isArray(rawUser) ? rawUser[0] : rawUser;
+          return { ...p, user };
+        });
+        const { participants: _p, ...conv } = row;
+        return { ...conv, participants };
+      });
+
+      return NextResponse.json({ conversations });
+    }
+
+    if (mode === "unread") {
+      const { count, error } = await service
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .is("read_at", null)
+        .eq("sender_type", "client");
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ count: count || 0 });
+    }
+
+    return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Internal server error" },

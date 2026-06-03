@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, ChangeEvent } from "react";
+import { useState, useEffect, useRef, ChangeEvent } from "react";
 import AppShell from "@/components/internal/AppShell";
 import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
@@ -42,6 +42,7 @@ import {
   getInternalUsers,
   createInternalUser,
   inviteInternalUser,
+  resendInternalUserInvite,
   updateInternalUser,
   deactivateInternalUser,
   reactivateInternalUser,
@@ -1006,8 +1007,15 @@ function InternalUsersSection() {
     role: "warehouse" as UserRole,
   });
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  type UserFeedback = {
+    type: "success" | "warning" | "error";
+    message: string;
+    inviteLink?: string;
+  };
+  const [feedback, setFeedback] = useState<UserFeedback | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const modalFeedbackRef = useRef<HTMLDivElement>(null);
+  const listFeedbackRef = useRef<HTMLDivElement>(null);
 
   // Verify & Reset Password
   const [verifyingUser, setVerifyingUser] = useState<InternalUser | null>(null);
@@ -1017,10 +1025,19 @@ function InternalUsersSection() {
   const [resetPassword, setResetPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
   const [resetResult, setResetResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [resendingUserId, setResendingUserId] = useState<string | null>(null);
 
   useEffect(() => {
     loadUsers();
   }, []);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const target = showCreateModal
+      ? modalFeedbackRef.current
+      : listFeedbackRef.current;
+    target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [feedback, showCreateModal]);
 
   const loadUsers = async () => {
     try {
@@ -1041,22 +1058,32 @@ function InternalUsersSection() {
       password: "",
       role: "warehouse",
     });
-    setError(null);
-    setSuccess(null);
+    setFeedback(null);
+    setLinkCopied(false);
     setEditingUser(null);
     setCreateMode("invite");
+  };
+
+  const copyInviteLink = async (link: string) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      window.prompt("Copy this invitation link:", link);
+    }
   };
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.email.trim()) {
-      setError("Name and email are required");
+      setFeedback({ type: "error", message: "Name and email are required" });
       return;
     }
 
     setSubmitting(true);
-    setError(null);
-    setSuccess(null);
+    setFeedback(null);
+    setLinkCopied(false);
 
     try {
       const result = await inviteInternalUser({
@@ -1066,13 +1093,20 @@ function InternalUsersSection() {
       });
 
       if (result.success) {
-        setSuccess("Invitation sent! They will receive an email to set up their account.");
+        setFeedback({
+          type: result.warning ? "warning" : "success",
+          message: result.message,
+          inviteLink: result.inviteLink,
+        });
         await loadUsers();
       } else {
-        setError(result.message);
+        setFeedback({ type: "error", message: result.message });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send invitation");
+      setFeedback({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to send invitation",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -1081,18 +1115,20 @@ function InternalUsersSection() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.email.trim() || !formData.password.trim()) {
-      setError("Name, email, and password are required");
+      setFeedback({
+        type: "error",
+        message: "Name, email, and password are required",
+      });
       return;
     }
 
     if (formData.password.length < 8) {
-      setError("Password must be at least 8 characters");
+      setFeedback({ type: "error", message: "Password must be at least 8 characters" });
       return;
     }
 
     setSubmitting(true);
-    setError(null);
-    setSuccess(null);
+    setFeedback(null);
 
     try {
       const result = await createInternalUser({
@@ -1104,13 +1140,19 @@ function InternalUsersSection() {
 
       if (result.success) {
         await loadUsers();
-        setShowCreateModal(false);
-        resetForm();
+        setFeedback({
+          type: "warning",
+          message:
+            "User created with the password you set. No invitation email was sent. To email them a setup link, use Send Invite or the mail icon on their row.",
+        });
       } else {
-        setError(result.message);
+        setFeedback({ type: "error", message: result.message });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create user");
+      setFeedback({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to create user",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -1137,6 +1179,84 @@ function InternalUsersSection() {
       console.error("Failed to toggle user status:", err);
     }
   };
+
+  const handleResendInvite = async (user: InternalUser) => {
+    if (!user.email?.trim()) return;
+
+    setResendingUserId(user.id);
+    setFeedback(null);
+    setLinkCopied(false);
+
+    try {
+      const result = await resendInternalUserInvite(user.id, user.email);
+      if (result.success) {
+        setFeedback({
+          type: result.warning ? "warning" : "success",
+          message: result.message,
+          inviteLink: result.inviteLink,
+        });
+      } else {
+        setFeedback({ type: "error", message: result.message });
+      }
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to resend invitation",
+      });
+    } finally {
+      setResendingUserId(null);
+    }
+  };
+
+  const feedbackStyles = {
+    success: "bg-green-50 border-green-200 text-green-800",
+    warning: "bg-amber-50 border-amber-200 text-amber-900",
+    error: "bg-red-50 border-red-200 text-red-800",
+  };
+
+  const FeedbackBanner = ({ className = "" }: { className?: string }) =>
+    feedback ? (
+      <div
+        className={`p-3 border rounded-lg ${feedbackStyles[feedback.type]} ${className}`}
+        role="alert"
+      >
+        <div className="flex gap-2">
+          {feedback.type === "warning" ? (
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          ) : feedback.type === "error" ? (
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          ) : (
+            <Check className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          )}
+          <p className="text-sm">{feedback.message}</p>
+        </div>
+        {feedback.inviteLink && (
+          <div className="mt-3 pt-3 border-t border-amber-200/80">
+            <p className="text-xs font-medium mb-1.5">Invitation link (send manually)</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                readOnly
+                value={feedback.inviteLink}
+                className="flex-1 min-w-0 text-xs px-2 py-1.5 bg-white border border-amber-200 rounded font-mono text-gray-800"
+                onFocus={(e) => e.target.select()}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => copyInviteLink(feedback.inviteLink!)}
+              >
+                {linkCopied ? "Copied!" : "Copy"}
+              </Button>
+            </div>
+            <p className="text-xs mt-1.5 opacity-80">
+              Link expires after use. Generate a new one with the mail icon if needed.
+            </p>
+          </div>
+        )}
+      </div>
+    ) : null;
 
   const handleVerifyUser = async (user: InternalUser) => {
     setVerifyingUser(user);
@@ -1208,13 +1328,21 @@ function InternalUsersSection() {
             </p>
           </div>
         </div>
-        <Button onClick={() => setShowCreateModal(true)}>
+        <Button
+          onClick={() => {
+            setFeedback(null);
+            setShowCreateModal(true);
+          }}
+        >
           <UserPlus className="w-4 h-4 mr-1" />
           Create User
         </Button>
       </div>
 
       <div className="p-6">
+        <div ref={listFeedbackRef}>
+          <FeedbackBanner className="mb-4" />
+        </div>
         {loading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
@@ -1223,7 +1351,13 @@ function InternalUsersSection() {
           <div className="text-center py-8">
             <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500">No internal users found</p>
-            <Button className="mt-3" onClick={() => setShowCreateModal(true)}>
+            <Button
+              className="mt-3"
+              onClick={() => {
+                setFeedback(null);
+                setShowCreateModal(true);
+              }}
+            >
               <UserPlus className="w-4 h-4 mr-1" />
               Create First User
             </Button>
@@ -1274,6 +1408,18 @@ function InternalUsersSection() {
                   </select>
 
                   <button
+                    onClick={() => handleResendInvite(user)}
+                    disabled={resendingUserId === user.id || !user.email}
+                    className="p-2 rounded-lg text-gray-400 hover:text-cyan-600 hover:bg-cyan-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Resend invitation email"
+                  >
+                    {resendingUserId === user.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Mail className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
                     onClick={() => handleVerifyUser(user)}
                     className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
                     title="Verify account"
@@ -1311,8 +1457,8 @@ function InternalUsersSection() {
 
       {/* Create User Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-semibold text-gray-900">Add Internal User</h3>
               <button
@@ -1328,17 +1474,6 @@ function InternalUsersSection() {
 
 
             <form onSubmit={createMode === "invite" ? handleInvite : handleCreate} className="p-4 space-y-4">
-              {success && (
-                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="text-sm text-green-800">{success}</p>
-                </div>
-              )}
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-800">{error}</p>
-                </div>
-              )}
-
               <div className="flex rounded-lg border border-gray-200 overflow-hidden">
                 <button
                   type="button"
@@ -1434,6 +1569,10 @@ function InternalUsersSection() {
                 </select>
               </div>
 
+              <div ref={modalFeedbackRef}>
+                <FeedbackBanner />
+              </div>
+
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <Button
                   type="button"
@@ -1444,9 +1583,13 @@ function InternalUsersSection() {
                   }}
                   disabled={submitting}
                 >
-                  {success ? "Close" : "Cancel"}
+                  {feedback?.type === "success" || feedback?.type === "warning"
+                    ? "Close"
+                    : "Cancel"}
                 </Button>
-                {!success && (
+                {!(
+                  feedback?.type === "success" || feedback?.type === "warning"
+                ) && (
                   <Button type="submit" disabled={submitting} loading={submitting}>
                     {createMode === "invite" ? "Send Invitation" : "Create User"}
                   </Button>

@@ -1,5 +1,11 @@
 import { createClient } from "@/lib/supabase";
-import { Conversation, Message, ConversationStatus, SenderType } from "@/types/database";
+import {
+  Conversation,
+  Message,
+  ConversationStatus,
+  SenderType,
+  ConversationParticipant,
+} from "@/types/database";
 
 function notifyInternalUnreadChanged(detail?: {
   clearedUnreadCount?: number;
@@ -23,9 +29,29 @@ export interface ConversationWithMessages extends Omit<Conversation, 'client' | 
     account_manager_id?: string | null;
     account_manager?: { id: string; name: string } | null;
   };
+  participants?: ConversationParticipant[];
 }
 
-export async function getConversations(filters?: ConversationFilters): Promise<ConversationWithMessages[]> {
+export async function getConversations(
+  filters?: ConversationFilters
+): Promise<ConversationWithMessages[]> {
+  const params = new URLSearchParams({ mode: "list" });
+  if (filters?.status) params.set("status", filters.status);
+
+  try {
+    const response = await fetch(`/api/internal/messages?${params.toString()}`);
+    const result = await response.json();
+    if (response.ok) {
+      let list = (result.conversations || []) as ConversationWithMessages[];
+      if (filters?.clientId) {
+        list = list.filter((c) => c.client_id === filters.clientId);
+      }
+      return list;
+    }
+  } catch {
+    // Fall back to direct client query
+  }
+
   const supabase = createClient();
 
   let query = supabase
@@ -57,6 +83,39 @@ export async function getConversations(filters?: ConversationFilters): Promise<C
   }
 
   return data || [];
+}
+
+export async function getWarehouseUsers(): Promise<
+  { id: string; name: string; email: string | null; role: string }[]
+> {
+  const response = await fetch("/api/internal/messages?mode=warehouse-users");
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || "Failed to load warehouse users");
+  }
+  return result.users || [];
+}
+
+export async function addWarehouseManagerToConversation(
+  conversationId: string,
+  warehouseUserId: string
+): Promise<ConversationParticipant> {
+  const response = await fetch("/api/internal/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "add-participant",
+      conversationId,
+      warehouseUserId,
+    }),
+  });
+
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || "Failed to add warehouse manager");
+  }
+
+  return result.participant;
 }
 
 export async function getConversation(id: string): Promise<ConversationWithMessages | null> {

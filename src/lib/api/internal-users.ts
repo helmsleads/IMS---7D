@@ -84,7 +84,13 @@ export async function createInternalUser(
  */
 export async function inviteInternalUser(
   userData: InviteInternalUserData
-): Promise<{ success: boolean; message: string }> {
+): Promise<{
+  success: boolean;
+  message: string;
+  emailSent?: boolean;
+  warning?: boolean;
+  inviteLink?: string;
+}> {
   try {
     const response = await fetch("/api/internal-users", {
       method: "POST",
@@ -105,11 +111,15 @@ export async function inviteInternalUser(
     }
 
     const result = await response.json().catch(() => ({}));
+    const emailSent = (result as { emailSent?: boolean }).emailSent;
     return {
       success: true,
       message:
         (result as { message?: string }).message ||
         "Invitation email sent successfully",
+      emailSent,
+      warning: emailSent === false,
+      inviteLink: (result as { inviteLink?: string }).inviteLink,
     };
   } catch (error) {
     return {
@@ -128,7 +138,13 @@ export async function inviteInternalUser(
 export async function resendInternalUserInvite(
   userId: string,
   email: string
-): Promise<{ success: boolean; message: string }> {
+): Promise<{
+  success: boolean;
+  message: string;
+  warning?: boolean;
+  emailSent?: boolean;
+  inviteLink?: string;
+}> {
   try {
     const response = await fetch("/api/internal-users", {
       method: "POST",
@@ -148,11 +164,15 @@ export async function resendInternalUserInvite(
     }
 
     const result = await response.json().catch(() => ({}));
+    const emailSent = (result as { emailSent?: boolean }).emailSent;
     return {
       success: true,
       message:
         (result as { message?: string }).message ||
         "The invitation has been resent.",
+      emailSent,
+      warning: emailSent === false,
+      inviteLink: (result as { inviteLink?: string }).inviteLink,
     };
   } catch (error) {
     return {

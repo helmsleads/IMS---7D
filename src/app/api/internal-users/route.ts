@@ -145,6 +145,7 @@ export async function POST(request: NextRequest) {
             inviteResult
           ),
           emailSent: inviteResult.emailSent,
+          inviteLink: inviteResult.inviteLink,
         });
       }
 
@@ -166,10 +167,28 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
 
       if (existing?.active) {
-        return NextResponse.json(
-          { error: "A user with this email already exists." },
-          { status: 409 }
-        );
+        const inviteResult = await sendUserInvitation({
+          email,
+          full_name: name,
+          user_type: "internal",
+          role,
+          invited_by: callerUser.id,
+          resend_user_id: existing.id,
+        });
+
+        if (!inviteResult.success) {
+          return inviteErrorResponse(inviteResult);
+        }
+
+        return NextResponse.json({
+          message: formatInviteSuccessMessage(
+            "This user already exists. A new invitation link was generated.",
+            inviteResult
+          ),
+          userId: inviteResult.userId,
+          emailSent: inviteResult.emailSent,
+          inviteLink: inviteResult.inviteLink,
+        });
       }
 
       if (existing && !existing.active) {
@@ -200,6 +219,7 @@ export async function POST(request: NextRequest) {
         message: formatInviteSuccessMessage(accountMessage, inviteResult),
         userId: inviteResult.userId,
         emailSent: inviteResult.emailSent,
+        inviteLink: inviteResult.inviteLink,
       });
     }
 

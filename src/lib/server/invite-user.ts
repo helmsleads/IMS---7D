@@ -23,6 +23,8 @@ export type InviteSuccess = {
   userId: string;
   emailSent: boolean;
   emailWarning?: string;
+  /** Present when email could not be sent — share manually with the user */
+  inviteLink?: string;
 };
 
 export function formatInviteSuccessMessage(
@@ -33,7 +35,7 @@ export function formatInviteSuccessMessage(
     return `${accountMessage} Invitation email was sent.`;
   }
   const detail = result.emailWarning ? ` (${result.emailWarning})` : "";
-  return `${accountMessage} Invitation email could not be sent${detail} You can resend the invitation later.`;
+  return `${accountMessage} Invitation email could not be sent${detail} Copy the invitation link below and send it to the user.`;
 }
 
 export interface InviteUserParams {
@@ -335,6 +337,7 @@ export async function sendUserInvitation(
         userId,
         emailSent: false,
         emailWarning: "Email service is not configured (RESEND_API_KEY).",
+        inviteLink: linkResult.actionLink,
       };
     }
 
@@ -353,6 +356,7 @@ export async function sendUserInvitation(
         emailWarning:
           emailResult.error ||
           "Check RESEND_API_KEY, RESEND_FROM_EMAIL, and your sender domain at resend.com/domains",
+        inviteLink: linkResult.actionLink,
       };
     }
 

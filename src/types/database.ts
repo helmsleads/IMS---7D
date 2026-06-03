@@ -233,6 +233,18 @@ export interface Message {
   created_at: string
 }
 
+export type ConversationParticipantRole = 'account_manager' | 'warehouse_manager'
+
+export interface ConversationParticipant {
+  id: string
+  conversation_id: string
+  user_id: string
+  participant_role: ConversationParticipantRole
+  added_by: string | null
+  added_at: string
+  user?: { id: string; name: string; email: string | null; role: string }
+}
+
 // V2.2.1.7 Client Extended Types
 export interface ClientAddress {
   id: string

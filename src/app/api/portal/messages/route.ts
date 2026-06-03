@@ -3,6 +3,7 @@ import { User } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { createServiceClient } from "@/lib/supabase-service";
 import { notifyAccountManagerOfClientMessage } from "@/lib/server/notify-account-manager-message";
+import { ensureAccountManagerParticipant } from "@/lib/server/conversation-participants";
 
 type PortalAction = "start" | "send" | "mark-read" | "notify-account-manager";
 
@@ -184,6 +185,8 @@ export async function POST(request: NextRequest) {
           subject,
         },
       });
+
+      await ensureAccountManagerParticipant(conversation.id, clientId);
 
       void notifyAccountManagerOfClientMessage({
         clientId,

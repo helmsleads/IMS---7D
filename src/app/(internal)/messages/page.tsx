@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Check,
   X,
+  UserPlus,
 } from "lucide-react";
 import AppShell from "@/components/internal/AppShell";
 import Button from "@/components/ui/Button";
@@ -26,8 +27,11 @@ import {
   closeConversation,
   updateConversation,
   createConversation,
+  addWarehouseManagerToConversation,
+  getWarehouseUsers,
   ConversationWithMessages,
 } from "@/lib/api/messages";
+import type { ConversationParticipant } from "@/types/database";
 import { getClients, Client } from "@/lib/api/clients";
 import { Message, ConversationStatus } from "@/types/database";
 import { createClient } from "@/lib/supabase";
@@ -76,8 +80,14 @@ const formatMessageTime = (dateString: string) => {
 };
 
 export default function MessagesPage() {
-  const { user, staffUser } = useAuth();
+  const { staffUser } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (staffUser?.role === "warehouse") {
+      setParticipatingOnly(true);
+    }
+  }, [staffUser?.role]);
 
   const [conversations, setConversations] = useState<ConversationWithMessages[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -92,6 +102,15 @@ export default function MessagesPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | "">("");
   const [myClientsOnly, setMyClientsOnly] = useState(false);
+  const [participatingOnly, setParticipatingOnly] = useState(false);
+
+  // Add warehouse manager
+  const [showAddParticipantModal, setShowAddParticipantModal] = useState(false);
+  const [warehouseUsers, setWarehouseUsers] = useState<
+    { id: string; name: string; email: string | null }[]
+  >([]);
+  const [selectedWarehouseUserId, setSelectedWarehouseUserId] = useState("");
+  const [addingParticipant, setAddingParticipant] = useState(false);
 
   // New message
   const [newMessage, setNewMessage] = useState("");
@@ -267,6 +286,12 @@ export default function MessagesPage() {
       );
     }
 
+    if (participatingOnly && staffUser) {
+      list = list.filter((c) =>
+        c.participants?.some((p) => p.user_id === staffUser.id)
+      );
+    }
+
     if (!searchTerm) return list;
     const search = searchTerm.toLowerCase();
     return list.filter(
@@ -275,10 +300,97 @@ export default function MessagesPage() {
         c.client?.company_name.toLowerCase().includes(search) ||
         c.client?.account_manager?.name?.toLowerCase().includes(search)
     );
-  }, [conversations, searchTerm, myClientsOnly, staffUser]);
+  }, [conversations, searchTerm, myClientsOnly, participatingOnly, staffUser]);
+
+  const staffNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    if (staffUser) {
+      map.set(staffUser.id, staffUser.name);
+    }
+    selectedConversation?.participants?.forEach((p) => {
+      if (p.user?.name) map.set(p.user_id, p.user.name);
+    });
+    return map;
+  }, [selectedConversation?.participants, staffUser]);
+
+  const canAddWarehouseManager =
+    !!selectedConversation &&
+    !!staffUser &&
+    selectedConversation.status === "open" &&
+    (staffUser.role === "admin" ||
+      selectedConversation.client?.account_manager_id === staffUser.id);
+
+  const warehouseManagersOnThread = useMemo(
+    () =>
+      selectedConversation?.participants?.filter(
+        (p) => p.participant_role === "warehouse_manager"
+      ) || [],
+    [selectedConversation?.participants]
+  );
+
+  const openAddParticipantModal = async () => {
+    setShowAddParticipantModal(true);
+    setSelectedWarehouseUserId("");
+    try {
+      const users = await getWarehouseUsers();
+      const onThread = new Set(
+        selectedConversation?.participants?.map((p) => p.user_id) || []
+      );
+      setWarehouseUsers(users.filter((u) => !onThread.has(u.id)));
+    } catch (err) {
+      setError(handleApiError(err));
+    }
+  };
+
+  const handleAddWarehouseManager = async () => {
+    if (!selectedConversation || !selectedWarehouseUserId) return;
+
+    setAddingParticipant(true);
+    setError(null);
+    try {
+      const participant = await addWarehouseManagerToConversation(
+        selectedConversation.id,
+        selectedWarehouseUserId
+      );
+
+      const updatedParticipants = [
+        ...(selectedConversation.participants || []),
+        participant,
+      ];
+
+      setSelectedConversation({
+        ...selectedConversation,
+        participants: updatedParticipants,
+      });
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === selectedConversation.id
+            ? { ...c, participants: updatedParticipants }
+            : c
+        )
+      );
+
+      const messagesData = await getMessages(selectedConversation.id);
+      setMessages(messagesData);
+
+      setShowAddParticipantModal(false);
+    } catch (err) {
+      setError(handleApiError(err));
+    } finally {
+      setAddingParticipant(false);
+    }
+  };
+
+  const participantLabel = (p: ConversationParticipant) => {
+    const name = p.user?.name || "Unknown";
+    if (p.participant_role === "account_manager") return `${name} (Account Manager)`;
+    if (p.participant_role === "warehouse_manager") return `${name} (Warehouse)`;
+    return name;
+  };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedConversation || !user) return;
+    if (!newMessage.trim() || !selectedConversation || !staffUser) return;
 
     const messageContent = newMessage.trim();
     const now = new Date().toISOString();
@@ -288,7 +400,7 @@ export default function MessagesPage() {
       id: `temp-${Date.now()}`,
       conversation_id: selectedConversation.id,
       sender_type: "user",
-      sender_id: user.id,
+      sender_id: staffUser.id,
       content: messageContent,
       read_at: null,
       created_at: now,
@@ -316,7 +428,7 @@ export default function MessagesPage() {
         selectedConversation.id,
         messageContent,
         "user",
-        user.id
+        staffUser.id
       );
 
       // Replace optimistic message with real one
@@ -478,15 +590,32 @@ export default function MessagesPage() {
               ))}
             </div>
             {staffUser && (
-              <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={myClientsOnly}
-                  onChange={(e) => setMyClientsOnly(e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                My clients only
-              </label>
+              <div className="flex flex-col gap-1.5">
+                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={myClientsOnly}
+                    onChange={(e) => {
+                      setMyClientsOnly(e.target.checked);
+                      if (e.target.checked) setParticipatingOnly(false);
+                    }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  My clients only
+                </label>
+                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={participatingOnly}
+                    onChange={(e) => {
+                      setParticipatingOnly(e.target.checked);
+                      if (e.target.checked) setMyClientsOnly(false);
+                    }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  Participating in
+                </label>
+              </div>
             )}
           </div>
 
@@ -612,8 +741,31 @@ export default function MessagesPage() {
                     <p className="text-sm text-gray-600 truncate">
                       {selectedConversation.subject}
                     </p>
+                    {selectedConversation.participants &&
+                      selectedConversation.participants.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {selectedConversation.participants.map((p) => (
+                            <span
+                              key={p.id}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700"
+                            >
+                              {participantLabel(p)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {canAddWarehouseManager && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={openAddParticipantModal}
+                      >
+                        <UserPlus className="w-4 h-4 mr-1" />
+                        Add warehouse manager
+                      </Button>
+                    )}
                     {selectedConversation.status === "open" ? (
                       <Button
                         variant="secondary"
@@ -657,28 +809,52 @@ export default function MessagesPage() {
                   <>
                     {messages.map((message) => {
                       const isStaff = message.sender_type === "user";
+                      const isSystemNote =
+                        isStaff &&
+                        message.content.includes("added ") &&
+                        message.content.includes(" to this conversation");
+                      const staffLabel =
+                        message.sender_id === staffUser?.id
+                          ? "You"
+                          : staffNameById.get(message.sender_id) || "7 Degrees Team";
                       return (
                         <div
                           key={message.id}
-                          className={`flex ${isStaff ? "justify-end" : "justify-start"}`}
+                          className={`flex ${
+                            isSystemNote
+                              ? "justify-center"
+                              : isStaff
+                              ? "justify-end"
+                              : "justify-start"
+                          }`}
                         >
                           <div
                             className={`max-w-[70%] ${
-                              isStaff ? "items-end" : "items-start"
+                              isSystemNote
+                                ? "max-w-full"
+                                : isStaff
+                                ? "items-end"
+                                : "items-start"
                             }`}
                           >
                             {/* Sender Name */}
-                            <p
-                              className={`text-xs font-medium mb-1 ${
-                                isStaff ? "text-right text-blue-600" : "text-gray-600"
-                              }`}
-                            >
-                              {isStaff ? "You" : selectedConversation.client?.company_name}
-                            </p>
+                            {!isSystemNote && (
+                              <p
+                                className={`text-xs font-medium mb-1 ${
+                                  isStaff ? "text-right text-blue-600" : "text-gray-600"
+                                }`}
+                              >
+                                {isStaff
+                                  ? staffLabel
+                                  : selectedConversation.client?.company_name}
+                              </p>
+                            )}
                             {/* Message Bubble */}
                             <div
                               className={`rounded-lg p-3 shadow-sm ${
-                                isStaff
+                                isSystemNote
+                                  ? "bg-gray-200 text-gray-600 text-center text-xs italic"
+                                  : isStaff
                                   ? "bg-blue-600 text-white rounded-br-sm"
                                   : "bg-white text-gray-900 rounded-bl-sm"
                               }`}
@@ -838,6 +1014,67 @@ export default function MessagesPage() {
               disabled={creating || !newConversationClient || !newConversationSubject.trim()}
             >
               {creating ? "Creating..." : "Start Conversation"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add warehouse manager modal */}
+      <Modal
+        isOpen={showAddParticipantModal}
+        onClose={() => setShowAddParticipantModal(false)}
+        title="Add warehouse manager"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Loop in a warehouse manager to help with this conversation. They will
+            be able to read the thread and reply in the portal.
+          </p>
+          {warehouseManagersOnThread.length > 0 && (
+            <p className="text-xs text-gray-500">
+              Already on thread:{" "}
+              {warehouseManagersOnThread
+                .map((p) => p.user?.name || "Unknown")
+                .join(", ")}
+            </p>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Warehouse manager <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={selectedWarehouseUserId}
+              onChange={(e) => setSelectedWarehouseUserId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Select a warehouse manager...</option>
+              {warehouseUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                  {u.email ? ` (${u.email})` : ""}
+                </option>
+              ))}
+            </select>
+            {warehouseUsers.length === 0 && (
+              <p className="text-xs text-amber-600 mt-1">
+                No warehouse users available. Add staff with the warehouse role in
+                Settings → System.
+              </p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="secondary"
+              onClick={() => setShowAddParticipantModal(false)}
+              disabled={addingParticipant}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddWarehouseManager}
+              disabled={addingParticipant || !selectedWarehouseUserId}
+            >
+              {addingParticipant ? "Adding..." : "Add to conversation"}
             </Button>
           </div>
         </div>
