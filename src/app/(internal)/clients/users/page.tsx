@@ -30,7 +30,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import FetchError from "@/components/ui/FetchError";
 import { createClient } from "@/lib/supabase";
 import { handleApiError } from "@/lib/utils/error-handler";
-import { invitePortalUser, addUserToClientByEmail, ClientUserRole } from "@/lib/api/client-users";
+import { invitePortalUser, addUserToClientByEmail, removePortalUserAdmin, ClientUserRole } from "@/lib/api/client-users";
 
 interface PortalUserWithClients {
   id: string;
@@ -302,17 +302,19 @@ export default function PortalUsersPage() {
     }
   };
 
-  const handleRemoveAccess = async (clientUserId: string, userName: string, clientName: string) => {
+  const handleRemoveAccess = async (
+    userId: string,
+    clientId: string,
+    userName: string,
+    clientName: string
+  ) => {
     if (!confirm(`Remove ${userName}'s access to ${clientName}?`)) return;
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("client_users")
-        .delete()
-        .eq("id", clientUserId);
-
-      if (error) throw error;
+      const result = await removePortalUserAdmin(userId, clientId);
+      if (!result.success) {
+        throw new Error(result.message);
+      }
       await fetchData();
     } catch (err) {
       alert(handleApiError(err));
@@ -572,7 +574,8 @@ export default function PortalUsersPage() {
                             <button
                               onClick={() =>
                                 handleRemoveAccess(
-                                  access.id,
+                                  user.id,
+                                  access.client_id,
                                   user.full_name || user.email,
                                   access.client.company_name
                                 )

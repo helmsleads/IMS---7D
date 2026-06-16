@@ -61,7 +61,7 @@ import {
   addUserToClientByEmail,
   invitePortalUser,
   updateClientUser,
-  removeClientUser,
+  removePortalUserAdmin,
   updateUserProfile,
   ClientUserWithDetails,
 } from "@/lib/api/client-users";
@@ -583,14 +583,21 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleRemoveUser = async (userId: string) => {
+  const handleRemoveUser = async (clientUser: ClientUserWithDetails) => {
     if (!confirm("Are you sure you want to remove this user's access?")) return;
 
     try {
-      await removeClientUser(userId);
-      setClientUsers(clientUsers.filter((u) => u.id !== userId));
+      const result = await removePortalUserAdmin(
+        clientUser.user_id,
+        params.id as string
+      );
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+      setClientUsers(clientUsers.filter((u) => u.id !== clientUser.id));
     } catch (error) {
       console.error("Failed to remove user:", error);
+      alert(error instanceof Error ? error.message : "Failed to remove user");
     }
   };
 
@@ -2237,7 +2244,7 @@ export default function ClientDetailPage() {
                           <Eye className="w-4 h-4" />
                         </Link>
                         <button
-                          onClick={() => handleRemoveUser(user.id)}
+                          onClick={() => handleRemoveUser(user)}
                           className="p-1 text-gray-400 hover:text-red-600"
                           title="Remove access"
                         >

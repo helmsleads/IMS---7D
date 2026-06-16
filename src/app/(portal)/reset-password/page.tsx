@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Lock, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { Lock, AlertCircle, Eye, EyeOff, Clock, Link2Off, Mail, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import Button from "@/components/ui/Button";
 import {
@@ -13,6 +13,39 @@ import {
   clearAuthHashFromUrl,
   clearAuthCodeFromUrl,
 } from "@/lib/auth-password-setup";
+
+type LinkFailureKind = "expired" | "invalid" | "callback";
+
+function AuthShell({
+  children,
+  accent = "teal",
+}: {
+  children: React.ReactNode;
+  accent?: "teal" | "amber" | "red";
+}) {
+  const border =
+    accent === "amber"
+      ? "border-t-amber-500"
+      : accent === "red"
+        ? "border-t-red-500"
+        : "border-t-teal-600";
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
+      <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiMyMDIwMjAiIGZpbGwtb3BhY2l0eT0iMC4xIj48cGF0aCBkPSJNMzYgMzRoLTJ2LTRoMnY0em0wLTZ2LTRoLTJ2NGgyek0zMCAzNGgtMnYtNGgydjR6bTAtNnYtNGgtMnY0aDJ6Ii8+PC9nPjwvZz48L3N2Zz4=')] opacity-20" />
+      <div
+        className={`relative bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md border-t-4 ${border}`}
+      >
+        <div className="flex justify-center mb-5">
+          <div className="w-14 h-14 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-xl flex items-center justify-center shadow-lg shadow-teal-600/20">
+            <span className="text-white font-bold text-xl">7D</span>
+          </div>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -26,6 +59,8 @@ export default function ResetPasswordPage() {
   const [isValidSession, setIsValidSession] = useState<boolean | null>(null);
   const [isInvite, setIsInvite] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkFailureKind, setLinkFailureKind] =
+    useState<LinkFailureKind>("invalid");
   const [loginPath, setLoginPath] = useState<"/login" | "/client-login">(
     "/client-login"
   );
@@ -54,9 +89,10 @@ export default function ResetPasswordPage() {
       await resolveLoginPath(userId);
     };
 
-    const fail = (message?: string) => {
+    const fail = (message?: string, kind: LinkFailureKind = "invalid") => {
       if (!active) return;
       if (message) setLinkError(message);
+      setLinkFailureKind(kind);
       setIsValidSession(false);
     };
 
@@ -65,10 +101,26 @@ export default function ResetPasswordPage() {
       const callbackError = params.get("error");
       const authLinkError = getAuthLinkErrorFromUrl();
 
-      if (authLinkError || callbackError || params.get("expired") === "1") {
+      if (params.get("expired") === "1") {
         fail(
-          authLinkError ||
-            "This invitation or password reset link is invalid or has expired."
+          "This invitation or password reset link has expired. Security links are only valid for a limited time.",
+          "expired"
+        );
+        return;
+      }
+
+      if (authLinkError) {
+        fail(
+          authLinkError,
+          authLinkError.toLowerCase().includes("expired") ? "expired" : "invalid"
+        );
+        return;
+      }
+
+      if (callbackError) {
+        fail(
+          "We could not complete sign-in from that link. It may have already been used or timed out.",
+          "callback"
         );
         return;
       }
@@ -211,57 +263,110 @@ export default function ResetPasswordPage() {
 
   if (isValidSession === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md border-t-4 border-teal-600">
-          <div className="text-center">
-            <div className="inline-block w-8 h-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p className="text-gray-600">Verifying your link...</p>
-          </div>
+      <AuthShell>
+        <div className="text-center">
+          <div className="inline-block w-8 h-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-gray-600 font-medium">Verifying your link...</p>
+          <p className="text-sm text-gray-400 mt-1">This only takes a moment</p>
         </div>
-      </div>
+      </AuthShell>
     );
   }
 
   if (isValidSession === false) {
+    const isExpired = linkFailureKind === "expired";
+    const title = isExpired
+      ? "This link has expired"
+      : linkFailureKind === "callback"
+        ? "Link could not be opened"
+        : "Invalid link";
+
+    const description =
+      linkError ||
+      (isExpired
+        ? "Invitation and reset links expire after a short time for security."
+        : "This invitation or password reset link is invalid or has already been used.");
+
+    const Icon = isExpired ? Clock : linkFailureKind === "callback" ? Link2Off : AlertCircle;
+    const iconWrap = isExpired
+      ? "bg-amber-100 text-amber-600"
+      : "bg-red-100 text-red-600";
+    const accent = isExpired ? "amber" : "red";
+
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md border-t-4 border-red-500">
-          <div className="text-center">
-            <div className="mx-auto w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
-              <AlertCircle className="w-6 h-6 text-red-600" />
-            </div>
-            <h1 className="text-xl font-bold text-gray-900 mb-2">
-              Invalid or Expired Link
-            </h1>
-            <p className="text-gray-600 mb-6">
-              {linkError ||
-                "This invitation or password reset link is invalid or has expired. Ask your administrator to send a new invitation, or request a password reset."}
-            </p>
-            <div className="space-y-3">
-              <Link href="/forgot-password">
-                <Button className="w-full">Request Password Reset</Button>
-              </Link>
+      <AuthShell accent={accent}>
+        <div className="text-center">
+          <div
+            className={`mx-auto w-14 h-14 rounded-full flex items-center justify-center mb-4 ${iconWrap}`}
+          >
+            <Icon className="w-7 h-7" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">{title}</h1>
+          <p className="text-gray-600 mb-6">{description}</p>
+
+          <div className="text-left bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6">
+            <p className="text-sm font-medium text-gray-900 mb-2">What you can do</p>
+            <ul className="text-sm text-gray-600 space-y-2">
+              {isExpired ? (
+                <>
+                  <li className="flex gap-2">
+                    <Mail className="w-4 h-4 text-teal-600 flex-shrink-0 mt-0.5" />
+                    <span>
+                      Request a new password reset email if you already have an account.
+                    </span>
+                  </li>
+                  <li className="flex gap-2">
+                    <ArrowRight className="w-4 h-4 text-teal-600 flex-shrink-0 mt-0.5" />
+                    <span>
+                      Ask your administrator to send a fresh invitation if you are setting up a new account.
+                    </span>
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li className="flex gap-2">
+                    <ArrowRight className="w-4 h-4 text-teal-600 flex-shrink-0 mt-0.5" />
+                    <span>Open the most recent email — older links stop working once a new one is sent.</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <Mail className="w-4 h-4 text-teal-600 flex-shrink-0 mt-0.5" />
+                    <span>Request a new password reset or invitation from your administrator.</span>
+                  </li>
+                </>
+              )}
+            </ul>
+          </div>
+
+          <div className="space-y-3">
+            <Link href="/forgot-password">
+              <Button className="w-full">Request password reset</Button>
+            </Link>
+            <div className="grid grid-cols-2 gap-3">
               <Link href="/login">
                 <Button variant="secondary" className="w-full">
-                  Staff Login
+                  Staff login
                 </Button>
               </Link>
-              <Link
-                href="/client-login"
-                className="block text-center text-sm text-teal-600 hover:text-teal-700"
-              >
-                Client login
+              <Link href="/client-login">
+                <Button variant="secondary" className="w-full">
+                  Client login
+                </Button>
               </Link>
             </div>
+            <Link
+              href="/"
+              className="block text-center text-sm text-gray-500 hover:text-gray-700 pt-1"
+            >
+              Back to main sign in
+            </Link>
           </div>
         </div>
-      </div>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md border-t-4 border-teal-600">
+    <AuthShell>
         <div className="text-center mb-6">
           <div className="mx-auto w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center mb-4">
             <Lock className="w-6 h-6 text-teal-600" />
@@ -366,7 +471,6 @@ export default function ResetPasswordPage() {
             {isInvite ? "Create Password" : "Reset Password"}
           </Button>
         </form>
-      </div>
-    </div>
+    </AuthShell>
   );
 }

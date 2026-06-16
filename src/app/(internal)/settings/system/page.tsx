@@ -46,6 +46,7 @@ import {
   updateInternalUser,
   deactivateInternalUser,
   reactivateInternalUser,
+  removeInternalUser,
   InternalUser,
 } from "@/lib/api/internal-users";
 import { SystemSetting, UserRole } from "@/types/database";
@@ -1019,6 +1020,7 @@ function InternalUsersSection() {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetResult, setResetResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [resendingUserId, setResendingUserId] = useState<string | null>(null);
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -1170,6 +1172,33 @@ function InternalUsersSection() {
       setUsers(users.map((u) => (u.id === user.id ? { ...u, active: !u.active } : u)));
     } catch (err) {
       console.error("Failed to toggle user status:", err);
+    }
+  };
+
+  const handleRemoveUser = async (user: InternalUser) => {
+    const confirmed = window.confirm(
+      `Permanently remove ${user.name}? This deletes their staff account and cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setRemovingUserId(user.id);
+    setFeedback(null);
+
+    try {
+      const result = await removeInternalUser(user.id);
+      if (result.success) {
+        setUsers((current) => current.filter((u) => u.id !== user.id));
+        setFeedback({ type: "success", message: result.message });
+      } else {
+        setFeedback({ type: "error", message: result.message });
+      }
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to remove user",
+      });
+    } finally {
+      setRemovingUserId(null);
     }
   };
 
@@ -1430,7 +1459,7 @@ function InternalUsersSection() {
                     onClick={() => handleToggleActive(user)}
                     className={`p-2 rounded-lg transition-colors ${
                       user.active
-                        ? "text-gray-400 hover:text-red-600 hover:bg-red-50"
+                        ? "text-gray-400 hover:text-amber-600 hover:bg-amber-50"
                         : "text-gray-400 hover:text-green-600 hover:bg-green-50"
                     }`}
                     title={user.active ? "Deactivate user" : "Reactivate user"}
@@ -1439,6 +1468,18 @@ function InternalUsersSection() {
                       <UserX className="w-4 h-4" />
                     ) : (
                       <UserCheck className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleRemoveUser(user)}
+                    disabled={removingUserId === user.id}
+                    className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Permanently remove user"
+                  >
+                    {removingUserId === user.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
                     )}
                   </button>
                 </div>

@@ -7,6 +7,7 @@ import {
   findAuthUserIdByEmail,
   type InviteFailure,
 } from "@/lib/server/invite-user";
+import { removeInternalStaffUser } from "@/lib/server/remove-user";
 import type { UserRole } from "@/types/database";
 
 function inviteErrorResponse(failure: InviteFailure, status = 500) {
@@ -335,6 +336,53 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ user: newUser });
   } catch (err) {
     console.error("Internal users route error:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { callerUser, user, error: authLookupError } =
+      await getCallerInternalUser(request, "id, auth_id, role, active");
+
+    if (authLookupError) {
+      return NextResponse.json({ error: authLookupError }, { status: 401 });
+    }
+
+    if (!callerUser || callerUser.active === false || callerUser.role !== "admin") {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+
+    const userId =
+      request.nextUrl.searchParams.get("userId")?.trim() ||
+      request.nextUrl.searchParams.get("id")?.trim();
+
+    if (!userId) {
+      return NextResponse.json({ error: "userId is required" }, { status: 400 });
+    }
+
+    const serviceClient = createServiceClient();
+    const callerId = callerUser.id || user!.id;
+    const result = await removeInternalStaffUser(
+      serviceClient,
+      userId,
+      callerId
+    );
+
+    if (!result.success) {
+      const status = result.error.includes("not found") ? 404 : 400;
+      return NextResponse.json({ error: result.error }, { status });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "User removed successfully.",
+    });
+  } catch (err) {
+    console.error("Internal users DELETE route error:", err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Internal server error" },
       { status: 500 }

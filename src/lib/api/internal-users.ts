@@ -239,3 +239,37 @@ export async function reactivateInternalUser(id: string): Promise<void> {
     throw new Error(error.message);
   }
 }
+
+/**
+ * Permanently remove an internal user (staff record + auth account).
+ */
+export async function removeInternalUser(
+  userId: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    const response = await fetch(
+      `/api/internal-users?userId=${encodeURIComponent(userId)}`,
+      { method: "DELETE" }
+    );
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message: (result as { error?: string }).error || "Failed to remove user",
+      };
+    }
+
+    return {
+      success: true,
+      message:
+        (result as { message?: string }).message || "User removed successfully.",
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Failed to remove user",
+    };
+  }
+}

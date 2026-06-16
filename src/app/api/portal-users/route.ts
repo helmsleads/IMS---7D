@@ -7,6 +7,7 @@ import {
   formatInviteSuccessMessage,
   type InviteFailure,
 } from "@/lib/server/invite-user";
+import { removePortalUser } from "@/lib/server/remove-user";
 import type { ClientUserRole } from "@/types/database";
 
 function inviteErrorResponse(failure: InviteFailure, status = 500) {
@@ -281,6 +282,24 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json({ success: true, message: "Email confirmed successfully" });
+    }
+
+    if (action === "remove") {
+      const clientId = (body.clientId || body.client_id || "").trim() || undefined;
+      const result = await removePortalUser(serviceClient, userId, clientId);
+
+      if (!result.success) {
+        const status = result.error.includes("not found") ? 404 : 400;
+        return NextResponse.json({ error: result.error }, { status });
+      }
+
+      return NextResponse.json({
+        success: true,
+        fullyRemoved: result.fullyRemoved ?? false,
+        message: result.fullyRemoved
+          ? "User removed successfully."
+          : "Portal access removed.",
+      });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });

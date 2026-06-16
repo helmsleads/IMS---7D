@@ -223,6 +223,40 @@ export async function removeClientUser(id: string): Promise<void> {
 }
 
 /**
+ * Admin: remove portal access and delete auth account when no access remains.
+ */
+export async function removePortalUserAdmin(
+  userId: string,
+  clientId?: string
+): Promise<{ success: boolean; message: string; fullyRemoved?: boolean }> {
+  const response = await fetch("/api/portal-users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "remove",
+      userId,
+      clientId,
+    }),
+  });
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    return {
+      success: false,
+      message: (result as { error?: string }).error || "Failed to remove user",
+    };
+  }
+
+  return {
+    success: true,
+    message:
+      (result as { message?: string }).message || "User removed successfully.",
+    fullyRemoved: (result as { fullyRemoved?: boolean }).fullyRemoved,
+  };
+}
+
+/**
  * Set a client as the user's primary
  */
 export async function setPrimaryClient(clientId: string): Promise<void> {
