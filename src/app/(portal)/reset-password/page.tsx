@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { Lock, CheckCircle, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Lock, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import Button from "@/components/ui/Button";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@/lib/auth-password-setup";
 
 export default function ResetPasswordPage() {
+  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
   const [password, setPassword] = useState("");
@@ -21,31 +23,35 @@ export default function ResetPasswordPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
   const [isValidSession, setIsValidSession] = useState<boolean | null>(null);
   const [isInvite, setIsInvite] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [loginPath, setLoginPath] = useState<"/login" | "/client-login">(
+    "/client-login"
+  );
 
-  const [loginPath, setLoginPath] = useState("/client-login");
+  const resolveLoginPath = async (
+    userId: string
+  ): Promise<"/login" | "/client-login"> => {
+    const { data: staffUser } = await supabase
+      .from("users")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    const path = staffUser ? "/login" : "/client-login";
+    setLoginPath(path);
+    return path;
+  };
 
   useEffect(() => {
     let active = true;
-
-    const detectUserType = async (userId: string) => {
-      const { data: staffUser } = await supabase
-        .from("users")
-        .select("id")
-        .eq("id", userId)
-        .maybeSingle();
-
-      setLoginPath(staffUser ? "/login" : "/client-login");
-    };
 
     const succeed = async (userId: string, invite = false) => {
       if (!active) return;
       if (invite) setIsInvite(true);
       setIsValidSession(true);
-      await detectUserType(userId);
+      await resolveLoginPath(userId);
     };
 
     const fail = (message?: string) => {
@@ -141,7 +147,7 @@ export default function ResetPasswordPage() {
       if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
         setIsInvite(true);
         setIsValidSession(true);
-        await detectUserType(session.user.id);
+        await resolveLoginPath(session.user.id);
       }
     });
 
@@ -186,8 +192,16 @@ export default function ResetPasswordPage() {
         return;
       }
 
-      setSuccess(true);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const redirectTo = user
+        ? await resolveLoginPath(user.id)
+        : loginPath;
+
       await supabase.auth.signOut();
+      router.replace(redirectTo);
     } catch {
       setError("An unexpected error occurred");
     } finally {
@@ -239,31 +253,6 @@ export default function ResetPasswordPage() {
                 Client login
               </Link>
             </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (success) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md border-t-4 border-green-500">
-          <div className="text-center">
-            <div className="mx-auto w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-            </div>
-            <h1 className="text-xl font-bold text-gray-900 mb-2">
-              {isInvite ? "Account Ready" : "Password Updated"}
-            </h1>
-            <p className="text-gray-600 mb-6">
-              {isInvite
-                ? "Your password has been set. Sign in with the email address that received the invitation and the password you just created."
-                : "Your password has been successfully reset. You can now log in with your new password."}
-            </p>
-            <Link href={loginPath}>
-              <Button className="w-full">Go to Login</Button>
-            </Link>
           </div>
         </div>
       </div>
