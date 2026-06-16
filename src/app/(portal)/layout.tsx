@@ -6,7 +6,12 @@ import ClientProtectedRoute from "@/components/portal/ClientProtectedRoute";
 import PortalShell from "@/components/portal/PortalShell";
 
 // Pages that don't require auth or shell
-const PUBLIC_PATHS = ["/client-login", "/portal/login"];
+const PUBLIC_PATHS = [
+  "/client-login",
+  "/portal/login",
+  "/forgot-password",
+  "/reset-password",
+];
 
 function PortalContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

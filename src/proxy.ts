@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-server";
 
 // Routes that don't require authentication
-const publicRoutes = ["/", "/login", "/client-login", "/forgot-password", "/reset-password"];
+const publicRoutes = ["/", "/login", "/client-login", "/forgot-password", "/reset-password", "/auth/callback"];
 
 // Internal app routes (require staff authentication)
 const internalRoutes = [
@@ -19,7 +19,6 @@ const internalRoutes = [
 
 // Portal routes (require client authentication)
 const portalRoutes = ["/portal"];
-const mfaRoutes = ["/mfa/setup", "/mfa/verify"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -53,10 +52,9 @@ export async function proxy(request: NextRequest) {
   const isPortalRoute = portalRoutes.some(
     (route) => pathname === route || pathname.startsWith(route + "/")
   );
-  const isMfaRoute = mfaRoutes.some((route) => pathname === route);
 
   // Handle internal routes
-  if (isInternalRoute || isMfaRoute) {
+  if (isInternalRoute) {
     if (!user) {
       const loginUrl = new URL("/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);
@@ -72,40 +70,6 @@ export async function proxy(request: NextRequest) {
 
     if (!staffData) {
       return NextResponse.redirect(new URL("/portal/dashboard", request.url));
-    }
-
-    const [{ data: factorData }, { data: aalData }] = await Promise.all([
-      supabase.auth.mfa.listFactors(),
-      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
-    ]);
-
-    const hasVerifiedTotp = (factorData?.totp ?? []).some(
-      (factor) => factor.status === "verified"
-    );
-    const isMfaVerified = aalData?.currentLevel === "aal2";
-
-    if (isMfaRoute) {
-      if (isMfaVerified) {
-        const redirectTarget = request.nextUrl.searchParams.get("redirect") || "/dashboard";
-        return NextResponse.redirect(new URL(redirectTarget, request.url));
-      }
-
-      if (pathname === "/mfa/verify" && !hasVerifiedTotp) {
-        return NextResponse.redirect(new URL("/mfa/setup", request.url));
-      }
-
-      if (pathname === "/mfa/setup" && hasVerifiedTotp) {
-        return NextResponse.redirect(new URL("/mfa/verify", request.url));
-      }
-
-      return response;
-    }
-
-    if (!isMfaVerified) {
-      const nextPath = hasVerifiedTotp ? "/mfa/verify" : "/mfa/setup";
-      const mfaUrl = new URL(nextPath, request.url);
-      mfaUrl.searchParams.set("redirect", pathname);
-      return NextResponse.redirect(mfaUrl);
     }
 
     return response;

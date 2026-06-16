@@ -5,11 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
+import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
 
 export default function ClientLoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
+  usePasswordSetupRedirect();
   const redirectTo = searchParams.get("redirect") || "/portal/dashboard";
 
   const [email, setEmail] = useState("");
@@ -24,9 +26,11 @@ export default function ClientLoginPage() {
     setError("");
 
     try {
+      const normalizedEmail = email.trim().toLowerCase();
+
       const { data: authData, error: authError } =
         await supabase.auth.signInWithPassword({
-          email,
+          email: normalizedEmail,
           password,
         });
 

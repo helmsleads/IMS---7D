@@ -5,11 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
+import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
 
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
+  usePasswordSetupRedirect();
   const redirectTo = searchParams.get("redirect") || "/dashboard";
 
   const [email, setEmail] = useState("");
@@ -24,8 +26,10 @@ export default function LoginPage() {
     setError("");
 
     try {
+      const normalizedEmail = email.trim().toLowerCase();
+
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: normalizedEmail,
         password,
       });
 
@@ -50,28 +54,6 @@ export default function LoginPage() {
       if (!staffUser.active) {
         await supabase.auth.signOut();
         setError("Your account has been deactivated. Please contact an administrator.");
-        return;
-      }
-
-      const [{ data: factorData, error: factorError }, { data: aalData, error: aalError }] =
-        await Promise.all([
-          supabase.auth.mfa.listFactors(),
-          supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
-        ]);
-
-      if (factorError || aalError) {
-        setError("Unable to complete MFA check. Please try again.");
-        return;
-      }
-
-      const hasVerifiedTotp = (factorData?.totp ?? []).some(
-        (factor) => factor.status === "verified"
-      );
-      const isMfaVerified = aalData?.currentLevel === "aal2";
-
-      if (!isMfaVerified) {
-        const nextRoute = hasVerifiedTotp ? "/mfa/verify" : "/mfa/setup";
-        router.push(`${nextRoute}?redirect=${encodeURIComponent(redirectTo)}`);
         return;
       }
 

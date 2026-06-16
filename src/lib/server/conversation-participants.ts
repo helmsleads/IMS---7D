@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase-service";
 import { sendEmail } from "@/lib/api/email";
+import { isEmailServiceConfigured } from "@/lib/email";
 
 export type ParticipantRole = "account_manager" | "warehouse_manager";
 
@@ -202,7 +203,7 @@ export async function addWarehouseManagerParticipant(params: {
     (Array.isArray(conv?.client) ? conv.client[0] : conv?.client)?.company_name ||
     "A client";
 
-  if (targetUser.email && process.env.RESEND_API_KEY) {
+  if (targetUser.email && isEmailServiceConfigured()) {
     const messagesUrl = `${getAppUrl()}/messages`;
     const html = `
       <p>Hi ${targetUser.name},</p>

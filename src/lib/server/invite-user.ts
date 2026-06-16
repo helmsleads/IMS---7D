@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase-service";
 import { sendEmail } from "@/lib/api/email";
+import { isEmailServiceConfigured } from "@/lib/email";
 import type { ClientUserRole, UserRole } from "@/types/database";
 
 export type InviteUserType = "internal" | "portal";
@@ -57,6 +58,10 @@ function getAppUrl(): string {
   );
 }
 
+function getAuthCallbackUrl(nextPath = "/reset-password"): string {
+  return `${getAppUrl()}/auth/callback?next=${encodeURIComponent(nextPath)}`;
+}
+
 function inviteEmailHtml(
   firstName: string,
   actionLink: string,
@@ -71,18 +76,47 @@ function inviteEmailHtml(
   return `
     <html>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-        <h1>Dear 7 Degrees user!</h1>
+        <h1>You're invited to 7 Degrees</h1>
         <p>${greeting}</p>
         <p>
-          You have been invited to ${portalName}.
-          <a href="${actionLink}">Click here</a> to accept your invitation and set your password.
+          You have been invited to the ${portalName}.
+          Use the button below to create your password and activate your account.
         </p>
-        <p>If the link does not work, copy and paste this URL into your browser:</p>
+        <p style="margin: 24px 0;">
+          <a href="${actionLink}" style="display: inline-block; background: #0d9488; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+            Set up your password
+          </a>
+        </p>
+        <p><strong>Your login email</strong> is the address this message was sent to.</p>
+        <p>You do not have a password yet — the link above is how you create one.</p>
+        <p>If the button does not work, copy and paste this URL into your browser:</p>
         <p style="word-break: break-all; color: #555;">${actionLink}</p>
         <p>Thanks for joining!</p>
       </body>
     </html>
   `;
+}
+
+export async function findAuthUserIdByEmail(email: string): Promise<string | null> {
+  const service = createServiceClient();
+  const normalized = email.trim().toLowerCase();
+  let page = 1;
+
+  while (true) {
+    const { data, error } = await service.auth.admin.listUsers({
+      page,
+      perPage: 1000,
+    });
+    if (error) throw error;
+
+    const found = data.users.find(
+      (user) => user.email?.toLowerCase() === normalized
+    );
+    if (found) return found.id;
+
+    if (data.users.length < 1000) return null;
+    page++;
+  }
 }
 
 function checkInviteConfiguration(): InviteFailure | null {
@@ -168,6 +202,7 @@ async function generateAuthInviteLink(
       ...attemptErrors,
       `Redirect URL used: ${redirectTo}`,
       "Ensure this URL is listed under Supabase → Authentication → URL Configuration → Redirect URLs.",
+      "Required entries include /auth/callback and /reset-password for your app origin(s).",
     ].join(" "),
   };
 }
@@ -271,12 +306,8 @@ export async function sendUserInvitation(
   }
 
   try {
-    const appUrl = getAppUrl();
     const firstName = params.full_name.trim().split(/\s+/)[0] || "";
-    const redirectTo =
-      params.user_type === "portal"
-        ? `${appUrl}/client-login`
-        : `${appUrl}/login`;
+    const redirectTo = getAuthCallbackUrl("/reset-password");
 
     const linkResult = await generateAuthInviteLink(
       params.email,
@@ -327,16 +358,16 @@ export async function sendUserInvitation(
       }
     }
 
-    if (!process.env.RESEND_API_KEY) {
+    if (!isEmailServiceConfigured()) {
       console.warn(
-        "RESEND_API_KEY not set — user created without invitation email:",
+        "AWS SES not configured — user created without invitation email:",
         params.email
       );
       return {
         success: true,
         userId,
         emailSent: false,
-        emailWarning: "Email service is not configured (RESEND_API_KEY).",
+        emailWarning: "Email service is not configured (AWS_REGION / SES).",
         inviteLink: linkResult.actionLink,
       };
     }
@@ -355,7 +386,7 @@ export async function sendUserInvitation(
         emailSent: false,
         emailWarning:
           emailResult.error ||
-          "Check RESEND_API_KEY, RESEND_FROM_EMAIL, and your sender domain at resend.com/domains",
+          "Check AWS credentials, AWS_REGION, SES_FROM_EMAIL, and your verified SES domain",
         inviteLink: linkResult.actionLink,
       };
     }

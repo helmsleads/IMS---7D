@@ -1,4 +1,8 @@
-import { getResend } from "@/lib/email";
+import { SendEmailCommand } from "@aws-sdk/client-sesv2";
+import {
+  getEmailFromAddress,
+  getSesClient,
+} from "@/lib/email";
 import { createServiceClient } from "@/lib/supabase-service";
 import { orderConfirmedEmail } from "@/lib/email-templates/order-confirmed";
 import { orderShippedEmail } from "@/lib/email-templates/order-shipped";
@@ -11,34 +15,27 @@ interface SendEmailResult {
   error?: string;
 }
 
-/** Resend requires the domain in the From address to be verified at resend.com/domains */
-export function getResendFromAddress(): string {
-  return (
-    process.env.RESEND_FROM_EMAIL?.trim() ||
-    "7 Degrees Co <noreply@7degreesco.com>"
-  );
-}
-
 export async function sendEmail(
   to: string,
   subject: string,
   html: string
 ): Promise<SendEmailResult> {
   try {
-    const resend = getResend();
-    const { data, error } = await resend.emails.send({
-      from: getResendFromAddress(),
-      to,
-      subject,
-      html,
-    });
+    const client = getSesClient();
+    const response = await client.send(
+      new SendEmailCommand({
+        FromEmailAddress: getEmailFromAddress(),
+        Destination: { ToAddresses: [to] },
+        Content: {
+          Simple: {
+            Subject: { Data: subject, Charset: "UTF-8" },
+            Body: { Html: { Data: html, Charset: "UTF-8" } },
+          },
+        },
+      })
+    );
 
-    if (error) {
-      console.error("Error sending email:", error);
-      return { success: false, error: error.message };
-    }
-
-    return { success: true, id: data?.id };
+    return { success: true, id: response.MessageId };
   } catch (err) {
     console.error("Failed to send email:", err);
     return {

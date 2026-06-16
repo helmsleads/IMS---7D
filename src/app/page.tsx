@@ -4,9 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
 
 export default function LoginPage() {
   const router = useRouter();
+  usePasswordSetupRedirect();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -21,13 +23,21 @@ export default function LoginPage() {
     const supabase = createClient();
 
     // Attempt sign in
+    const normalizedEmail = email.trim().toLowerCase();
+
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email,
+      email: normalizedEmail,
       password,
     });
 
     if (authError) {
-      setError("Invalid email or password");
+      const message = authError.message.toLowerCase();
+      setError(
+        message.includes("invalid login credentials") ||
+          message.includes("invalid email or password")
+          ? "Invalid email or password. Use the same email that received the invitation."
+          : authError.message
+      );
       setLoading(false);
       return;
     }
@@ -57,7 +67,7 @@ export default function LoginPage() {
       const { data: staffByEmail } = await supabase
         .from("users")
         .select("id, role")
-        .eq("email", email)
+        .eq("email", normalizedEmail)
         .single();
 
       if (staffByEmail) {

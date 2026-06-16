@@ -470,13 +470,6 @@ const SETTING_CATEGORIES: SettingCategory[] = [
         unit: "minutes",
       },
       {
-        key: "require_2fa",
-        label: "Require Two-Factor Authentication",
-        description: "Require 2FA for all admin users",
-        type: "toggle",
-        defaultValue: false,
-      },
-      {
         key: "password_expiry",
         label: "Password Expiry",
         description: "Days before password must be changed (0 = never)",

@@ -1,15 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { Lock, CheckCircle, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import Button from "@/components/ui/Button";
+import {
+  getAuthLinkErrorFromUrl,
+  getHashSessionTokens,
+  isInviteOrRecoveryHash,
+  clearAuthHashFromUrl,
+  clearAuthCodeFromUrl,
+} from "@/lib/auth-password-setup";
 
 export default function ResetPasswordPage() {
-  const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -18,32 +23,138 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [isValidSession, setIsValidSession] = useState<boolean | null>(null);
+  const [isInvite, setIsInvite] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
 
-  // Check if we have a valid session from the reset link
+  const [loginPath, setLoginPath] = useState("/client-login");
+
   useEffect(() => {
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setIsValidSession(!!session);
+    let active = true;
+
+    const detectUserType = async (userId: string) => {
+      const { data: staffUser } = await supabase
+        .from("users")
+        .select("id")
+        .eq("id", userId)
+        .maybeSingle();
+
+      setLoginPath(staffUser ? "/login" : "/client-login");
     };
-    checkSession();
 
-    // Listen for auth state changes (when user clicks the reset link)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event) => {
-        if (event === "PASSWORD_RECOVERY") {
-          setIsValidSession(true);
-        }
+    const succeed = async (userId: string, invite = false) => {
+      if (!active) return;
+      if (invite) setIsInvite(true);
+      setIsValidSession(true);
+      await detectUserType(userId);
+    };
+
+    const fail = (message?: string) => {
+      if (!active) return;
+      if (message) setLinkError(message);
+      setIsValidSession(false);
+    };
+
+    const resolveSession = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const callbackError = params.get("error");
+      const authLinkError = getAuthLinkErrorFromUrl();
+
+      if (authLinkError || callbackError || params.get("expired") === "1") {
+        fail(
+          authLinkError ||
+            "This invitation or password reset link is invalid or has expired."
+        );
+        return;
       }
-    );
 
-    return () => subscription.unsubscribe();
-  }, [supabase.auth]);
+      const hashTokens = getHashSessionTokens();
+      if (hashTokens) {
+        const inviteFlow = isInviteOrRecoveryHash();
+        const { error: sessionError } = await supabase.auth.setSession(hashTokens);
+        clearAuthHashFromUrl();
+
+        if (sessionError) {
+          fail(sessionError.message);
+          return;
+        }
+
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (user) {
+          await succeed(user.id, inviteFlow);
+          return;
+        }
+
+        fail("Could not verify your link. Please request a new one.");
+        return;
+      }
+
+      const code = params.get("code");
+      if (code) {
+        const { error: exchangeError } =
+          await supabase.auth.exchangeCodeForSession(code);
+        clearAuthCodeFromUrl();
+
+        if (exchangeError) {
+          fail(exchangeError.message);
+          return;
+        }
+
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (user) {
+          await succeed(user.id, true);
+          return;
+        }
+
+        fail("Could not verify your link. Please request a new one.");
+        return;
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!active) return;
+
+      if (user) {
+        const inviteFlow =
+          params.get("type") === "recovery" || params.get("type") === "invite";
+        await succeed(user.id, inviteFlow);
+        return;
+      }
+
+      fail("This invitation or password reset link is invalid or has expired.");
+    };
+
+    void resolveSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!active || !session?.user) return;
+
+      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+        setIsInvite(true);
+        setIsValidSession(true);
+        await detectUserType(session.user.id);
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    // Validation
     if (password.length < 8) {
       setError("Password must be at least 8 characters long");
       return;
@@ -57,17 +168,26 @@ export default function ResetPasswordPage() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: password,
+      const setupResponse = await fetch("/api/auth/complete-password-setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
       });
 
-      if (error) {
-        setError(error.message);
-      } else {
-        setSuccess(true);
-        // Sign out after password reset
-        await supabase.auth.signOut();
+      const setupResult = (await setupResponse.json()) as {
+        error?: string;
+      };
+
+      if (!setupResponse.ok) {
+        setError(
+          setupResult.error ||
+            "Could not save your password. Open the invitation link again and try once more."
+        );
+        return;
       }
+
+      setSuccess(true);
+      await supabase.auth.signOut();
     } catch {
       setError("An unexpected error occurred");
     } finally {
@@ -75,21 +195,19 @@ export default function ResetPasswordPage() {
     }
   };
 
-  // Show loading while checking session
   if (isValidSession === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md border-t-4 border-teal-600">
           <div className="text-center">
             <div className="inline-block w-8 h-8 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p className="text-gray-600">Verifying reset link...</p>
+            <p className="text-gray-600">Verifying your link...</p>
           </div>
         </div>
       </div>
     );
   }
 
-  // Invalid or expired session
   if (isValidSession === false) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -102,17 +220,23 @@ export default function ResetPasswordPage() {
               Invalid or Expired Link
             </h1>
             <p className="text-gray-600 mb-6">
-              This password reset link is invalid or has expired. Please request a new one.
+              {linkError ||
+                "This invitation or password reset link is invalid or has expired. Ask your administrator to send a new invitation, or request a password reset."}
             </p>
             <div className="space-y-3">
               <Link href="/forgot-password">
-                <Button className="w-full">Request New Link</Button>
+                <Button className="w-full">Request Password Reset</Button>
+              </Link>
+              <Link href="/login">
+                <Button variant="secondary" className="w-full">
+                  Staff Login
+                </Button>
               </Link>
               <Link
                 href="/client-login"
                 className="block text-center text-sm text-teal-600 hover:text-teal-700"
               >
-                Back to login
+                Client login
               </Link>
             </div>
           </div>
@@ -121,7 +245,6 @@ export default function ResetPasswordPage() {
     );
   }
 
-  // Success state
   if (success) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -131,12 +254,14 @@ export default function ResetPasswordPage() {
               <CheckCircle className="w-6 h-6 text-green-600" />
             </div>
             <h1 className="text-xl font-bold text-gray-900 mb-2">
-              Password Updated
+              {isInvite ? "Account Ready" : "Password Updated"}
             </h1>
             <p className="text-gray-600 mb-6">
-              Your password has been successfully reset. You can now log in with your new password.
+              {isInvite
+                ? "Your password has been set. Sign in with the email address that received the invitation and the password you just created."
+                : "Your password has been successfully reset. You can now log in with your new password."}
             </p>
-            <Link href="/client-login">
+            <Link href={loginPath}>
               <Button className="w-full">Go to Login</Button>
             </Link>
           </div>
@@ -153,10 +278,12 @@ export default function ResetPasswordPage() {
             <Lock className="w-6 h-6 text-teal-600" />
           </div>
           <h1 className="text-xl font-bold text-gray-900">
-            Set New Password
+            {isInvite ? "Create Your Password" : "Set New Password"}
           </h1>
           <p className="text-gray-600 mt-2">
-            Please enter your new password below.
+            {isInvite
+              ? "Choose a password for your account. You will use this with the email address that received the invitation."
+              : "Please enter your new password below."}
           </p>
         </div>
 
@@ -172,7 +299,7 @@ export default function ResetPasswordPage() {
               htmlFor="password"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-              New Password
+              {isInvite ? "Password" : "New Password"}
             </label>
             <div className="relative">
               <input
@@ -204,7 +331,7 @@ export default function ResetPasswordPage() {
               htmlFor="confirmPassword"
               className="block text-sm font-medium text-gray-700 mb-1"
             >
-              Confirm New Password
+              Confirm Password
             </label>
             <input
               type={showPassword ? "text" : "password"}
@@ -218,7 +345,6 @@ export default function ResetPasswordPage() {
             />
           </div>
 
-          {/* Password requirements */}
           <div className="mb-6 p-3 bg-gray-50 rounded-md">
             <p className="text-sm font-medium text-gray-700 mb-2">
               Password requirements:
@@ -227,8 +353,15 @@ export default function ResetPasswordPage() {
               <li className={password.length >= 8 ? "text-green-600" : ""}>
                 {password.length >= 8 ? "✓" : "○"} At least 8 characters
               </li>
-              <li className={password === confirmPassword && confirmPassword ? "text-green-600" : ""}>
-                {password === confirmPassword && confirmPassword ? "✓" : "○"} Passwords match
+              <li
+                className={
+                  password === confirmPassword && confirmPassword
+                    ? "text-green-600"
+                    : ""
+                }
+              >
+                {password === confirmPassword && confirmPassword ? "✓" : "○"}{" "}
+                Passwords match
               </li>
             </ul>
           </div>
@@ -236,10 +369,12 @@ export default function ResetPasswordPage() {
           <Button
             type="submit"
             loading={loading}
-            disabled={loading || password.length < 8 || password !== confirmPassword}
+            disabled={
+              loading || password.length < 8 || password !== confirmPassword
+            }
             className="w-full"
           >
-            Reset Password
+            {isInvite ? "Create Password" : "Reset Password"}
           </Button>
         </form>
       </div>

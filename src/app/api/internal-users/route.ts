@@ -4,6 +4,7 @@ import { createServiceClient } from "@/lib/supabase-service";
 import {
   sendUserInvitation,
   formatInviteSuccessMessage,
+  findAuthUserIdByEmail,
   type InviteFailure,
 } from "@/lib/server/invite-user";
 import type { UserRole } from "@/types/database";
@@ -240,13 +241,13 @@ export async function POST(request: NextRequest) {
     }
 
     const serviceClient = createServiceClient();
+    const normalizedEmail = email.toLowerCase();
 
-    // Check if email already exists
     const { data: existingUser } = await serviceClient
       .from("users")
       .select("id")
-      .eq("email", email.toLowerCase())
-      .single();
+      .eq("email", normalizedEmail)
+      .maybeSingle();
 
     if (existingUser) {
       return NextResponse.json(
@@ -255,31 +256,66 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create auth user via admin API (doesn't affect current session)
+    let authUserId: string | null = null;
+
     const { data: authData, error: authError } =
       await serviceClient.auth.admin.createUser({
-        email: email.toLowerCase(),
+        email: normalizedEmail,
         password,
         email_confirm: true,
         user_metadata: { full_name: name },
       });
 
-    if (authError || !authData.user) {
-      console.error("Create user error:", authError?.message);
+    if (authData?.user) {
+      authUserId = authData.user.id;
+    } else if (authError) {
+      const authMsg = authError.message.toLowerCase();
+      const authAlreadyExists =
+        authMsg.includes("already") ||
+        authMsg.includes("registered") ||
+        authMsg.includes("exists");
+
+      if (!authAlreadyExists) {
+        console.error("Create user error:", authError.message);
+        return NextResponse.json(
+          { error: authError.message || "Failed to create user account" },
+          { status: 500 }
+        );
+      }
+
+      authUserId = await findAuthUserIdByEmail(normalizedEmail);
+      if (!authUserId) {
+        return NextResponse.json(
+          { error: authError.message || "Failed to create user account" },
+          { status: 500 }
+        );
+      }
+
+      const { error: passwordError } =
+        await serviceClient.auth.admin.updateUserById(authUserId, {
+          password,
+        });
+      if (passwordError) {
+        console.error("Update password error:", passwordError.message);
+        return NextResponse.json(
+          { error: passwordError.message || "Failed to set password" },
+          { status: 500 }
+        );
+      }
+    } else {
       return NextResponse.json(
-        { error: authError?.message || "Failed to create user account" },
+        { error: "Failed to create user account" },
         { status: 500 }
       );
     }
 
-    // Create the internal user record
     const { data: newUser, error: userError } = await serviceClient
       .from("users")
       .insert({
-        id: authData.user.id,
-        auth_id: authData.user.id,
+        id: authUserId,
+        auth_id: authUserId,
         name,
-        email: email.toLowerCase(),
+        email: normalizedEmail,
         role,
         active: true,
       })
@@ -287,8 +323,9 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (userError) {
-      // Clean up the auth user if the record insert fails
-      await serviceClient.auth.admin.deleteUser(authData.user.id);
+      if (authData?.user) {
+        await serviceClient.auth.admin.deleteUser(authData.user.id);
+      }
       return NextResponse.json(
         { error: userError.message || "Failed to create user record" },
         { status: 500 }

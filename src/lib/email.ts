@@ -1,15 +1,34 @@
-import { Resend } from "resend";
+import { SESv2Client } from "@aws-sdk/client-sesv2";
 
-// Lazy initialization to avoid issues with client-side bundling
-let resendInstance: Resend | null = null;
+let sesClient: SESv2Client | null = null;
 
-export function getResend(): Resend {
-  if (!resendInstance) {
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
-      throw new Error("RESEND_API_KEY is not configured");
+export function getSesRegion(): string | undefined {
+  return (
+    process.env.AWS_REGION?.trim() ||
+    process.env.SES_REGION?.trim() ||
+    process.env.AWS_DEFAULT_REGION?.trim()
+  );
+}
+
+/** True when SES region is configured (credentials use the AWS SDK default chain). */
+export function isEmailServiceConfigured(): boolean {
+  return !!getSesRegion();
+}
+
+export function getEmailFromAddress(): string {
+  return (
+    process.env.SES_FROM_EMAIL?.trim() ||
+    "Helmsman Imports <invites@helmsmanimports.com>"
+  );
+}
+
+export function getSesClient(): SESv2Client {
+  if (!sesClient) {
+    const region = getSesRegion();
+    if (!region) {
+      throw new Error("AWS_REGION (or SES_REGION) is not configured");
     }
-    resendInstance = new Resend(apiKey);
+    sesClient = new SESv2Client({ region });
   }
-  return resendInstance;
+  return sesClient;
 }
