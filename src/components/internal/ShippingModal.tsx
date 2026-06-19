@@ -771,7 +771,7 @@ export default function ShippingModal({
             <div className="text-sm">
               <p className="font-medium text-amber-800">ShipStation Test Mode</p>
               <p className="text-amber-700 mt-0.5">
-                SHIPSTATION_TEST is enabled. Rate shopping runs but no order or label is created in ShipStation.
+                SHIPSTATION_TEST is enabled. Orders are created in ShipStation and rates are shopped, but labels are not purchased (no wallet charge). A TEST- tracking number is used in 7d.
               </p>
             </div>
           </div>
@@ -1269,7 +1269,7 @@ export default function ShippingModal({
                 <p className="text-sm font-medium text-gray-700">Shipping order...</p>
                 <p className="text-xs text-gray-500 mt-1">
                   {shipstationTestMode
-                    ? "Running rate shop (test mode — no ShipStation label purchase)"
+                    ? "Creating order in ShipStation and rate shopping (test mode — no label purchase)"
                     : "Creating label and marking order shipped"}
                 </p>
               </div>

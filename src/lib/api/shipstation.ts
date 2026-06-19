@@ -269,7 +269,7 @@ export function isShipStationConfigured(): boolean {
   return !!(apiKey && apiSecret);
 }
 
-/** When true, rate-shop only — no ShipStation order push or label purchase. */
+/** When true, push order to ShipStation and rate-shop, but skip label purchase (no wallet charge). */
 export function isShipStationTestMode(): boolean {
   const raw = readEnv("SHIPSTATION_TEST").toLowerCase();
   return raw === "true" || raw === "1" || raw === "yes";
@@ -787,12 +787,17 @@ export async function createShipStationLabel(
   const carrierDisplayName = selected.displayName;
 
   if (isShipStationTestMode()) {
+    const shipStationOrderId = await createOrUpdateOrder(
+      request,
+      request.shipTo,
+      warehouseId
+    );
     const testTracking = `TEST-${request.orderNumber.replace(/[^A-Z0-9]/gi, "").slice(0, 12) || request.orderKey.slice(0, 8)}`;
     return {
       trackingNumber: testTracking,
       labelPdfBase64: "",
       shipmentId: 0,
-      shipStationOrderId: 0,
+      shipStationOrderId,
       carrierCode,
       serviceCode,
       carrier: carrierDisplayName,

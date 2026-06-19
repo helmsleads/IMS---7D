@@ -161,11 +161,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Idempotency: return existing label if already created via ShipStation
+    // Idempotency: return existing ShipStation result if already processed
     if (
       order.shipping_method === "shipstation_api" &&
       order.tracking_number &&
-      order.label_url
+      (order.label_url || order.shipstation_order_id)
     ) {
       return NextResponse.json({
         trackingNumber: order.tracking_number,
@@ -175,6 +175,7 @@ export async function POST(request: NextRequest) {
         carrier: order.carrier || "ShipStation",
         actualCost: null,
         listCost: null,
+        testMode: isShipStationTestMode(),
       });
     }
 
