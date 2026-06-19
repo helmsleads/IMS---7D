@@ -3,13 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Mail, CheckCircle } from "lucide-react";
-import { createClient } from "@/lib/supabase";
-import { getAuthCallbackUrl } from "@/lib/auth-password-setup";
 import Button from "@/components/ui/Button";
 
 export default function ForgotPasswordPage() {
-  const supabase = createClient();
-
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -21,15 +17,20 @@ export default function ForgotPasswordPage() {
     setError("");
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: getAuthCallbackUrl("/reset-password"),
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
       });
 
-      if (error) {
-        setError(error.message);
-      } else {
-        setSuccess(true);
+      const result = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        setError(result.error || "Could not send reset email. Try again later.");
+        return;
       }
+
+      setSuccess(true);
     } catch {
       setError("An unexpected error occurred");
     } finally {
@@ -49,11 +50,12 @@ export default function ForgotPasswordPage() {
               Check Your Email
             </h1>
             <p className="text-gray-600 mb-6">
-              We've sent a password reset link to <strong>{email}</strong>.
-              Please check your inbox and follow the instructions.
+              If an account exists for <strong>{email}</strong>, we sent a
+              password reset link. Please check your inbox and follow the
+              instructions.
             </p>
             <p className="text-sm text-gray-500 mb-6">
-              Didn't receive the email? Check your spam folder or try again.
+              Didn&apos;t receive the email? Check your spam folder or try again.
             </p>
             <div className="space-y-3">
               <Button
@@ -97,7 +99,7 @@ export default function ForgotPasswordPage() {
             Forgot Password?
           </h1>
           <p className="text-gray-600 mt-2">
-            Enter your email and we'll send you a reset link.
+            Enter your email and we&apos;ll send you a reset link.
           </p>
         </div>
 

@@ -1,13 +1,8 @@
 import { createServiceClient } from "@/lib/supabase-service";
 import { sendEmail } from "@/lib/api/email";
 import { isEmailServiceConfigured } from "@/lib/email";
-import {
-  getAuthCallbackUrl,
-  getAppUrlConfigurationError,
-  getRedirectToFromActionLink,
-  isLocalhostUrl,
-  patchAuthActionLinkRedirect,
-} from "@/lib/server/app-url";
+import { getAppUrlConfigurationError } from "@/lib/server/app-url";
+import { generateAuthEmailLink } from "@/lib/server/auth-email-links";
 import type { ClientUserRole, UserRole } from "@/types/database";
 
 export type InviteUserType = "internal" | "portal";
@@ -145,82 +140,27 @@ function checkInviteConfiguration(): InviteFailure | null {
 
 async function generateAuthInviteLink(
   email: string,
-  redirectTo: string,
   metadata?: Record<string, unknown>
 ): Promise<
   | { userId: string; actionLink: string }
   | { error: string; details?: string }
 > {
-  const service = createServiceClient();
-  const normalizedEmail = email.trim().toLowerCase();
+  const result = await generateAuthEmailLink(
+    email,
+    ["invite", "recovery"],
+    metadata
+  );
 
-  const linkTypes: Array<"invite" | "recovery"> = ["invite", "recovery"];
-  const attemptErrors: string[] = [];
-
-  for (const type of linkTypes) {
-    const { data, error } = await service.auth.admin.generateLink({
-      type,
-      email: normalizedEmail,
-      options: {
-        redirectTo,
-        ...(metadata ? { data: metadata as { [key: string]: string } } : {}),
-      },
-    });
-
-    if (!error && data?.properties?.action_link && data?.user?.id) {
-      const actionLink = patchAuthActionLinkRedirect(
-        data.properties.action_link,
-        redirectTo
-      );
-      const embeddedRedirect = getRedirectToFromActionLink(actionLink);
-
-      if (embeddedRedirect && isLocalhostUrl(embeddedRedirect)) {
-        return {
-          error: "Invitation link would redirect to localhost.",
-          details: [
-            `Redirect URL used: ${redirectTo}`,
-            "Update Supabase → Authentication → URL Configuration:",
-            `- Site URL: your production domain (not http://localhost:3000)`,
-            `- Redirect URLs: include ${redirectTo}`,
-          ].join(" "),
-        };
-      }
-
-      return {
-        userId: data.user.id,
-        actionLink,
-      };
-    }
-
-    if (error) {
-      const label = type === "invite" ? "Invite link" : "Password reset link";
-      attemptErrors.push(`${label}: ${error.message}`);
-      const msg = error.message.toLowerCase();
-      const retryWithRecovery =
-        type === "invite" &&
-        (msg.includes("already") ||
-          msg.includes("registered") ||
-          msg.includes("exists"));
-      if (retryWithRecovery) continue;
-      return {
-        error: error.message,
-        details: attemptErrors.join("; "),
-      };
-    }
-
-    attemptErrors.push(
-      `${type === "invite" ? "Invite link" : "Password reset link"}: no link returned from Supabase`
-    );
+  if ("error" in result) {
+    return {
+      error: result.error,
+      details: result.details,
+    };
   }
 
   return {
-    error: "Could not create an invitation link for this email.",
-    details: [
-      ...attemptErrors,
-      `Redirect URL used: ${redirectTo}`,
-      "Ensure this URL is listed under Supabase → Authentication → URL Configuration → Redirect URLs.",
-      "Required entries include /auth/callback and /reset-password for your app origin(s).",
-    ].join(" "),
+    userId: result.userId,
+    actionLink: result.actionLink,
   };
 }
 
@@ -324,15 +264,9 @@ export async function sendUserInvitation(
 
   try {
     const firstName = params.full_name.trim().split(/\s+/)[0] || "";
-    const redirectTo = getAuthCallbackUrl("/reset-password", {
-      forEmailLink: true,
+    const linkResult = await generateAuthInviteLink(params.email, {
+      full_name: params.full_name,
     });
-
-    const linkResult = await generateAuthInviteLink(
-      params.email,
-      redirectTo,
-      { full_name: params.full_name }
-    );
 
     if ("error" in linkResult) {
       console.error("generateLink failed:", linkResult, params);

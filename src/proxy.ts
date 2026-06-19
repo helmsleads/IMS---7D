@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-server";
 
 // Routes that don't require authentication
-const publicRoutes = ["/", "/login", "/client-login", "/forgot-password", "/reset-password", "/auth/callback"];
+const publicRoutes = ["/", "/login", "/client-login", "/forgot-password", "/reset-password", "/auth/callback", "/auth/accept-invite"];
 
 // Internal app routes (require staff authentication)
 const internalRoutes = [

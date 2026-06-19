@@ -109,11 +109,17 @@ export function hasAuthHashInUrl(): boolean {
   return !!hash && AUTH_HASH_MARKERS.some((marker) => hash.includes(marker));
 }
 
-export function getAuthCallbackUrl(nextPath = "/reset-password"): string {
+/** Full URL for Supabase resetPasswordForEmail / invite redirectTo. */
+export function getPasswordSetupEmailRedirectUrl(): string {
   const origin =
     (typeof window !== "undefined" ? window.location.origin : undefined) ||
     process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
     "http://localhost:3000";
 
-  return `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
+  return `${origin}/reset-password`;
+}
+
+/** @deprecated Use getPasswordSetupEmailRedirectUrl */
+export function getAuthCallbackUrl(): string {
+  return getPasswordSetupEmailRedirectUrl();
 }

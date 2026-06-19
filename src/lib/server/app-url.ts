@@ -122,6 +122,18 @@ export function getAppUrl(request?: Request): string {
   return PRODUCTION_APP_URL;
 }
 
+export function getPasswordSetupRedirectUrl(options?: {
+  request?: Request;
+  forEmailLink?: boolean;
+}): string {
+  const origin = options?.forEmailLink
+    ? getAppUrlForExternalLinks()
+    : getAppUrl(options?.request);
+
+  return `${origin}/reset-password`;
+}
+
+/** OAuth / code-exchange flows that need the server callback route. */
 export function getAuthCallbackUrl(
   nextPath = "/reset-password",
   options?: { request?: Request; forEmailLink?: boolean }
@@ -133,14 +145,24 @@ export function getAuthCallbackUrl(
   return `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
 }
 
+export function getSupabaseAuthUrlInstructions(): string {
+  return [
+    `Site URL: ${PRODUCTION_APP_URL}`,
+    `Redirect URLs: ${PRODUCTION_APP_URL}/reset-password`,
+    `Redirect URLs: ${PRODUCTION_APP_URL}/auth/callback`,
+    `Redirect URLs: ${PRODUCTION_APP_URL}/** (wildcard recommended)`,
+    "Remove http://localhost:3000 from Site URL and Redirect URLs in production.",
+  ].join("\n");
+}
+
 export function getAppUrlConfigurationError(): string | null {
   const url = getAppUrlForExternalLinks();
   if (process.env.NODE_ENV === "production" && isLocalhostUrl(url)) {
     return [
       "App URL resolves to localhost in production.",
-      `Set APP_URL or NEXT_PUBLIC_APP_URL to ${PRODUCTION_APP_URL} in Vercel.`,
-      "Set Supabase → Authentication → Site URL to the same domain,",
-      `and add ${PRODUCTION_APP_URL}/auth/callback to Redirect URLs.`,
+      `Set APP_URL to ${PRODUCTION_APP_URL} in Vercel.`,
+      "Update Supabase → Authentication → URL Configuration:",
+      getSupabaseAuthUrlInstructions(),
     ].join(" ");
   }
   return null;
