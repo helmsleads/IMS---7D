@@ -1,14 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Package, MapPin, ClipboardCheck, Check, Plus, Building2, AlertCircle, CheckCircle2, FileText, Zap, X, FolderOpen, DollarSign, Truck } from "lucide-react";
+import { Package, MapPin, ClipboardCheck, Check, Plus, Building2, AlertCircle, CheckCircle2, FileText, Zap, X, FolderOpen, DollarSign, Truck, Wine } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
 import { getMyTemplate, getMyTemplates, PortalTemplate } from "@/lib/api/portal-templates";
 import { getMyServices } from "@/lib/api/portal-services";
 import { handleApiError } from "@/lib/utils/error-handler";
 import { formatStreetAddress, formatCity, formatState, formatZip } from "@/lib/format-address";
+import { selectedProductsContainAlcohol } from "@/lib/product-categories/alcohol";
+import {
+  getDefaultPortalPreferredCarrier,
+  getPreferredCarrierLabel,
+  PORTAL_REQUEST_CARRIER_OPTIONS,
+} from "@/lib/outbound-service-options";
 
 interface ShippingAddress {
   id: string;
@@ -31,6 +37,7 @@ interface InventoryItem {
   image_url: string | null;
   /** Shopify listing title from product_mappings.external_title when linked */
   shopify_listing_title: string | null;
+  product_category: { name: string; slug: string } | null;
 }
 
 interface SelectedProduct {
@@ -49,15 +56,6 @@ interface AdditionalInfo {
   preferredCarrier: string;
   requiresRepack: boolean;
 }
-
-const CARRIERS = [
-  { value: "", label: "No preference" },
-  { value: "fedex", label: "FedEx" },
-  { value: "ups", label: "UPS" },
-  { value: "usps", label: "USPS" },
-  { value: "dhl", label: "DHL" },
-  { value: "freight", label: "Freight / LTL" },
-];
 
 type Step = 1 | 2 | 3;
 
@@ -100,6 +98,39 @@ export default function RequestShipmentPage() {
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templates, setTemplates] = useState<PortalTemplate[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const prevIsAlcoholOrderRef = useRef<boolean | null>(null);
+
+  const isAlcoholOrder = useMemo(
+    () => selectedProductsContainAlcohol(selectedProducts, inventoryItems),
+    [selectedProducts, inventoryItems]
+  );
+
+  // Default carrier: FedEx for alcohol, ShipStation for non-alcohol
+  useEffect(() => {
+    if (selectedProducts.length === 0) {
+      prevIsAlcoholOrderRef.current = null;
+      setAdditionalInfo((prev) =>
+        prev.preferredCarrier ? { ...prev, preferredCarrier: "" } : prev
+      );
+      return;
+    }
+
+    const defaultCarrier = getDefaultPortalPreferredCarrier(isAlcoholOrder);
+    const alcoholClassificationChanged =
+      prevIsAlcoholOrderRef.current !== null &&
+      prevIsAlcoholOrderRef.current !== isAlcoholOrder;
+    prevIsAlcoholOrderRef.current = isAlcoholOrder;
+
+    setAdditionalInfo((prev) => {
+      if (!prev.preferredCarrier || alcoholClassificationChanged) {
+        if (prev.preferredCarrier === defaultCarrier && !alcoholClassificationChanged) {
+          return prev;
+        }
+        return { ...prev, preferredCarrier: defaultCarrier };
+      }
+      return prev;
+    });
+  }, [selectedProducts, isAlcoholOrder]);
 
   // Fetch inventory items for this client
   useEffect(() => {
@@ -118,7 +149,8 @@ export default function RequestShipmentPage() {
             name,
             sku,
             image_url,
-            client_id
+            client_id,
+            product_category:product_categories (name, slug)
           )
         `)
         .eq("product.client_id", client.id)
@@ -154,6 +186,8 @@ export default function RequestShipmentPage() {
       const items = (data || []).map((item) => {
         const product = Array.isArray(item.product) ? item.product[0] : item.product;
         const productId = product?.id || "";
+        const rawCategory = product?.product_category;
+        const category = Array.isArray(rawCategory) ? rawCategory[0] : rawCategory;
         return {
           id: item.id,
           product_id: productId,
@@ -162,6 +196,9 @@ export default function RequestShipmentPage() {
           qty_available: item.qty_on_hand,
           image_url: product?.image_url || null,
           shopify_listing_title: shopifyTitleByProductId.get(productId) ?? null,
+          product_category: category?.name && category?.slug
+            ? { name: category.name, slug: category.slug }
+            : null,
         };
       });
 
@@ -534,6 +571,7 @@ export default function RequestShipmentPage() {
             additionalInfo={additionalInfo}
             setAdditionalInfo={setAdditionalInfo}
             hasRushAddon={hasRushAddon}
+            isAlcoholOrder={isAlcoholOrder}
           />
         )}
         {currentStep === 3 && client && (
@@ -544,6 +582,7 @@ export default function RequestShipmentPage() {
             selectedProducts={selectedProducts}
             additionalInfo={additionalInfo}
             clientId={client.id}
+            isAlcoholOrder={isAlcoholOrder}
           />
         )}
       </div>
@@ -971,6 +1010,7 @@ function StepShippingDetails({
   additionalInfo,
   setAdditionalInfo,
   hasRushAddon,
+  isAlcoholOrder,
 }: {
   onNext: () => void;
   onBack: () => void;
@@ -980,6 +1020,7 @@ function StepShippingDetails({
   additionalInfo: AdditionalInfo;
   setAdditionalInfo: (info: AdditionalInfo) => void;
   hasRushAddon: boolean;
+  isAlcoholOrder: boolean;
 }) {
   const handleSelectAddress = (address: ShippingAddress) => {
     setShippingAddress(address);
@@ -1243,6 +1284,29 @@ function StepShippingDetails({
           </div>
         )}
 
+        {/* Shipping method guidance */}
+        {isAlcoholOrder ? (
+          <div className="flex items-start gap-3 p-4 bg-purple-50 border border-purple-200 rounded-xl">
+            <Wine className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-purple-900">Alcohol shipment</p>
+              <p className="text-sm text-purple-700 mt-0.5">
+                This order includes beer, wine, spirits, or RTD products. FedEx is selected by default; you can choose another carrier if needed.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3 p-4 bg-sky-50 border border-sky-200 rounded-xl">
+            <Truck className="w-5 h-5 text-sky-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-sky-900">Non-alcohol shipment</p>
+              <p className="text-sm text-sky-700 mt-0.5">
+                ShipStation is selected by default for non-alcohol orders. You can choose another carrier if needed.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Preferred Carrier */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1253,14 +1317,15 @@ function StepShippingDetails({
             onChange={(e) => setAdditionalInfo({ ...additionalInfo, preferredCarrier: e.target.value })}
             className="w-full sm:w-64 px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
           >
-            {CARRIERS.map((carrier) => (
+            {PORTAL_REQUEST_CARRIER_OPTIONS.map((carrier) => (
               <option key={carrier.value} value={carrier.value}>
                 {carrier.label}
+                {carrier.value === getDefaultPortalPreferredCarrier(isAlcoholOrder) ? " (Recommended)" : ""}
               </option>
             ))}
           </select>
           <p className="text-xs text-slate-500 mt-1">
-            We'll do our best to accommodate your preference
+            All carriers remain available. We&apos;ll do our best to accommodate your preference.
           </p>
         </div>
 
@@ -1330,6 +1395,7 @@ function StepReviewSubmit({
   selectedProducts,
   additionalInfo,
   clientId,
+  isAlcoholOrder,
 }: {
   onBack: () => void;
   onEditStep: (step: Step) => void;
@@ -1337,6 +1403,7 @@ function StepReviewSubmit({
   selectedProducts: SelectedProduct[];
   additionalInfo: AdditionalInfo;
   clientId: string;
+  isAlcoholOrder: boolean;
 }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -1476,6 +1543,28 @@ function StepReviewSubmit({
         </p>
       </div>
 
+      {isAlcoholOrder ? (
+        <div className="flex items-start gap-3 p-4 bg-purple-50 border border-purple-200 rounded-xl">
+          <Wine className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-purple-900">Alcohol shipment</p>
+            <p className="text-sm text-purple-700 mt-0.5">
+              Includes regulated products — FedEx is the recommended carrier.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start gap-3 p-4 bg-sky-50 border border-sky-200 rounded-xl">
+          <Truck className="w-5 h-5 text-sky-600 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-sky-900">Non-alcohol shipment</p>
+            <p className="text-sm text-sky-700 mt-0.5">
+              ShipStation is the recommended carrier for this order.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Products Summary */}
       <div className="border border-slate-200 rounded-xl overflow-hidden">
         <div className="flex items-center justify-between p-4 bg-slate-50 border-b border-slate-200">
@@ -1600,7 +1689,7 @@ function StepReviewSubmit({
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-slate-500">Preferred Carrier:</span>
                   <span className="text-sm text-slate-900 font-medium">
-                    {CARRIERS.find((c) => c.value === additionalInfo.preferredCarrier)?.label || additionalInfo.preferredCarrier}
+                    {getPreferredCarrierLabel(additionalInfo.preferredCarrier)}
                   </span>
                 </div>
               )}

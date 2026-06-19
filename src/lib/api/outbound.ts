@@ -56,8 +56,9 @@ export interface OutboundOrder {
   created_at: string;
   // FedEx shipping integration
   fedex_shipment_id: string | null;
+  shipstation_order_id: string | null;
   label_url: string | null;
-  shipping_method: 'manual' | 'fedex_api' | 'pickup' | 'fedex_voided' | null;
+  shipping_method: 'manual' | 'fedex_api' | 'pickup' | 'fedex_voided' | 'shipstation_api' | null;
   // Shipping cost tracking
   shipping_cost: number | null;
   client_shipping_cost: number | null;
@@ -202,7 +203,7 @@ export async function updateOutboundOrder(
 export interface UpdateOutboundStatusFields {
   carrier?: string;
   tracking_number?: string;
-  shipping_method?: 'manual' | 'fedex_api' | 'pickup' | 'fedex_voided';
+  shipping_method?: 'manual' | 'fedex_api' | 'pickup' | 'fedex_voided' | 'shipstation_api';
   shipping_cost?: number;
   client_shipping_cost?: number;
 }

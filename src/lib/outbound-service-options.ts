@@ -20,6 +20,7 @@ export const PREFERRED_CARRIER_OPTIONS: OutboundServiceOption[] = [
   { value: "freight", label: "Freight / LTL" },
   { value: "pickup", label: "Customer pickup / Uber" },
   { value: "fedex", label: "FedEx" },
+  { value: "shipstation", label: "ShipStation" },
   { value: "ups", label: "UPS" },
   { value: "usps", label: "USPS" },
   { value: "dhl", label: "DHL" },
@@ -35,6 +36,20 @@ export const NEW_ORDER_PREFERRED_CARRIER_OPTIONS: OutboundServiceOption[] = [
   { value: "pickup", label: "Customer Pickup" },
   { value: "other", label: "Other" },
 ];
+
+/** Portal request-shipment — customer carrier preference (not IMS shipping method). */
+export const PORTAL_REQUEST_CARRIER_OPTIONS: OutboundServiceOption[] = [
+  { value: "fedex", label: "FedEx" },
+  { value: "shipstation", label: "ShipStation" },
+  { value: "ups", label: "UPS" },
+  { value: "usps", label: "USPS" },
+  { value: "dhl", label: "DHL" },
+  { value: "freight", label: "Freight / LTL" },
+];
+
+export function getDefaultPortalPreferredCarrier(isAlcoholOrder: boolean): string {
+  return isAlcoholOrder ? "fedex" : "shipstation";
+}
 
 const LABEL_BY_VALUE = new Map(
   [
@@ -57,6 +72,7 @@ export const getOutboundServiceOptionLabel = getPreferredCarrierLabel;
 const IMS_LABELS: Record<string, string> = {
   manual: "Manual / other carrier",
   fedex_api: "FedEx (API label)",
+  shipstation_api: "ShipStation (API label)",
   pickup: "Customer pickup (IMS)",
   fedex_voided: "FedEx voided",
 };

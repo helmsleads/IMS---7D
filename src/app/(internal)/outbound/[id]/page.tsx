@@ -44,8 +44,7 @@ import Select from "@/components/ui/Select";
 import Textarea from "@/components/ui/Textarea";
 import SearchSelect from "@/components/ui/SearchSelect";
 import ShippingModal, { ShippingData, ShipToAddress } from "@/components/internal/ShippingModal";
-import { requiresAlcoholCompliance } from "@/lib/api/workflow-profiles";
-import type { ClientIndustry } from "@/types/database";
+import { orderContainsAlcohol } from "@/lib/product-categories/alcohol";
 import Alert from "@/components/ui/Alert";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import {
@@ -357,6 +356,7 @@ export default function OutboundOrderDetailPage() {
   // FedEx alcohol shipping state
   const [isAlcoholOrder, setIsAlcoholOrder] = useState(false);
   const [fedexConfigured, setFedexConfigured] = useState(false);
+  const [shipstationConfigured, setShipstationConfigured] = useState(false);
 
   // FedEx cancel state
   const [cancellingFedex, setCancellingFedex] = useState(false);
@@ -446,11 +446,22 @@ export default function OutboundOrderDetailPage() {
           }
         }
 
-        // Detect alcohol order from client industry
-        if (orderData.client?.industry) {
-          const alcoholOrder = requiresAlcoholCompliance([orderData.client.industry as ClientIndustry]);
-          setIsAlcoholOrder(alcoholOrder);
-        }
+        // Detect alcohol order from product categories (Beer, Wine, Spirits, RTD)
+        const supabase = (await import("@/lib/supabase")).createClient();
+        const productIds = orderData.items.map((item) => item.product_id);
+        const { data: productData } = await supabase
+          .from("products")
+          .select("id, name, container_type, category_id, product_category:product_categories (id, name, slug)")
+          .in("id", productIds);
+
+        const alcoholOrder = orderContainsAlcohol(
+          (productData || []).flatMap((product) => {
+            const category = product.product_category;
+            if (!category) return [];
+            return Array.isArray(category) ? category : [category];
+          })
+        );
+        setIsAlcoholOrder(alcoholOrder);
 
         // Check if FedEx is configured (non-blocking)
         fetch("/api/shipping/fedex")
@@ -458,13 +469,11 @@ export default function OutboundOrderDetailPage() {
           .then((data) => setFedexConfigured(!!data.configured))
           .catch(() => setFedexConfigured(false));
 
-        // Determine container types from order products and fetch filtered supplies
-        const supabase = (await import("@/lib/supabase")).createClient();
-        const productIds = orderData.items.map((item) => item.product_id);
-        const { data: productData } = await supabase
-          .from("products")
-          .select("id, name, container_type")
-          .in("id", productIds);
+        // Check if ShipStation is configured (non-blocking)
+        fetch("/api/shipping/shipstation")
+          .then((res) => res.json())
+          .then((data) => setShipstationConfigured(!!data.configured))
+          .catch(() => setShipstationConfigured(false));
 
         const containerTypes: string[] = [];
         const meta = new Map<string, { containerType: string; productName: string }>();
@@ -628,7 +637,7 @@ export default function OutboundOrderDetailPage() {
 
     try {
       // 1. Update order status to "shipped" with carrier and tracking info
-      const shippingMethod = (shippingData.shippingMethod || (shippingData.fedexShipmentId ? "fedex_api" : "manual")) as 'manual' | 'fedex_api' | 'pickup';
+      const shippingMethod = (shippingData.shippingMethod || (shippingData.fedexShipmentId ? "fedex_api" : "manual")) as 'manual' | 'fedex_api' | 'pickup' | 'shipstation_api';
       await updateOutboundOrderStatus(order.id, "shipped", {
         carrier: shippingData.carrier,
         tracking_number: shippingData.trackingNumber,
@@ -3531,6 +3540,7 @@ export default function OutboundOrderDetailPage() {
         initialTrackingNumber={order?.tracking_number || ""}
         isAlcoholOrder={isAlcoholOrder}
         fedexConfigured={fedexConfigured}
+        shipstationConfigured={shipstationConfigured}
         orderId={order?.id}
         preferredCarrier={order?.preferred_carrier || ""}
         shipToAddress={order ? {
