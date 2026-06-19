@@ -1,7 +1,8 @@
 import { createServiceClient } from "@/lib/supabase-service";
 import { sendEmail } from "@/lib/api/email";
 import { isEmailServiceConfigured } from "@/lib/email";
-import { getAppUrlConfigurationError } from "@/lib/server/app-url";
+import { userInviteEmail } from "@/lib/email-templates/user-invite";
+import { getAppUrlConfigurationError, getAppUrlForExternalLinks } from "@/lib/server/app-url";
 import { generateAuthEmailLink } from "@/lib/server/auth-email-links";
 import type { ClientUserRole, UserRole } from "@/types/database";
 
@@ -51,42 +52,6 @@ export interface InviteUserParams {
   invited_by?: string;
   /** Existing auth/user id when re-inviting */
   resend_user_id?: string;
-}
-
-
-function inviteEmailHtml(
-  firstName: string,
-  actionLink: string,
-  userType: InviteUserType
-): string {
-  const portalName =
-    userType === "portal"
-      ? "7 Degrees client portal"
-      : "7 Degrees admin dashboard";
-  const greeting = firstName ? `Welcome, ${firstName}.` : "Welcome.";
-
-  return `
-    <html>
-      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-        <h1>You're invited to 7 Degrees</h1>
-        <p>${greeting}</p>
-        <p>
-          You have been invited to the ${portalName}.
-          Use the button below to create your password and activate your account.
-        </p>
-        <p style="margin: 24px 0;">
-          <a href="${actionLink}" style="display: inline-block; background: #0d9488; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
-            Set up your password
-          </a>
-        </p>
-        <p><strong>Your login email</strong> is the address this message was sent to.</p>
-        <p>You do not have a password yet — the link above is how you create one.</p>
-        <p>If the button does not work, copy and paste this URL into your browser:</p>
-        <p style="word-break: break-all; color: #555;">${actionLink}</p>
-        <p>Thanks for joining!</p>
-      </body>
-    </html>
-  `;
 }
 
 export async function findAuthUserIdByEmail(email: string): Promise<string | null> {
@@ -325,10 +290,17 @@ export async function sendUserInvitation(
       };
     }
 
+    const emailContent = userInviteEmail({
+      firstName,
+      actionLink: linkResult.actionLink,
+      userType: params.user_type,
+      appUrl: getAppUrlForExternalLinks(),
+    });
+
     const emailResult = await sendEmail(
       params.email.trim().toLowerCase(),
-      "You're invited to 7 Degrees",
-      inviteEmailHtml(firstName, linkResult.actionLink, params.user_type)
+      emailContent.subject,
+      emailContent.html
     );
 
     if (!emailResult.success) {
