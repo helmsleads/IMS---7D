@@ -5,17 +5,23 @@ import {
 } from "@/lib/server/app-url";
 import { ensureSupabaseAuthOtpExpiry } from "@/lib/server/supabase-auth-config";
 
-export type AuthLinkType = "invite" | "recovery";
+export type AuthLinkType = "invite" | "recovery" | "magiclink";
 
+/**
+ * Build an invite/reset link using a URL hash for the token.
+ * Email scanners only prefetch the path (/auth/accept-invite) — not the #fragment —
+ * so the one-time token is not consumed before the user opens the link.
+ */
 export function buildAppAuthLink(
   hashedToken: string,
   type: AuthLinkType
 ): string {
   const appOrigin = getAppUrlForExternalLinks();
-  const url = new URL("/auth/accept-invite", appOrigin);
-  url.searchParams.set("token_hash", hashedToken);
-  url.searchParams.set("type", type);
-  return url.toString();
+  const params = new URLSearchParams({
+    token_hash: hashedToken,
+    type,
+  });
+  return `${appOrigin}/auth/accept-invite#${params.toString()}`;
 }
 
 export async function generateAuthEmailLink(
@@ -35,7 +41,7 @@ export async function generateAuthEmailLink(
 
   for (const type of types) {
     const { data, error } = await service.auth.admin.generateLink({
-      type,
+      type: type === "magiclink" ? "magiclink" : type,
       email: normalizedEmail,
       options: {
         redirectTo: `${appOrigin}/reset-password`,
@@ -44,12 +50,14 @@ export async function generateAuthEmailLink(
     });
 
     const hashedToken = data?.properties?.hashed_token;
+    const verificationType = (data?.properties?.verification_type ||
+      type) as AuthLinkType;
 
     if (!error && hashedToken && data?.user?.id) {
       return {
         userId: data.user.id,
-        actionLink: buildAppAuthLink(hashedToken, type),
-        linkType: type,
+        actionLink: buildAppAuthLink(hashedToken, verificationType),
+        linkType: verificationType,
       };
     }
 

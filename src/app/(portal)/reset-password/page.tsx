@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Lock, AlertCircle, Eye, EyeOff, Clock, Link2Off, Mail, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import Button from "@/components/ui/Button";
@@ -48,7 +47,6 @@ function AuthShell({
 }
 
 export default function ResetPasswordPage() {
-  const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
   const [password, setPassword] = useState("");
@@ -109,6 +107,25 @@ export default function ResetPasswordPage() {
         return;
       }
 
+      const reason = params.get("reason");
+
+      if (callbackError === "otp_expired") {
+        fail(
+          reason ||
+            "This invitation or password reset link has expired. Ask your administrator to send a new one.",
+          "expired"
+        );
+        return;
+      }
+
+      if (callbackError === "invalid_link") {
+        fail(
+          "This invitation link is incomplete. Open the full link from your email or request a new invitation.",
+          "invalid"
+        );
+        return;
+      }
+
       if (authLinkError) {
         fail(
           authLinkError,
@@ -117,9 +134,10 @@ export default function ResetPasswordPage() {
         return;
       }
 
-      if (callbackError) {
+      if (callbackError === "auth_callback") {
         fail(
-          "We could not complete sign-in from that link. It may have already been used or timed out.",
+          reason ||
+            "This link was already used or is no longer valid. Email security scanners sometimes open links before you do — request a fresh invitation and open it right away.",
           "callback"
         );
         return;
@@ -174,14 +192,33 @@ export default function ResetPasswordPage() {
       }
 
       const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        const setupKind = params.get("setup");
+        const inviteFlow =
+          setupKind === "invite" ||
+          setupKind === "recovery" ||
+          params.get("type") === "recovery" ||
+          params.get("type") === "invite";
+        await succeed(session.user.id, inviteFlow);
+        return;
+      }
+
+      const {
         data: { user },
       } = await supabase.auth.getUser();
 
       if (!active) return;
 
       if (user) {
+        const setupKind = params.get("setup");
         const inviteFlow =
-          params.get("type") === "recovery" || params.get("type") === "invite";
+          setupKind === "invite" ||
+          setupKind === "recovery" ||
+          params.get("type") === "recovery" ||
+          params.get("type") === "invite";
         await succeed(user.id, inviteFlow);
         return;
       }
@@ -226,13 +263,28 @@ export default function ResetPasswordPage() {
     setLoading(true);
 
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setError(
+          "Your session has expired. Open the invitation link from your email again, then set your password."
+        );
+        return;
+      }
+
       const setupResponse = await fetch("/api/auth/complete-password-setup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ password }),
       });
 
-      const setupResult = (await setupResponse.json()) as {
+      const setupResult = (await setupResponse.json().catch(() => ({}))) as {
         error?: string;
       };
 
@@ -253,7 +305,7 @@ export default function ResetPasswordPage() {
         : loginPath;
 
       await supabase.auth.signOut();
-      router.replace(redirectTo);
+      window.location.assign(redirectTo);
     } catch {
       setError("An unexpected error occurred");
     } finally {
