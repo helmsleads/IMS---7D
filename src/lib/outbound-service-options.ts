@@ -37,18 +37,40 @@ export const NEW_ORDER_PREFERRED_CARRIER_OPTIONS: OutboundServiceOption[] = [
   { value: "other", label: "Other" },
 ];
 
-/** Portal request-shipment — customer carrier preference (not IMS shipping method). */
+/** Portal request-shipment — speed / fulfillment intent only (not a locked carrier). */
 export const PORTAL_REQUEST_CARRIER_OPTIONS: OutboundServiceOption[] = [
-  { value: "fedex", label: "FedEx" },
-  { value: "shipstation", label: "ShipStation" },
-  { value: "ups", label: "UPS" },
-  { value: "usps", label: "USPS" },
-  { value: "dhl", label: "DHL" },
+  { value: "ground", label: "Ground (best value)" },
+  { value: "2day", label: "2-Day" },
+  { value: "overnight", label: "Overnight" },
   { value: "freight", label: "Freight / LTL" },
+  { value: "pickup", label: "Customer Pickup" },
 ];
 
+/** Extra option when order contains alcohol (compliance pipeline, not a ShipStation carrier lock). */
+export const PORTAL_REQUEST_ALCOHOL_CARRIER_OPTIONS: OutboundServiceOption[] = [
+  { value: "fedex", label: "FedEx (alcohol compliance)" },
+];
+
+export function getPortalRequestCarrierOptions(isAlcoholOrder: boolean): OutboundServiceOption[] {
+  if (!isAlcoholOrder) return PORTAL_REQUEST_CARRIER_OPTIONS;
+  return [...PORTAL_REQUEST_CARRIER_OPTIONS, ...PORTAL_REQUEST_ALCOHOL_CARRIER_OPTIONS];
+}
+
 export function getDefaultPortalPreferredCarrier(isAlcoholOrder: boolean): string {
-  return isAlcoholOrder ? "fedex" : "shipstation";
+  return isAlcoholOrder ? "fedex" : "ground";
+}
+
+export type ShipStationRateStrategy = "cheapest" | "fastest" | "best_value";
+
+/** Map stored order preference → rate-shop strategy at label purchase time. */
+export function getShipStationRateStrategy(
+  preferredCarrier: string | null | undefined
+): ShipStationRateStrategy {
+  const key = (preferredCarrier || "").trim().toLowerCase();
+  if (key === "overnight" || key === "fastest") return "fastest";
+  if (key === "2day" || key === "2-day" || key === "2 day") return "best_value";
+  if (key === "ground" || key === "cheapest" || key === "shipstation") return "cheapest";
+  return "cheapest";
 }
 
 const LABEL_BY_VALUE = new Map(

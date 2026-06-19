@@ -4,8 +4,10 @@ import { createServiceClient } from "@/lib/supabase-service";
 import {
   createShipStationLabel,
   isShipStationConfigured,
+  isShipStationTestMode,
   type ShipStationAddress,
 } from "@/lib/api/shipstation";
+import { getShipStationRateStrategy } from "@/lib/outbound-service-options";
 import { getQBCredentials, syncShippingExpense } from "@/lib/api/quickbooks";
 
 function getDefaultShipDate(raw?: string): string {
@@ -42,11 +44,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       configured: isShipStationConfigured(),
+      testMode: isShipStationTestMode(),
     });
   } catch (err) {
     console.error("ShipStation config check error:", err);
     return NextResponse.json({
       configured: isShipStationConfigured(),
+      testMode: isShipStationTestMode(),
       error: err instanceof Error ? err.message : "Failed to check ShipStation config",
     });
   }
@@ -61,8 +65,9 @@ function normalizeCountry(country: string | null | undefined): string {
 /**
  * POST /api/shipping/shipstation — Create ShipStation order + label
  *
- * Body: { orderId, packageWeight, shipDate?, carrierPreference? }
- * carrierPreference is optional — omit for ShipStation auto carrier selection.
+ * Body: { orderId, packageWeight, shipDate? }
+ * Carrier is never chosen at order creation — rate shopping runs at label time using
+ * weight, destination, cost, and the order's speed preference (ground / 2day / overnight).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -97,7 +102,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { orderId, packageWeight, shipDate, carrierPreference } = body;
+    const { orderId, packageWeight, shipDate } = body;
 
     if (!orderId || typeof orderId !== "string") {
       return NextResponse.json({ error: "Invalid or missing orderId" }, { status: 400 });
@@ -128,6 +133,7 @@ export async function POST(request: NextRequest) {
         ship_to_phone,
         ship_to_email,
         preferred_carrier,
+        carrier,
         tracking_number,
         label_url,
         shipping_method,
@@ -166,7 +172,7 @@ export async function POST(request: NextRequest) {
         labelUrl: order.label_url,
         shipmentId: order.shipstation_order_id,
         shipStationOrderId: order.shipstation_order_id,
-        carrier: order.preferred_carrier || "ShipStation",
+        carrier: order.carrier || "ShipStation",
         actualCost: null,
         listCost: null,
       });
@@ -215,18 +221,14 @@ export async function POST(request: NextRequest) {
       residential: true,
     };
 
-    const explicitCarrier =
-      typeof carrierPreference === "string" && carrierPreference.trim()
-        ? carrierPreference.trim()
-        : null;
-
     const result = await createShipStationLabel({
       orderId: order.id,
       orderNumber: order.order_number,
       orderKey: order.id,
       shipDate: getDefaultShipDate(shipDate),
       packageWeightLbs: weightNumber,
-      carrierPreference: explicitCarrier,
+      shippingSpeedPreference: order.preferred_carrier,
+      rateStrategy: getShipStationRateStrategy(order.preferred_carrier),
       shipTo,
       items,
       customerEmail: order.ship_to_email || client?.email || null,
@@ -266,7 +268,7 @@ export async function POST(request: NextRequest) {
 
     await serviceSupabase.from("outbound_orders").update(orderUpdate).eq("id", orderId);
 
-    if (result.actualCost != null && result.actualCost > 0) {
+    if (result.actualCost != null && result.actualCost > 0 && !result.testMode) {
       getQBCredentials()
         .then((creds) => {
           if (creds) return syncShippingExpense(orderId);
@@ -284,8 +286,10 @@ export async function POST(request: NextRequest) {
       carrier: result.carrier,
       carrierCode: result.carrierCode,
       serviceCode: result.serviceCode,
+      rateStrategy: getShipStationRateStrategy(order.preferred_carrier),
       actualCost: result.actualCost,
       listCost: result.actualCost,
+      testMode: result.testMode ?? false,
     });
   } catch (err) {
     console.error("ShipStation shipment creation error:", err);
@@ -299,11 +303,16 @@ export async function POST(request: NextRequest) {
       message.toLowerCase().includes("wallet") ||
       message.toLowerCase().includes("not been setup");
     const isWarehouse = message.toLowerCase().includes("warehouse");
+    const isFedExResidential =
+      message.toLowerCase().includes("home delivery") ||
+      message.toLowerCase().includes("residential delivery");
 
     return NextResponse.json(
       {
         error: message,
-        hint: isWallet
+        hint: isFedExResidential
+          ? "Residential FedEx shipments require FedEx Home Delivery instead of FedEx Ground. Retry label creation — this is now handled automatically."
+          : isWallet
           ? "Open ShipStation → Billing → ShipStation Balance / One Balance and fund your wallet before purchasing labels."
           : isWarehouse
             ? "Add a Ship From Location in ShipStation → Settings → Shipping → Ship From Locations."

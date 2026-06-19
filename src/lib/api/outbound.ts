@@ -484,7 +484,6 @@ export async function updateOutboundOrderStatus(
     updateData.shipped_date = new Date().toISOString();
     if (additionalFields?.carrier) {
       updateData.carrier = additionalFields.carrier;
-      updateData.preferred_carrier = additionalFields.carrier;
     }
     if (additionalFields?.tracking_number) {
       updateData.tracking_number = additionalFields.tracking_number;

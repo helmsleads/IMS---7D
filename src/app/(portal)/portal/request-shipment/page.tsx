@@ -12,8 +12,8 @@ import { formatStreetAddress, formatCity, formatState, formatZip } from "@/lib/f
 import { selectedProductsContainAlcohol } from "@/lib/product-categories/alcohol";
 import {
   getDefaultPortalPreferredCarrier,
+  getPortalRequestCarrierOptions,
   getPreferredCarrierLabel,
-  PORTAL_REQUEST_CARRIER_OPTIONS,
 } from "@/lib/outbound-service-options";
 
 interface ShippingAddress {
@@ -105,7 +105,7 @@ export default function RequestShipmentPage() {
     [selectedProducts, inventoryItems]
   );
 
-  // Default carrier: FedEx for alcohol, ShipStation for non-alcohol
+  // Default speed: Ground for non-alcohol; FedEx compliance path for alcohol
   useEffect(() => {
     if (selectedProducts.length === 0) {
       prevIsAlcoholOrderRef.current = null;
@@ -1307,17 +1307,17 @@ function StepShippingDetails({
           </div>
         )}
 
-        {/* Preferred Carrier */}
+        {/* Shipping speed (carrier chosen at label time for ShipStation orders) */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
-            Preferred Carrier
+            Shipping Speed
           </label>
           <select
             value={additionalInfo.preferredCarrier}
             onChange={(e) => setAdditionalInfo({ ...additionalInfo, preferredCarrier: e.target.value })}
             className="w-full sm:w-64 px-4 py-2.5 border border-slate-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:border-transparent"
           >
-            {PORTAL_REQUEST_CARRIER_OPTIONS.map((carrier) => (
+            {getPortalRequestCarrierOptions(isAlcoholOrder).map((carrier) => (
               <option key={carrier.value} value={carrier.value}>
                 {carrier.label}
                 {carrier.value === getDefaultPortalPreferredCarrier(isAlcoholOrder) ? " (Recommended)" : ""}
@@ -1325,7 +1325,7 @@ function StepShippingDetails({
             ))}
           </select>
           <p className="text-xs text-slate-500 mt-1">
-            All carriers remain available. We&apos;ll do our best to accommodate your preference.
+            We store your speed preference only. The carrier is selected automatically when your label is created.
           </p>
         </div>
 

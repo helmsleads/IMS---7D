@@ -357,6 +357,7 @@ export default function OutboundOrderDetailPage() {
   const [isAlcoholOrder, setIsAlcoholOrder] = useState(false);
   const [fedexConfigured, setFedexConfigured] = useState(false);
   const [shipstationConfigured, setShipstationConfigured] = useState(false);
+  const [shipstationTestMode, setShipstationTestMode] = useState(false);
 
   // FedEx cancel state
   const [cancellingFedex, setCancellingFedex] = useState(false);
@@ -472,8 +473,14 @@ export default function OutboundOrderDetailPage() {
         // Check if ShipStation is configured (non-blocking)
         fetch("/api/shipping/shipstation")
           .then((res) => res.json())
-          .then((data) => setShipstationConfigured(!!data.configured))
-          .catch(() => setShipstationConfigured(false));
+          .then((data) => {
+            setShipstationConfigured(!!data.configured);
+            setShipstationTestMode(!!data.testMode);
+          })
+          .catch(() => {
+            setShipstationConfigured(false);
+            setShipstationTestMode(false);
+          });
 
         const containerTypes: string[] = [];
         const meta = new Map<string, { containerType: string; productName: string }>();
@@ -3541,6 +3548,7 @@ export default function OutboundOrderDetailPage() {
         isAlcoholOrder={isAlcoholOrder}
         fedexConfigured={fedexConfigured}
         shipstationConfigured={shipstationConfigured}
+        shipstationTestMode={shipstationTestMode}
         orderId={order?.id}
         preferredCarrier={order?.preferred_carrier || ""}
         shipToAddress={order ? {

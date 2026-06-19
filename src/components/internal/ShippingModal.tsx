@@ -54,10 +54,19 @@ function getDefaultMode(
 ): ShippingMode {
   if (isPickupOrder) return "pickup";
   const pref = preferredCarrier?.trim().toLowerCase() || "";
-  if (pref === "shipstation") return "shipstation";
   if (pref === "fedex") return "fedex";
-  if (["ups", "usps", "dhl", "freight", "freight/ltl", "other"].some((k) => pref.includes(k))) {
-    return "manual";
+  if (pref === "freight" || pref.includes("freight") || pref === "other") return "manual";
+  if (
+    pref === "shipstation" ||
+    pref === "ground" ||
+    pref === "2day" ||
+    pref === "2-day" ||
+    pref === "overnight" ||
+    pref === "ups" ||
+    pref === "usps" ||
+    pref === "dhl"
+  ) {
+    return "shipstation";
   }
   if (isAlcoholOrder) return "fedex";
   return "shipstation";
@@ -164,6 +173,7 @@ interface ShippingModalProps {
   isAlcoholOrder?: boolean;
   fedexConfigured?: boolean;
   shipstationConfigured?: boolean;
+  shipstationTestMode?: boolean;
   orderId?: string;
   shipToAddress?: ShipToAddress;
   // Pickup support
@@ -198,6 +208,7 @@ export default function ShippingModal({
   isAlcoholOrder,
   fedexConfigured,
   shipstationConfigured,
+  shipstationTestMode,
   orderId,
   shipToAddress,
   preferredCarrier,
@@ -601,15 +612,39 @@ export default function ShippingModal({
         return;
       }
 
-      setShipstationResult({
+      const result = {
         trackingNumber: data.trackingNumber,
         labelUrl: data.labelUrl || null,
         shipmentId: String(data.shipmentId || data.shipStationOrderId || ""),
         carrier: data.carrier || "ShipStation",
         actualCost: data.actualCost ?? null,
         listCost: data.listCost ?? null,
-      });
-      setShipstationFlowState("success");
+      };
+
+      setSubmitting(true);
+      try {
+        await onSubmit({
+          carrier: result.carrier,
+          trackingNumber: result.trackingNumber,
+          shipDate,
+          notes: notes.trim() || undefined,
+          labelUrl: result.labelUrl || undefined,
+          shippingMethod: "shipstation_api",
+          shippingCost: result.actualCost ?? undefined,
+          clientShippingCost: result.listCost ?? undefined,
+        });
+        resetForm();
+      } catch (shipErr) {
+        setShipstationResult(result);
+        setShipstationFlowState("success");
+        setShipstationError(
+          shipErr instanceof Error
+            ? `Label created but failed to mark order shipped: ${shipErr.message}`
+            : "Label created but failed to mark order shipped."
+        );
+      } finally {
+        setSubmitting(false);
+      }
     } catch (err) {
       setShipstationFlowState("error");
       setShipstationError(err instanceof Error ? err.message : "Network error");
@@ -622,6 +657,7 @@ export default function ShippingModal({
     if (!shipstationResult) return;
 
     setSubmitting(true);
+    setShipstationError("");
     try {
       await onSubmit({
         carrier: shipstationResult.carrier,
@@ -635,7 +671,9 @@ export default function ShippingModal({
       });
       resetForm();
     } catch (error) {
-      console.error("Failed to complete ShipStation shipment:", error);
+      setShipstationError(
+        error instanceof Error ? error.message : "Failed to mark order shipped."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -721,7 +759,19 @@ export default function ShippingModal({
             <div className="text-sm">
               <p className="font-medium text-sky-800">ShipStation</p>
               <p className="text-sky-700 mt-0.5">
-                ShipStation will automatically choose the best carrier and service for this shipment.
+                Carrier and service are chosen at label time from weight, destination, cost, and the order&apos;s speed preference.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {mode === "shipstation" && shipstationTestMode && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm">
+              <p className="font-medium text-amber-800">ShipStation Test Mode</p>
+              <p className="text-amber-700 mt-0.5">
+                SHIPSTATION_TEST is enabled. Rate shopping runs but no order or label is created in ShipStation.
               </p>
             </div>
           </div>
@@ -1202,12 +1252,12 @@ export default function ShippingModal({
                   <Button
                     type="button"
                     onClick={handleShipStationCreate}
-                    disabled={!canUseShipstation || packageWeight <= 0}
+                    disabled={!canUseShipstation || packageWeight <= 0 || shipstationLoading || submitting}
+                    loading={shipstationLoading || submitting}
                     className="flex-1"
                   >
                     <Truck className="w-4 h-4 mr-2" />
-                    Create{" "}
-                    Create Label
+                    Ship Order
                   </Button>
                 </div>
               </div>
@@ -1216,15 +1266,26 @@ export default function ShippingModal({
             {shipstationFlowState === "creating" && (
               <div className="py-8 text-center">
                 <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mx-auto mb-3" />
-                <p className="text-sm font-medium text-gray-700">Creating ShipStation label...</p>
+                <p className="text-sm font-medium text-gray-700">Shipping order...</p>
                 <p className="text-xs text-gray-500 mt-1">
-                  ShipStation is selecting carrier and purchasing label
+                  {shipstationTestMode
+                    ? "Running rate shop (test mode — no ShipStation label purchase)"
+                    : "Creating label and marking order shipped"}
                 </p>
               </div>
             )}
 
             {shipstationFlowState === "success" && shipstationResult && (
               <div className="space-y-4">
+                {shipstationError && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertCircle className="w-5 h-5 text-amber-600" />
+                      <span className="font-semibold text-amber-800">Label Created — Ship Incomplete</span>
+                    </div>
+                    <p className="text-sm text-amber-700">{shipstationError}</p>
+                  </div>
+                )}
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <CheckCircle className="w-5 h-5 text-green-600" />
