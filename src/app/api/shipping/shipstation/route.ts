@@ -4,7 +4,6 @@ import { createServiceClient } from "@/lib/supabase-service";
 import {
   createShipStationLabel,
   isShipStationConfigured,
-  listShipStationServiceCarrierOptions,
   type ShipStationAddress,
 } from "@/lib/api/shipstation";
 import { getQBCredentials, syncShippingExpense } from "@/lib/api/quickbooks";
@@ -17,7 +16,7 @@ function getDefaultShipDate(raw?: string): string {
 }
 
 /**
- * GET /api/shipping/shipstation — Config + account carriers
+ * GET /api/shipping/shipstation — Config check
  */
 export async function GET(request: NextRequest) {
   try {
@@ -41,23 +40,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const configured = isShipStationConfigured();
-    if (!configured) {
-      return NextResponse.json({ configured: false, serviceCarriers: [] });
-    }
-
-    const serviceCarriers = await listShipStationServiceCarrierOptions();
-
     return NextResponse.json({
-      configured: true,
-      serviceCarriers,
+      configured: isShipStationConfigured(),
     });
   } catch (err) {
     console.error("ShipStation config check error:", err);
     return NextResponse.json({
       configured: isShipStationConfigured(),
-      serviceCarriers: [],
-      error: err instanceof Error ? err.message : "Failed to load ShipStation carriers",
+      error: err instanceof Error ? err.message : "Failed to check ShipStation config",
     });
   }
 }
@@ -72,6 +62,7 @@ function normalizeCountry(country: string | null | undefined): string {
  * POST /api/shipping/shipstation — Create ShipStation order + label
  *
  * Body: { orderId, packageWeight, shipDate?, carrierPreference? }
+ * carrierPreference is optional — omit for ShipStation auto carrier selection.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -224,10 +215,10 @@ export async function POST(request: NextRequest) {
       residential: true,
     };
 
-    const carrierPref =
-      (typeof carrierPreference === "string" && carrierPreference.trim()) ||
-      order.preferred_carrier ||
-      "fedex";
+    const explicitCarrier =
+      typeof carrierPreference === "string" && carrierPreference.trim()
+        ? carrierPreference.trim()
+        : null;
 
     const result = await createShipStationLabel({
       orderId: order.id,
@@ -235,7 +226,7 @@ export async function POST(request: NextRequest) {
       orderKey: order.id,
       shipDate: getDefaultShipDate(shipDate),
       packageWeightLbs: weightNumber,
-      carrierPreference: carrierPref,
+      carrierPreference: explicitCarrier,
       shipTo,
       items,
       customerEmail: order.ship_to_email || client?.email || null,

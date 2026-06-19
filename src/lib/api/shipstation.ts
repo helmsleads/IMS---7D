@@ -32,7 +32,8 @@ export interface CreateShipStationLabelRequest {
   orderKey: string;
   shipDate: string;
   packageWeightLbs: number;
-  carrierPreference: string;
+  /** Omit or set "auto"/"shipstation" to let ShipStation pick carrier + service */
+  carrierPreference?: string | null;
   shipTo: ShipStationAddress;
   items: ShipStationLineItem[];
   customerEmail?: string | null;
@@ -105,6 +106,42 @@ const SERVICE_HINTS: Record<string, string> = {
   dhl: "worldwide",
   shipstation: "ground",
 };
+
+interface ShipStationRateQuote {
+  serviceName: string;
+  serviceCode: string;
+  shipmentCost: number;
+  otherCost: number;
+}
+
+interface SelectedShipStationRate {
+  carrierCode: string;
+  serviceCode: string;
+  displayName: string;
+  serviceName: string;
+  estimatedCost: number;
+}
+
+function isAutoCarrierPreference(preference: string | undefined | null): boolean {
+  if (!preference || !preference.trim()) return true;
+  const key = preference.trim().toLowerCase();
+  return key === "shipstation" || key === "auto";
+}
+
+function displayNameForCarrierCode(
+  carrierCode: string,
+  accountCarriers: ShipStationAccountCarrier[]
+): string {
+  const match = accountCarriers.find(
+    (c) => c.code.toLowerCase() === carrierCode.toLowerCase()
+  );
+  const code = carrierCode.toLowerCase();
+  if (code.includes("fedex")) return "FedEx";
+  if (code.includes("dhl")) return "DHL";
+  if (code.includes("ups")) return "UPS";
+  if (code.includes("usps") || code.includes("stamps")) return "USPS";
+  return match?.name || carrierCode;
+}
 
 export function isShipStationConfigured(): boolean {
   const apiKey = process.env.SHIPSTATION_API_KEY?.trim();
@@ -306,36 +343,6 @@ async function getOrCreateWarehouseId(): Promise<number> {
   return created.warehouseId;
 }
 
-/** Carriers the UI can offer for ShipStation label purchase on this account. */
-export async function listShipStationServiceCarrierOptions(): Promise<
-  { value: string; label: string; carrierCode: string }[]
-> {
-  const accountCarriers = await listAccountCarriers();
-  const options: { value: string; label: string; carrierCode: string }[] = [];
-
-  const add = (value: string, label: string, codes: string[]) => {
-    const match = accountCarriers.find((c) =>
-      codes.some((code) => c.code.toLowerCase() === code.toLowerCase())
-    );
-    if (match) {
-      options.push({ value, label, carrierCode: match.code });
-    }
-  };
-
-  add("FedEx", "FedEx", CARRIER_CODE_CANDIDATES.fedex);
-  add("DHL", "DHL", CARRIER_CODE_CANDIDATES.dhl);
-  add("UPS", "UPS", CARRIER_CODE_CANDIDATES.ups);
-  add("USPS", "USPS", CARRIER_CODE_CANDIDATES.usps);
-
-  if (options.length === 0 && accountCarriers.length > 0) {
-    for (const c of accountCarriers) {
-      options.push({ value: c.code, label: c.name, carrierCode: c.code });
-    }
-  }
-
-  return options;
-}
-
 async function listCarrierServices(carrierCode: string): Promise<ShipStationService[]> {
   try {
     const data = await shipStationRequest<ShipStationService[]>(
@@ -435,6 +442,107 @@ async function resolveServiceCode(
   return services[0].code;
 }
 
+async function getRatesForCarrier(
+  carrierCode: string,
+  shipFromZip: string,
+  shipTo: ShipStationAddress,
+  packageWeightLbs: number
+): Promise<Array<ShipStationRateQuote & { carrierCode: string }>> {
+  const payload = {
+    carrierCode,
+    fromPostalCode: shipFromZip,
+    toCountry: normalizeCountry(shipTo.country),
+    toPostalCode: shipTo.postalCode,
+    toState: shipTo.state,
+    toCity: shipTo.city,
+    weight: {
+      value: packageWeightLbs,
+      units: "pounds",
+    },
+    dimensions: {
+      units: "inches",
+      length: 10,
+      width: 8,
+      height: 6,
+    },
+    confirmation: "none",
+    residential: shipTo.residential ?? true,
+  };
+
+  try {
+    const rates = await shipStationRequest<ShipStationRateQuote[]>(
+      "/shipments/getrates",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+    if (!Array.isArray(rates)) return [];
+    return rates.map((rate) => ({ ...rate, carrierCode }));
+  } catch {
+    return [];
+  }
+}
+
+/** Rate-shop across connected carriers and pick the cheapest option. */
+async function selectBestRate(
+  accountCarriers: ShipStationAccountCarrier[],
+  shipTo: ShipStationAddress,
+  packageWeightLbs: number
+): Promise<SelectedShipStationRate> {
+  const shipFrom = getShipFromAddress();
+  if (!shipFrom.postalCode) {
+    throw new Error(
+      "Warehouse ship-from ZIP is not configured. Set FEDEX_SHIPPER_ZIP or SHIPSTATION_SHIPPER_ZIP."
+    );
+  }
+
+  const allRates: Array<
+    ShipStationRateQuote & { carrierCode: string; totalCost: number }
+  > = [];
+
+  for (const carrier of accountCarriers) {
+    const rates = await getRatesForCarrier(
+      carrier.code,
+      shipFrom.postalCode,
+      shipTo,
+      packageWeightLbs
+    );
+    for (const rate of rates) {
+      allRates.push({
+        ...rate,
+        totalCost: rate.shipmentCost + (rate.otherCost || 0),
+      });
+    }
+  }
+
+  if (allRates.length > 0) {
+    allRates.sort((a, b) => a.totalCost - b.totalCost);
+    const best = allRates[0];
+    return {
+      carrierCode: best.carrierCode,
+      serviceCode: best.serviceCode,
+      displayName: displayNameForCarrierCode(best.carrierCode, accountCarriers),
+      serviceName: best.serviceName,
+      estimatedCost: best.totalCost,
+    };
+  }
+
+  const fallbackCarrier = resolveCarrierOnAccount("shipstation", accountCarriers);
+  const fallbackService = await resolveServiceCode(
+    fallbackCarrier.carrierCode,
+    "shipstation"
+  );
+
+  return {
+    carrierCode: fallbackCarrier.carrierCode,
+    serviceCode: fallbackService,
+    displayName: fallbackCarrier.displayName,
+    serviceName: fallbackService,
+    estimatedCost: 0,
+  };
+}
+
 async function createOrUpdateOrder(
   request: CreateShipStationLabelRequest,
   shipTo: ShipStationAddress,
@@ -498,10 +606,31 @@ export async function createShipStationLabel(
   request: CreateShipStationLabelRequest
 ): Promise<CreateShipStationLabelResult> {
   const accountCarriers = await listAccountCarriers();
-  const carrier = resolveCarrierOnAccount(request.carrierPreference, accountCarriers);
-  const preferenceKey = request.carrierPreference.trim().toLowerCase();
-  const serviceCode = await resolveServiceCode(carrier.carrierCode, preferenceKey);
   const warehouseId = await getOrCreateWarehouseId();
+
+  let carrierCode: string;
+  let serviceCode: string;
+  let carrierDisplayName: string;
+
+  if (isAutoCarrierPreference(request.carrierPreference)) {
+    const selected = await selectBestRate(
+      accountCarriers,
+      request.shipTo,
+      request.packageWeightLbs
+    );
+    carrierCode = selected.carrierCode;
+    serviceCode = selected.serviceCode;
+    carrierDisplayName = selected.displayName;
+  } else {
+    const carrier = resolveCarrierOnAccount(
+      request.carrierPreference!,
+      accountCarriers
+    );
+    const preferenceKey = request.carrierPreference!.trim().toLowerCase();
+    carrierCode = carrier.carrierCode;
+    serviceCode = await resolveServiceCode(carrierCode, preferenceKey);
+    carrierDisplayName = carrier.displayName;
+  }
 
   const shipStationOrderId = await createOrUpdateOrder(
     request,
@@ -511,7 +640,7 @@ export async function createShipStationLabel(
 
   const labelPayload = {
     orderId: shipStationOrderId,
-    carrierCode: carrier.carrierCode,
+    carrierCode,
     serviceCode,
     packageCode: "package",
     confirmation: "none",
@@ -544,9 +673,12 @@ export async function createShipStationLabel(
     labelPdfBase64: label.labelData,
     shipmentId: label.shipmentId,
     shipStationOrderId,
-    carrierCode: label.carrierCode || carrier.carrierCode,
+    carrierCode: label.carrierCode || carrierCode,
     serviceCode: label.serviceCode || serviceCode,
-    carrier: carrier.displayName,
+    carrier: displayNameForCarrierCode(
+      label.carrierCode || carrierCode,
+      accountCarriers
+    ) || carrierDisplayName,
     actualCost: label.shipmentCost ?? null,
   };
 }
