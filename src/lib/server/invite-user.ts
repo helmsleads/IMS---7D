@@ -1,6 +1,11 @@
 import { createServiceClient } from "@/lib/supabase-service";
 import { sendEmail } from "@/lib/api/email";
 import { isEmailServiceConfigured } from "@/lib/email";
+import {
+  getAppUrl,
+  getAuthCallbackUrl,
+  getAppUrlConfigurationError,
+} from "@/lib/server/app-url";
 import type { ClientUserRole, UserRole } from "@/types/database";
 
 export type InviteUserType = "internal" | "portal";
@@ -51,16 +56,10 @@ export interface InviteUserParams {
   resend_user_id?: string;
 }
 
-function getAppUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
-    "http://localhost:3000"
-  );
-}
-
-function getAuthCallbackUrl(nextPath = "/reset-password"): string {
-  return `${getAppUrl()}/auth/callback?next=${encodeURIComponent(nextPath)}`;
-}
+export type SendUserInvitationOptions = {
+  /** Use request host when env URL is missing (recommended on Vercel). */
+  request?: Request;
+};
 
 function inviteEmailHtml(
   firstName: string,
@@ -119,7 +118,7 @@ export async function findAuthUserIdByEmail(email: string): Promise<string | nul
   }
 }
 
-function checkInviteConfiguration(): InviteFailure | null {
+function checkInviteConfiguration(request?: Request): InviteFailure | null {
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     !process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -132,15 +131,17 @@ function checkInviteConfiguration(): InviteFailure | null {
         "Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment.",
     };
   }
-  if (!process.env.NEXT_PUBLIC_APP_URL) {
+
+  const appUrlError = getAppUrlConfigurationError(request);
+  if (appUrlError) {
     return {
       success: false,
       step: "configuration",
       error: "App URL is not configured.",
-      details:
-        "Set NEXT_PUBLIC_APP_URL (used for invite redirect links). Example: https://your-domain.com",
+      details: appUrlError,
     };
   }
+
   return null;
 }
 
@@ -297,9 +298,10 @@ async function ensurePortalUserRecords(
  * Replaces the missing Supabase `invite-user` edge function.
  */
 export async function sendUserInvitation(
-  params: InviteUserParams
+  params: InviteUserParams,
+  options?: SendUserInvitationOptions
 ): Promise<InviteSuccess | InviteFailure> {
-  const configError = checkInviteConfiguration();
+  const configError = checkInviteConfiguration(options?.request);
   if (configError) {
     console.error("invite configuration:", configError);
     return configError;
@@ -307,7 +309,7 @@ export async function sendUserInvitation(
 
   try {
     const firstName = params.full_name.trim().split(/\s+/)[0] || "";
-    const redirectTo = getAuthCallbackUrl("/reset-password");
+    const redirectTo = getAuthCallbackUrl("/reset-password", options?.request);
 
     const linkResult = await generateAuthInviteLink(
       params.email,

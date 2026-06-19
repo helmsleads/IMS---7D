@@ -111,8 +111,9 @@ export function hasAuthHashInUrl(): boolean {
 
 export function getAuthCallbackUrl(nextPath = "/reset-password"): string {
   const origin =
+    (typeof window !== "undefined" ? window.location.origin : undefined) ||
     process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
-    (typeof window !== "undefined" ? window.location.origin : "http://localhost:3000");
+    "http://localhost:3000";
 
   return `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
 }

@@ -128,14 +128,17 @@ export async function POST(request: NextRequest) {
           .eq("id", userId)
           .maybeSingle();
 
-        const inviteResult = await sendUserInvitation({
-          email,
-          full_name: staff?.name || email.split("@")[0],
-          user_type: "internal",
-          role: staff?.role,
-          invited_by: callerUser.id,
-          resend_user_id: userId,
-        });
+        const inviteResult = await sendUserInvitation(
+          {
+            email,
+            full_name: staff?.name || email.split("@")[0],
+            user_type: "internal",
+            role: staff?.role,
+            invited_by: callerUser.id,
+            resend_user_id: userId,
+          },
+          { request }
+        );
 
         if (!inviteResult.success) {
           return inviteErrorResponse(inviteResult);
@@ -169,14 +172,17 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
 
       if (existing?.active) {
-        const inviteResult = await sendUserInvitation({
-          email,
-          full_name: name,
-          user_type: "internal",
-          role,
-          invited_by: callerUser.id,
-          resend_user_id: existing.id,
-        });
+        const inviteResult = await sendUserInvitation(
+          {
+            email,
+            full_name: name,
+            user_type: "internal",
+            role,
+            invited_by: callerUser.id,
+            resend_user_id: existing.id,
+          },
+          { request }
+        );
 
         if (!inviteResult.success) {
           return inviteErrorResponse(inviteResult);
@@ -200,14 +206,17 @@ export async function POST(request: NextRequest) {
           .eq("id", existing.id);
       }
 
-      const inviteResult = await sendUserInvitation({
-        email,
-        full_name: name,
-        user_type: "internal",
-        role,
-        invited_by: callerUser.id,
-        resend_user_id: existing?.id,
-      });
+      const inviteResult = await sendUserInvitation(
+        {
+          email,
+          full_name: name,
+          user_type: "internal",
+          role,
+          invited_by: callerUser.id,
+          resend_user_id: existing?.id,
+        },
+        { request }
+      );
 
       if (!inviteResult.success) {
         return inviteErrorResponse(inviteResult);
