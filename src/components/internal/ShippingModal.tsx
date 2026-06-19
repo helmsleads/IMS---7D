@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Truck,
   ExternalLink,
@@ -19,13 +19,80 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 
-const CARRIER_OPTIONS = [
+const MANUAL_CARRIER_OPTIONS = [
   { value: "UPS", label: "UPS" },
-  { value: "FedEx", label: "FedEx" },
   { value: "USPS", label: "USPS" },
   { value: "DHL", label: "DHL" },
+  { value: "Freight/LTL", label: "Freight / LTL" },
+  { value: "FedEx", label: "FedEx" },
+  { value: "ShipStation", label: "ShipStation" },
   { value: "Other", label: "Other" },
 ];
+
+type ShippingMode = "fedex" | "shipstation" | "manual" | "pickup";
+
+function normalizeInitialCarrier(raw: string): string | null {
+  const lower = raw.trim().toLowerCase();
+  if (!lower) return null;
+  if (lower === "fedex") return "FedEx";
+  if (lower === "shipstation") return "ShipStation";
+  if (lower === "ups") return "UPS";
+  if (lower === "usps") return "USPS";
+  if (lower === "dhl") return "DHL";
+  if (lower === "freight" || lower.includes("freight") || lower === "freight/ltl") {
+    return "Freight/LTL";
+  }
+  if (lower === "pickup" || lower.includes("pickup")) return "Pickup";
+  if (lower === "other") return "Other";
+  return null;
+}
+
+function getDefaultMode(
+  isAlcoholOrder: boolean | undefined,
+  isPickupOrder: boolean,
+  preferredCarrier: string
+): ShippingMode {
+  if (isPickupOrder) return "pickup";
+  const pref = preferredCarrier?.trim().toLowerCase() || "";
+  if (pref === "fedex") return "fedex";
+  if (pref === "freight" || pref.includes("freight") || pref === "other") return "manual";
+  if (
+    pref === "shipstation" ||
+    pref === "ground" ||
+    pref === "2day" ||
+    pref === "2-day" ||
+    pref === "overnight" ||
+    pref === "ups" ||
+    pref === "usps" ||
+    pref === "dhl"
+  ) {
+    return "shipstation";
+  }
+  if (isAlcoholOrder) return "fedex";
+  return "shipstation";
+}
+
+function getDefaultManualCarrier(preferredCarrier: string, initialCarrier: string): string {
+  const fromPreferred = normalizeInitialCarrier(preferredCarrier);
+  if (
+    fromPreferred &&
+    fromPreferred !== "Pickup" &&
+    fromPreferred !== "FedEx" &&
+    fromPreferred !== "ShipStation"
+  ) {
+    return fromPreferred;
+  }
+  const fromInitial = normalizeInitialCarrier(initialCarrier);
+  if (
+    fromInitial &&
+    fromInitial !== "Pickup" &&
+    fromInitial !== "FedEx" &&
+    fromInitial !== "ShipStation"
+  ) {
+    return fromInitial;
+  }
+  return "UPS";
+}
 
 const FEDEX_SERVICE_OPTIONS = [
   { value: "FEDEX_GROUND", label: "FedEx Ground (3-5 days)" },
@@ -102,9 +169,11 @@ interface ShippingModalProps {
   orderNumber?: string;
   initialCarrier?: string;
   initialTrackingNumber?: string;
-  // FedEx alcohol integration props
+  // FedEx / ShipStation integration props
   isAlcoholOrder?: boolean;
   fedexConfigured?: boolean;
+  shipstationConfigured?: boolean;
+  shipstationTestMode?: boolean;
   orderId?: string;
   shipToAddress?: ShipToAddress;
   // Pickup support
@@ -138,19 +207,25 @@ export default function ShippingModal({
   initialTrackingNumber = "",
   isAlcoholOrder,
   fedexConfigured,
+  shipstationConfigured,
+  shipstationTestMode,
   orderId,
   shipToAddress,
   preferredCarrier,
   onFedexCancelled,
 }: ShippingModalProps) {
-  // Mode: "fedex" (API), "manual", or "pickup"
-  const isPickupOrder = preferredCarrier?.toLowerCase() === "pickup" || preferredCarrier?.toLowerCase() === "customer pickup";
+  const isPickupOrder =
+    preferredCarrier?.toLowerCase() === "pickup" ||
+    preferredCarrier?.toLowerCase() === "customer pickup";
   const canUseFedex = !!fedexConfigured;
-  const defaultMode = canUseFedex ? "fedex" : isPickupOrder ? "pickup" : "manual";
-  const [mode, setMode] = useState<"fedex" | "manual" | "pickup">(defaultMode);
+  const canUseShipstation = !!shipstationConfigured;
+  const [mode, setMode] = useState<ShippingMode>(() =>
+    getDefaultMode(isAlcoholOrder, isPickupOrder, preferredCarrier || "")
+  );
+  const [manualCarrier, setManualCarrier] = useState(() =>
+    getDefaultManualCarrier(preferredCarrier || "", initialCarrier)
+  );
 
-  // Manual mode state
-  const [carrier, setCarrier] = useState(initialCarrier);
   const [customCarrier, setCustomCarrier] = useState("");
   const [trackingNumber, setTrackingNumber] = useState(initialTrackingNumber);
   const [shipDate, setShipDate] = useState(new Date().toISOString().split("T")[0]);
@@ -185,12 +260,83 @@ export default function ShippingModal({
   const [fedexCancelError, setFedexCancelError] = useState("");
   const [manualShippingCost, setManualShippingCost] = useState<number | "">("");
 
+  // ShipStation label flow state
+  type ShipStationFlowState = "idle" | "creating" | "success" | "error";
+  const [shipstationLoading, setShipstationLoading] = useState(false);
+  const [shipstationError, setShipstationError] = useState("");
+  const [shipstationFlowState, setShipstationFlowState] = useState<ShipStationFlowState>("idle");
+  const [shipstationResult, setShipstationResult] = useState<{
+    trackingNumber: string;
+    labelUrl: string | null;
+    shipmentId: string;
+    carrier: string;
+    actualCost: number | null;
+    listCost: number | null;
+  } | null>(null);
+
+  const resetFlowStates = () => {
+    setFedexFlowState("idle");
+    setFedexResult(null);
+    setFedexError("");
+    setFedexRates([]);
+    setFedexRatesError("");
+    setFedexCancelError("");
+    setShipstationFlowState("idle");
+    setShipstationResult(null);
+    setShipstationError("");
+  };
+
+  const resetForm = () => {
+    setMode(getDefaultMode(isAlcoholOrder, isPickupOrder, preferredCarrier || ""));
+    setManualCarrier(getDefaultManualCarrier(preferredCarrier || "", initialCarrier));
+    setCustomCarrier("");
+    setTrackingNumber(initialTrackingNumber);
+    setShipDate(new Date().toISOString().split("T")[0]);
+    setNotes("");
+    setErrors({});
+    setFedexFlowState("idle");
+    setFedexResult(null);
+    setFedexError("");
+    setFedexRates([]);
+    setFedexRatesError("");
+    setFedexRatesLoading(false);
+    setFedexTrackLoading(false);
+    setFedexTrackError("");
+    setFedexLatestStatus("");
+    setFedexCancelLoading(false);
+    setFedexCancelError("");
+    setPackageWeight(1);
+    setPackageLength("");
+    setPackageWidth("");
+    setPackageHeight("");
+    setManualShippingCost("");
+    setShipstationLoading(false);
+    resetFlowStates();
+  };
+
+  const handleModeChange = (nextMode: ShippingMode) => {
+    setMode(nextMode);
+    setErrors({});
+    resetFlowStates();
+  };
+
+  const handleManualCarrierChange = (value: string) => {
+    setManualCarrier(value);
+    if (value !== "Other") setCustomCarrier("");
+    setErrors({});
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    resetForm();
+  }, [isOpen, isAlcoholOrder, fedexConfigured, shipstationConfigured, isPickupOrder, preferredCarrier, initialCarrier, initialTrackingNumber]);
+
   // Demo flag: disable tracking refresh until FedEx tracking credentials are fixed.
   // Rates + label/ship creation can still work.
   const ENABLE_FEDEX_TRACKING_REFRESH = false;
 
-  // Tracking URL and validation (manual mode)
-  const finalCarrier = carrier === "Other" ? customCarrier : carrier;
+  // Tracking URL and validation (manual flow)
+  const finalCarrier = manualCarrier === "Other" ? customCarrier : manualCarrier;
   const trackingUrl = useMemo(
     () => getTrackingUrl(finalCarrier, trackingNumber),
     [finalCarrier, trackingNumber]
@@ -205,7 +351,7 @@ export default function ShippingModal({
     e.preventDefault();
 
     const newErrors: Record<string, string> = {};
-    const fc = carrier === "Other" ? customCarrier : carrier;
+    const fc = manualCarrier === "Other" ? customCarrier : manualCarrier;
 
     if (!fc) newErrors.carrier = "Carrier is required";
     if (!trackingNumber.trim()) newErrors.trackingNumber = "Tracking number is required";
@@ -433,36 +579,112 @@ export default function ShippingModal({
     }
   };
 
-  const resetForm = () => {
-    setCarrier("");
-    setCustomCarrier("");
-    setTrackingNumber("");
-    setShipDate(new Date().toISOString().split("T")[0]);
-    setNotes("");
-    setErrors({});
-    setFedexFlowState("idle");
-    setFedexResult(null);
-    setFedexError("");
-    setFedexRates([]);
-    setFedexRatesError("");
-    setFedexRatesLoading(false);
-    setFedexTrackLoading(false);
-    setFedexTrackError("");
-    setFedexLatestStatus("");
-    setFedexCancelLoading(false);
-    setFedexCancelError("");
-    setPackageWeight(1);
-    setPackageLength("");
-    setPackageWidth("");
-    setPackageHeight("");
-    setManualShippingCost("");
-  };
-
   const handleClose = () => {
     if (!submitting && !fedexCancelLoading && fedexFlowState !== "creating") {
       setErrors({});
       onClose();
     }
+  };
+
+  const handleShipStationCreate = async () => {
+    if (!orderId || packageWeight <= 0) return;
+
+    setShipstationFlowState("creating");
+    setShipstationLoading(true);
+    setShipstationError("");
+
+    try {
+      const res = await fetch("/api/shipping/shipstation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          packageWeight,
+          shipDate,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const hint =
+          typeof data?.hint === "string" && data.hint.trim() ? ` ${data.hint}` : "";
+        setShipstationFlowState("error");
+        setShipstationError(`${data.error || "Failed to create ShipStation shipment"}${hint}`);
+        return;
+      }
+
+      const result = {
+        trackingNumber: data.trackingNumber,
+        labelUrl: data.labelUrl || null,
+        shipmentId: String(data.shipmentId || data.shipStationOrderId || ""),
+        carrier: data.carrier || "ShipStation",
+        actualCost: data.actualCost ?? null,
+        listCost: data.listCost ?? null,
+      };
+
+      setSubmitting(true);
+      try {
+        await onSubmit({
+          carrier: result.carrier,
+          trackingNumber: result.trackingNumber,
+          shipDate,
+          notes: notes.trim() || undefined,
+          labelUrl: result.labelUrl || undefined,
+          shippingMethod: "shipstation_api",
+          shippingCost: result.actualCost ?? undefined,
+          clientShippingCost: result.listCost ?? undefined,
+        });
+        resetForm();
+      } catch (shipErr) {
+        setShipstationResult(result);
+        setShipstationFlowState("success");
+        setShipstationError(
+          shipErr instanceof Error
+            ? `Label created but failed to mark order shipped: ${shipErr.message}`
+            : "Label created but failed to mark order shipped."
+        );
+      } finally {
+        setSubmitting(false);
+      }
+    } catch (err) {
+      setShipstationFlowState("error");
+      setShipstationError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setShipstationLoading(false);
+    }
+  };
+
+  const handleShipStationComplete = async () => {
+    if (!shipstationResult) return;
+
+    setSubmitting(true);
+    setShipstationError("");
+    try {
+      await onSubmit({
+        carrier: shipstationResult.carrier,
+        trackingNumber: shipstationResult.trackingNumber,
+        shipDate,
+        notes: notes.trim() || undefined,
+        labelUrl: shipstationResult.labelUrl || undefined,
+        shippingMethod: "shipstation_api",
+        shippingCost: shipstationResult.actualCost ?? undefined,
+        clientShippingCost: shipstationResult.listCost ?? undefined,
+      });
+      resetForm();
+    } catch (error) {
+      setShipstationError(
+        error instanceof Error ? error.message : "Failed to mark order shipped."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDownloadShipStationLabel = () => {
+    if (!shipstationResult?.labelUrl) return;
+    window.open(
+      `/api/shipping/fedex/label?path=${encodeURIComponent(shipstationResult.labelUrl)}`,
+      "_blank"
+    );
   };
 
   // ── Render ────────────────────────────────────
@@ -481,26 +703,34 @@ export default function ShippingModal({
           </div>
         )}
 
-        {/* Mode switcher — shown when multiple modes are available */}
-        {(isPickupOrder || canUseFedex) && (
-          <div className="flex rounded-lg bg-slate-100 p-1 gap-1">
-            {canUseFedex && (
-              <button
-                type="button"
-                onClick={() => setMode("fedex")}
-                className={`flex-1 text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${
-                  mode === "fedex"
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                FedEx API
-              </button>
-            )}
+        {!isPickupOrder && (
+          <div className="flex flex-wrap rounded-lg bg-slate-100 p-1 gap-1">
             <button
               type="button"
-              onClick={() => setMode("manual")}
-              className={`flex-1 text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${
+              onClick={() => handleModeChange("fedex")}
+              className={`flex-1 min-w-[110px] text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${
+                mode === "fedex"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              FedEx
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeChange("shipstation")}
+              className={`flex-1 min-w-[110px] text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${
+                mode === "shipstation"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              ShipStation
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeChange("manual")}
+              className={`flex-1 min-w-[110px] text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${
                 mode === "manual"
                   ? "bg-white text-slate-900 shadow-sm"
                   : "text-slate-500 hover:text-slate-700"
@@ -508,65 +738,74 @@ export default function ShippingModal({
             >
               Manual Entry
             </button>
-            {isPickupOrder && (
-              <button
-                type="button"
-                onClick={() => setMode("pickup")}
-                className={`flex-1 text-sm font-medium py-1.5 px-3 rounded-md transition-colors ${
-                  mode === "pickup"
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                Pickup
-              </button>
-            )}
           </div>
         )}
 
-        {/* Alcohol warning banners */}
-        {isAlcoholOrder && fedexConfigured && mode === "fedex" && (
+        {isAlcoholOrder && mode === "fedex" && (
           <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex items-start gap-2.5">
             <Wine className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
             <div className="text-sm">
-              <p className="font-medium text-purple-800">Alcohol Shipment</p>
+              <p className="font-medium text-purple-800">Alcohol Order</p>
               <p className="text-purple-600 mt-0.5">
-                This order requires adult signature. FedEx alcohol-licensed account will be used.
+                FedEx API label with adult signature. Use Manual Entry for other carriers.
               </p>
             </div>
           </div>
         )}
 
-        {isAlcoholOrder && !fedexConfigured && (
+        {mode === "shipstation" && (
+          <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-sky-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm">
+              <p className="font-medium text-sky-800">ShipStation</p>
+              <p className="text-sky-700 mt-0.5">
+                Carrier and service are chosen at label time from weight, destination, cost, and the order&apos;s speed preference.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {mode === "shipstation" && shipstationTestMode && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
             <div className="text-sm">
-              <p className="font-medium text-amber-800">Alcohol Order — FedEx Not Configured</p>
-              <p className="text-amber-600 mt-0.5">
-                FedEx API integration is not set up. Go to Settings &rarr; System to configure FedEx credentials for automatic alcohol shipping.
+              <p className="font-medium text-amber-800">ShipStation Test Mode</p>
+              <p className="text-amber-700 mt-0.5">
+                SHIPSTATION_TEST is enabled. Rate shopping runs but no order or label is created in ShipStation.
               </p>
             </div>
           </div>
         )}
 
-        {/* ── FedEx API Mode ─────────────────── */}
+        {mode !== "pickup" && shipToAddress && (
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-xs font-medium text-gray-500 mb-1">Ship To</p>
+            <p className="text-sm font-medium text-gray-900">
+              {shipToAddress.name}
+              {shipToAddress.company && ` — ${shipToAddress.company}`}
+            </p>
+            <p className="text-sm text-gray-600">
+              {shipToAddress.address}
+              {shipToAddress.address2 && `, ${shipToAddress.address2}`}
+            </p>
+            <p className="text-sm text-gray-600">
+              {shipToAddress.city}, {shipToAddress.state} {shipToAddress.zip}
+            </p>
+          </div>
+        )}
+
+        {/* ── FedEx API ──────────────────────── */}
         {mode === "fedex" && (
           <>
-            {/* Ship-to address summary */}
-            {shipToAddress && (
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-xs font-medium text-gray-500 mb-1">Ship To</p>
-                <p className="text-sm font-medium text-gray-900">
-                  {shipToAddress.name}
-                  {shipToAddress.company && ` — ${shipToAddress.company}`}
-                </p>
-                <p className="text-sm text-gray-600">
-                  {shipToAddress.address}
-                  {shipToAddress.address2 && `, ${shipToAddress.address2}`}
-                </p>
-                <p className="text-sm text-gray-600">
-                  {shipToAddress.city}, {shipToAddress.state} {shipToAddress.zip}
-                </p>
+            {!canUseFedex && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="text-sm">
+                  <p className="font-medium text-amber-800">FedEx Not Configured</p>
+                  <p className="text-amber-600 mt-0.5">
+                    Configure FedEx credentials in Settings → System, or use ShipStation / Manual Entry.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -751,7 +990,7 @@ export default function ShippingModal({
                         setFedexRatesLoading(false);
                       }
                     }}
-                    disabled={packageWeight <= 0 || fedexRatesLoading}
+                    disabled={!canUseFedex || packageWeight <= 0 || fedexRatesLoading}
                     className="flex-1"
                   >
                     {fedexRatesLoading ? (
@@ -769,26 +1008,13 @@ export default function ShippingModal({
                   <Button
                     type="button"
                     onClick={handleFedExCreate}
-                    disabled={packageWeight <= 0}
+                    disabled={!canUseFedex || packageWeight <= 0}
                     className="flex-1"
                   >
                     <Truck className="w-4 h-4 mr-2" />
                     Create FedEx Shipment
                   </Button>
                 </div>
-
-                {/* Fallback switch link when mode switcher is not shown */}
-                {!(isPickupOrder || (isAlcoholOrder && fedexConfigured)) && (
-                  <div className="text-center">
-                    <button
-                      type="button"
-                      onClick={() => setMode("manual")}
-                      className="text-xs text-gray-500 hover:text-gray-700 underline"
-                    >
-                      Switch to Manual Entry
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 
@@ -956,7 +1182,7 @@ export default function ShippingModal({
                   <Button
                     type="button"
                     variant="secondary"
-                    onClick={() => setMode("manual")}
+                    onClick={() => handleModeChange("manual")}
                     className="flex-1"
                   >
                     Manual Entry
@@ -978,27 +1204,206 @@ export default function ShippingModal({
           </>
         )}
 
-        {/* ── Manual Mode ────────────────────── */}
+        {/* ── ShipStation Mode ───────────────── */}
+        {mode === "shipstation" && (
+          <>
+            {!canUseShipstation && shipstationFlowState === "idle" && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="text-sm">
+                  <p className="font-medium text-amber-800">ShipStation Not Configured</p>
+                  <p className="text-amber-600 mt-0.5">
+                    Add SHIPSTATION_API_KEY and SHIPSTATION_API_SECRET, or choose Freight/LTL or Other for manual entry.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {shipstationFlowState === "idle" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label="Package Weight (lbs)"
+                    name="packageWeight"
+                    type="number"
+                    value={packageWeight}
+                    onChange={(e) => setPackageWeight(parseFloat(e.target.value) || 0)}
+                    required
+                  />
+                  <Input
+                    label="Ship Date"
+                    name="shipDate"
+                    type="date"
+                    value={shipDate}
+                    onChange={(e) => setShipDate(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-gray-200">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleClose}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleShipStationCreate}
+                    disabled={!canUseShipstation || packageWeight <= 0 || shipstationLoading || submitting}
+                    loading={shipstationLoading || submitting}
+                    className="flex-1"
+                  >
+                    <Truck className="w-4 h-4 mr-2" />
+                    Ship Order
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {shipstationFlowState === "creating" && (
+              <div className="py-8 text-center">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mx-auto mb-3" />
+                <p className="text-sm font-medium text-gray-700">Shipping order...</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {shipstationTestMode
+                    ? "Running rate shop (test mode — no ShipStation label purchase)"
+                    : "Creating label and marking order shipped"}
+                </p>
+              </div>
+            )}
+
+            {shipstationFlowState === "success" && shipstationResult && (
+              <div className="space-y-4">
+                {shipstationError && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertCircle className="w-5 h-5 text-amber-600" />
+                      <span className="font-semibold text-amber-800">Label Created — Ship Incomplete</span>
+                    </div>
+                    <p className="text-sm text-amber-700">{shipstationError}</p>
+                  </div>
+                )}
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                    <span className="font-semibold text-green-800">Label Created</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-gray-500">Carrier</p>
+                      <p className="font-medium text-gray-900">{shipstationResult.carrier}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Tracking Number</p>
+                      <p className="font-mono font-medium text-gray-900">
+                        {shipstationResult.trackingNumber}
+                      </p>
+                    </div>
+                  </div>
+                  {shipstationResult.actualCost != null && (
+                    <div className="text-sm mt-3 pt-3 border-t border-green-200">
+                      <p className="text-gray-500">Shipping Cost</p>
+                      <p className="font-medium text-gray-900">
+                        ${shipstationResult.actualCost.toFixed(2)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {shipstationResult.labelUrl && (
+                  <button
+                    type="button"
+                    onClick={handleDownloadShipStationLabel}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 hover:bg-blue-100 transition-colors text-sm font-medium"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Shipping Label (PDF)
+                  </button>
+                )}
+
+                <div className="flex gap-3 pt-4 border-t border-gray-200">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleClose}
+                    disabled={submitting}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleShipStationComplete}
+                    loading={submitting}
+                    disabled={submitting}
+                    className="flex-1"
+                  >
+                    <ArrowRight className="w-4 h-4 mr-2" />
+                    Complete Shipment
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {shipstationFlowState === "error" && (
+              <div className="space-y-4">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AlertCircle className="w-5 h-5 text-red-600" />
+                    <span className="font-semibold text-red-800">Label Failed</span>
+                  </div>
+                  <p className="text-sm text-red-700">{shipstationError}</p>
+                </div>
+                <div className="flex gap-3 pt-4 border-t border-gray-200">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => handleModeChange("manual")}
+                    className="flex-1"
+                  >
+                    Manual Entry
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setShipstationFlowState("idle");
+                      setShipstationError("");
+                    }}
+                    className="flex-1"
+                  >
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Retry
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── Manual tracking entry ──────────── */}
         {mode === "manual" && (
           <form onSubmit={handleManualSubmit} className="space-y-4">
             <Select
               label="Carrier"
-              name="carrier"
-              options={CARRIER_OPTIONS}
-              value={carrier}
-              onChange={(e) => {
-                setCarrier(e.target.value);
-                if (e.target.value !== "Other") {
-                  setCustomCarrier("");
-                }
-                setErrors({ ...errors, carrier: "" });
-              }}
-              placeholder="Select carrier"
-              error={errors.carrier}
-              required
+              name="manualCarrier"
+              options={MANUAL_CARRIER_OPTIONS}
+              value={manualCarrier}
+              onChange={(e) => handleManualCarrierChange(e.target.value)}
             />
 
-            {carrier === "Other" && (
+            {manualCarrier === "Freight/LTL" && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-amber-800">
+                  Enter the freight carrier tracking details manually after the label is created.
+                </p>
+              </div>
+            )}
+
+            {manualCarrier === "Other" && (
               <Input
                 label="Carrier Name"
                 name="customCarrier"

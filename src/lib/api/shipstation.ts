@@ -1,0 +1,853 @@
+/**
+ * ShipStation API v1 client — server-side only.
+ * https://www.shipstation.com/docs/api/
+ */
+
+import type { ShipStationRateStrategy } from "@/lib/outbound-service-options";
+
+const SHIPSTATION_API_BASE = "https://ssapi.shipstation.com";
+
+export interface ShipStationAddress {
+  name: string;
+  company?: string;
+  street1: string;
+  street2?: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  phone?: string;
+  residential?: boolean;
+}
+
+export interface ShipStationLineItem {
+  sku: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  lineItemKey?: string;
+}
+
+export interface CreateShipStationLabelRequest {
+  orderId: string;
+  orderNumber: string;
+  orderKey: string;
+  shipDate: string;
+  packageWeightLbs: number;
+  /** Speed intent from order (ground, 2day, overnight) — used only at label time for rate shopping */
+  shippingSpeedPreference?: string | null;
+  rateStrategy?: ShipStationRateStrategy;
+  shipTo: ShipStationAddress;
+  items: ShipStationLineItem[];
+  customerEmail?: string | null;
+}
+
+export interface CreateShipStationLabelResult {
+  trackingNumber: string;
+  labelPdfBase64: string;
+  shipmentId: number;
+  shipStationOrderId: number;
+  carrierCode: string;
+  serviceCode: string;
+  carrier: string;
+  actualCost: number | null;
+  testMode?: boolean;
+}
+
+export interface ShipStationAccountCarrier {
+  code: string;
+  name: string;
+  requiresFundedAccount?: boolean;
+  balance?: number;
+}
+
+interface ShipStationService {
+  carrierCode: string;
+  code: string;
+  name: string;
+  domestic?: boolean;
+}
+
+interface ShipStationCreateOrderResponse {
+  orderId: number;
+  orderNumber: string;
+  orderKey: string;
+}
+
+interface ShipStationCreateLabelResponse {
+  shipmentId: number;
+  trackingNumber: string;
+  shipmentCost: number;
+  labelData: string;
+  carrierCode: string;
+  serviceCode: string;
+}
+
+interface ShipStationWarehouse {
+  warehouseId: number;
+  warehouseName: string;
+  isDefault?: boolean;
+}
+
+interface ShipStationCreateWarehouseResponse {
+  warehouseId: number;
+}
+
+/** Preference → ShipStation carrier codes to try (first match on account wins). */
+const CARRIER_CODE_CANDIDATES: Record<string, string[]> = {
+  fedex: ["fedex_walleted", "fedex"],
+  ups: ["ups_walleted", "ups"],
+  usps: ["stamps_com", "usps_walleted"],
+  dhl: ["dhl_express_walleted", "dhl_express_worldwide", "dhl_global_mail"],
+  shipstation: ["fedex_walleted", "dhl_express_walleted", "stamps_com", "ups_walleted", "ups"],
+};
+
+/** Service code hints when resolving from listservices */
+const SERVICE_HINTS: Record<string, string> = {
+  fedex: "ground",
+  ups: "ground",
+  usps: "priority",
+  dhl: "worldwide",
+  shipstation: "ground",
+};
+
+interface ShipStationRateQuote {
+  serviceName: string;
+  serviceCode: string;
+  shipmentCost: number;
+  otherCost: number;
+}
+
+interface SelectedShipStationRate {
+  carrierCode: string;
+  serviceCode: string;
+  displayName: string;
+  serviceName: string;
+  estimatedCost: number;
+  rateStrategy: ShipStationRateStrategy;
+}
+
+function readRateStrategyFromEnv(): ShipStationRateStrategy | null {
+  const env = readEnv("SHIPSTATION_RATE_STRATEGY").toLowerCase();
+  if (env === "fastest" || env === "best_value" || env === "cheapest") return env;
+  return null;
+}
+
+function resolveRateStrategy(
+  request: CreateShipStationLabelRequest
+): ShipStationRateStrategy {
+  if (request.rateStrategy) return request.rateStrategy;
+  const fromEnv = readRateStrategyFromEnv();
+  if (fromEnv) return fromEnv;
+  const key = (request.shippingSpeedPreference || "").trim().toLowerCase();
+  if (key === "overnight" || key === "fastest") return "fastest";
+  if (key === "2day" || key === "2-day" || key === "2 day") return "best_value";
+  return "cheapest";
+}
+
+function speedToRequestedService(pref: string | null | undefined): string | undefined {
+  const key = (pref || "").trim().toLowerCase();
+  if (key === "overnight") return "Overnight";
+  if (key === "2day" || key === "2-day" || key === "2 day") return "2-Day";
+  if (key === "ground") return "Ground";
+  return undefined;
+}
+
+function serviceLooksFast(serviceName: string, serviceCode: string): boolean {
+  const s = `${serviceName} ${serviceCode}`.toLowerCase();
+  return /overnight|express|2day|2.day|2_day|priority|next.day|next_day|fastest|saver/.test(s);
+}
+
+function serviceLooksGround(serviceName: string, serviceCode: string): boolean {
+  const s = `${serviceName} ${serviceCode}`.toLowerCase();
+  return /ground|economy|standard|parcel select|media mail|home delivery/.test(s);
+}
+
+const FEDEX_HOME_DELIVERY_CODE = "fedex_home_delivery";
+
+function isResidentialShipment(shipTo: ShipStationAddress): boolean {
+  return shipTo.residential ?? true;
+}
+
+function isFedExCarrier(carrierCode: string): boolean {
+  return carrierCode.toLowerCase().includes("fedex");
+}
+
+/** Domestic FedEx Ground — invalid for residential; use Home Delivery instead. */
+function isFedExGroundDomestic(serviceCode: string, serviceName: string): boolean {
+  const code = serviceCode.toLowerCase();
+  const name = serviceName.toLowerCase();
+  if (code === FEDEX_HOME_DELIVERY_CODE || name.includes("home delivery")) return false;
+  if (code.includes("international") || name.includes("international")) return false;
+  return code === "fedex_ground" || (code.includes("ground") && !code.includes("economy"));
+}
+
+function normalizeFedExServiceForResidential(
+  carrierCode: string,
+  serviceCode: string,
+  serviceName: string,
+  shipTo: ShipStationAddress
+): { serviceCode: string; serviceName: string } {
+  if (!isResidentialShipment(shipTo) || !isFedExCarrier(carrierCode)) {
+    return { serviceCode, serviceName };
+  }
+  if (!isFedExGroundDomestic(serviceCode, serviceName)) {
+    return { serviceCode, serviceName };
+  }
+  return {
+    serviceCode: FEDEX_HOME_DELIVERY_CODE,
+    serviceName: "FedEx Home Delivery®",
+  };
+}
+
+type RatedQuote = ShipStationRateQuote & { carrierCode: string; totalCost: number };
+
+function prepareRatesForResidential(rates: RatedQuote[], shipTo: ShipStationAddress): RatedQuote[] {
+  if (!isResidentialShipment(shipTo)) return rates;
+
+  const compatible = rates.filter(
+    (r) => !(isFedExCarrier(r.carrierCode) && isFedExGroundDomestic(r.serviceCode, r.serviceName))
+  );
+  if (compatible.length > 0) return compatible;
+
+  return rates.map((r) => {
+    const normalized = normalizeFedExServiceForResidential(
+      r.carrierCode,
+      r.serviceCode,
+      r.serviceName,
+      shipTo
+    );
+    return {
+      ...r,
+      serviceCode: normalized.serviceCode,
+      serviceName: normalized.serviceName,
+    };
+  });
+}
+
+function pickRateForStrategy(
+  rates: RatedQuote[],
+  strategy: ShipStationRateStrategy,
+  shipTo: ShipStationAddress
+): RatedQuote | null {
+  const eligible = prepareRatesForResidential(rates, shipTo);
+  if (eligible.length === 0) return null;
+
+  if (strategy === "fastest") {
+    const fast = eligible.filter((r) => serviceLooksFast(r.serviceName, r.serviceCode));
+    const pool = fast.length > 0 ? fast : eligible;
+    return [...pool].sort((a, b) => a.totalCost - b.totalCost)[0];
+  }
+
+  if (strategy === "best_value") {
+    const groundish = eligible.filter((r) => serviceLooksGround(r.serviceName, r.serviceCode));
+    const pool = groundish.length > 0 ? groundish : eligible;
+    return [...pool].sort((a, b) => a.totalCost - b.totalCost)[0];
+  }
+
+  return [...eligible].sort((a, b) => a.totalCost - b.totalCost)[0];
+}
+
+function displayNameForCarrierCode(
+  carrierCode: string,
+  accountCarriers: ShipStationAccountCarrier[]
+): string {
+  const match = accountCarriers.find(
+    (c) => c.code.toLowerCase() === carrierCode.toLowerCase()
+  );
+  const code = carrierCode.toLowerCase();
+  if (code.includes("fedex")) return "FedEx";
+  if (code.includes("dhl")) return "DHL";
+  if (code.includes("ups")) return "UPS";
+  if (code.includes("usps") || code.includes("stamps")) return "USPS";
+  return match?.name || carrierCode;
+}
+
+export function isShipStationConfigured(): boolean {
+  const apiKey = process.env.SHIPSTATION_API_KEY?.trim();
+  const apiSecret = process.env.SHIPSTATION_API_SECRET?.trim();
+  return !!(apiKey && apiSecret);
+}
+
+/** When true, rate-shop only — no ShipStation order push or label purchase. */
+export function isShipStationTestMode(): boolean {
+  const raw = readEnv("SHIPSTATION_TEST").toLowerCase();
+  return raw === "true" || raw === "1" || raw === "yes";
+}
+
+export function getShipStationAuthHeader(): string | null {
+  const apiKey = process.env.SHIPSTATION_API_KEY?.trim();
+  const apiSecret = process.env.SHIPSTATION_API_SECRET?.trim();
+  if (!apiKey || !apiSecret) return null;
+  return `Basic ${Buffer.from(`${apiKey}:${apiSecret}`).toString("base64")}`;
+}
+
+function readEnv(name: string): string {
+  const raw = process.env[name];
+  if (!raw) return "";
+  // Strip inline comments and trim (some .env files have trailing notes)
+  return raw.split("#")[0].trim();
+}
+
+export function getShipFromAddress(): ShipStationAddress {
+  const company =
+    readEnv("SHIPSTATION_SHIPPER_COMPANY") ||
+    readEnv("FEDEX_SHIPPER_COMPANY") ||
+    "Seven Degrees LLC";
+  const street1 =
+    readEnv("SHIPSTATION_SHIPPER_STREET") || readEnv("FEDEX_SHIPPER_STREET");
+  const city = readEnv("SHIPSTATION_SHIPPER_CITY") || readEnv("FEDEX_SHIPPER_CITY");
+  const state =
+    readEnv("SHIPSTATION_SHIPPER_STATE") || readEnv("FEDEX_SHIPPER_STATE");
+  const postalCode =
+    readEnv("SHIPSTATION_SHIPPER_ZIP") || readEnv("FEDEX_SHIPPER_ZIP");
+  const country = normalizeCountry(
+    readEnv("SHIPSTATION_SHIPPER_COUNTRY") ||
+      readEnv("FEDEX_SHIPPER_COUNTRY") ||
+      "US"
+  );
+  const phone =
+    readEnv("SHIPSTATION_SHIPPER_PHONE") || readEnv("FEDEX_SHIPPER_PHONE");
+
+  return {
+    name: company,
+    company,
+    street1,
+    city,
+    state,
+    postalCode,
+    country,
+    phone: phone || undefined,
+    residential: false,
+  };
+}
+
+function normalizeCountry(country: string): string {
+  const c = country.trim().toUpperCase();
+  if (c === "USA" || c === "UNITED STATES") return "US";
+  return c.length === 2 ? c : country;
+}
+
+function toShipStationAddress(addr: ShipStationAddress) {
+  return {
+    name: addr.name,
+    company: addr.company || null,
+    street1: addr.street1,
+    street2: addr.street2 || null,
+    street3: null,
+    city: addr.city,
+    state: addr.state,
+    postalCode: addr.postalCode,
+    country: normalizeCountry(addr.country),
+    phone: addr.phone || "0000000000",
+    residential: addr.residential ?? false,
+  };
+}
+
+function extractErrorMessage(data: unknown): string {
+  if (!data) return "ShipStation API request failed";
+  if (typeof data === "string") return data;
+  if (typeof data === "object" && data !== null) {
+    const obj = data as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof obj.ExceptionMessage === "string" && obj.ExceptionMessage.trim()) {
+      parts.push(obj.ExceptionMessage.trim());
+    }
+    if (
+      typeof obj.Message === "string" &&
+      obj.Message.trim() &&
+      obj.Message.trim() !== "An error has occurred."
+    ) {
+      parts.push(obj.Message.trim());
+    }
+    if (parts.length > 0) return parts.join(" — ");
+
+    if (typeof obj.Message === "string" && obj.Message.trim()) {
+      return obj.Message.trim();
+    }
+    if (typeof obj.message === "string") return obj.message;
+    if (typeof obj.error === "string") return obj.error;
+  }
+  return "ShipStation API request failed";
+}
+
+class ShipStationApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly body: unknown
+  ) {
+    super(message);
+    this.name = "ShipStationApiError";
+  }
+}
+
+async function shipStationRequest<T>(
+  path: string,
+  init?: RequestInit
+): Promise<T> {
+  const auth = getShipStationAuthHeader();
+  if (!auth) {
+    throw new Error("ShipStation is not configured");
+  }
+
+  const res = await fetch(`${SHIPSTATION_API_BASE}${path}`, {
+    ...init,
+    headers: {
+      Authorization: auth,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+  });
+
+  const text = await res.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+
+  if (!res.ok) {
+    const message = extractErrorMessage(data);
+    throw new ShipStationApiError(message, res.status, data);
+  }
+
+  return data as T;
+}
+
+export async function listAccountCarriers(): Promise<ShipStationAccountCarrier[]> {
+  const data = await shipStationRequest<ShipStationAccountCarrier[]>("/carriers");
+  return Array.isArray(data) ? data : [];
+}
+
+export async function listWarehouses(): Promise<ShipStationWarehouse[]> {
+  const data = await shipStationRequest<ShipStationWarehouse[]>("/warehouses");
+  return Array.isArray(data) ? data : [];
+}
+
+/** Resolve Ship From Location (warehouse) required for label purchase. */
+async function getOrCreateWarehouseId(): Promise<number> {
+  const envId = readEnv("SHIPSTATION_WAREHOUSE_ID");
+  if (envId) {
+    const parsed = Number(envId);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  const warehouses = await listWarehouses();
+  if (warehouses.length > 0) {
+    const defaultWarehouse = warehouses.find((w) => w.isDefault) || warehouses[0];
+    return defaultWarehouse.warehouseId;
+  }
+
+  const shipFrom = getShipFromAddress();
+  if (!shipFrom.street1 || !shipFrom.city || !shipFrom.postalCode || !shipFrom.state) {
+    throw new Error(
+      "ShipStation has no Ship From Location. Add one in ShipStation → Settings → Shipping → Ship From Locations, or set FEDEX_SHIPPER_* / SHIPSTATION_SHIPPER_* env vars."
+    );
+  }
+
+  const created = await shipStationRequest<ShipStationCreateWarehouseResponse>(
+    "/warehouses/createwarehouse",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        warehouseName: shipFrom.company || shipFrom.name,
+        originAddress: toShipStationAddress(shipFrom),
+        returnAddress: null,
+        isDefault: true,
+      }),
+    }
+  );
+
+  if (!created.warehouseId) {
+    throw new Error("Failed to create ShipStation Ship From Location");
+  }
+
+  return created.warehouseId;
+}
+
+async function listCarrierServices(carrierCode: string): Promise<ShipStationService[]> {
+  try {
+    const data = await shipStationRequest<ShipStationService[]>(
+      `/carriers/listservices?carrierCode=${encodeURIComponent(carrierCode)}`
+    );
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    if (err instanceof ShipStationApiError) {
+      throw new Error(
+        `ShipStation carrier "${carrierCode}" is not available on your account. ${err.message}`
+      );
+    }
+    throw err;
+  }
+}
+
+function resolveCarrierOnAccount(
+  preference: string,
+  accountCarriers: ShipStationAccountCarrier[]
+): { carrierCode: string; displayName: string } {
+  const key = preference.trim().toLowerCase();
+  if (key === "freight" || key.includes("freight")) {
+    throw new Error(
+      "Freight/LTL labels are not supported via ShipStation API. Use Manual Entry instead."
+    );
+  }
+
+  const carrierCodes = new Map(
+    accountCarriers.map((c) => [c.code.toLowerCase(), c] as const)
+  );
+
+  const candidates =
+    CARRIER_CODE_CANDIDATES[key] ||
+    (carrierCodes.has(key) ? [key] : []);
+
+  for (const code of candidates) {
+    const found = carrierCodes.get(code.toLowerCase());
+    if (found) {
+      return {
+        carrierCode: found.code,
+        displayName: preferenceLabelForCarrier(key, found.name),
+      };
+    }
+  }
+
+  if (accountCarriers.length > 0) {
+    const fallback = accountCarriers[0];
+    return {
+      carrierCode: fallback.code,
+      displayName: fallback.name,
+    };
+  }
+
+  throw new Error(
+    "No shipping carriers are connected in ShipStation. Connect FedEx, DHL, or USPS in ShipStation Settings → Carriers."
+  );
+}
+
+function preferenceLabelForCarrier(key: string, accountName: string): string {
+  const labels: Record<string, string> = {
+    fedex: "FedEx",
+    ups: "UPS",
+    usps: "USPS",
+    dhl: "DHL",
+    shipstation: "ShipStation",
+  };
+  return labels[key] || accountName;
+}
+
+async function resolveServiceCode(
+  carrierCode: string,
+  preferenceKey: string,
+  shipTo?: ShipStationAddress
+): Promise<string> {
+  const services = await listCarrierServices(carrierCode);
+  if (services.length === 0) {
+    throw new Error(
+      `No ShipStation services found for carrier "${carrierCode}". Verify the carrier is connected in ShipStation.`
+    );
+  }
+
+  const residential = shipTo ? isResidentialShipment(shipTo) : false;
+  if (isFedExCarrier(carrierCode) && residential) {
+    const home = services.find(
+      (s) =>
+        s.code.toLowerCase() === FEDEX_HOME_DELIVERY_CODE ||
+        s.name.toLowerCase().includes("home delivery")
+    );
+    if (home) return home.code;
+    return FEDEX_HOME_DELIVERY_CODE;
+  }
+
+  const hint = (SERVICE_HINTS[preferenceKey.toLowerCase()] || "ground").toLowerCase();
+
+  const ground = services.find(
+    (s) =>
+      s.code.toLowerCase().includes("ground") ||
+      s.name.toLowerCase().includes("ground")
+  );
+  if (ground) return ground.code;
+
+  const hinted = services.find(
+    (s) =>
+      s.code.toLowerCase().includes(hint) ||
+      s.name.toLowerCase().includes(hint)
+  );
+  if (hinted) return hinted.code;
+
+  return services[0].code;
+}
+
+async function getRatesForCarrier(
+  carrierCode: string,
+  shipFromZip: string,
+  shipTo: ShipStationAddress,
+  packageWeightLbs: number
+): Promise<Array<ShipStationRateQuote & { carrierCode: string }>> {
+  const payload = {
+    carrierCode,
+    fromPostalCode: shipFromZip,
+    toCountry: normalizeCountry(shipTo.country),
+    toPostalCode: shipTo.postalCode,
+    toState: shipTo.state,
+    toCity: shipTo.city,
+    weight: {
+      value: packageWeightLbs,
+      units: "pounds",
+    },
+    dimensions: {
+      units: "inches",
+      length: 10,
+      width: 8,
+      height: 6,
+    },
+    confirmation: "none",
+    residential: shipTo.residential ?? true,
+  };
+
+  try {
+    const rates = await shipStationRequest<ShipStationRateQuote[]>(
+      "/shipments/getrates",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+    if (!Array.isArray(rates)) return [];
+    return rates.map((rate) => ({ ...rate, carrierCode }));
+  } catch {
+    return [];
+  }
+}
+
+/** Rate-shop across connected carriers at label time (weight + destination + strategy). */
+async function selectBestRate(
+  accountCarriers: ShipStationAccountCarrier[],
+  shipTo: ShipStationAddress,
+  packageWeightLbs: number,
+  strategy: ShipStationRateStrategy
+): Promise<SelectedShipStationRate> {
+  const shipFrom = getShipFromAddress();
+  if (!shipFrom.postalCode) {
+    throw new Error(
+      "Warehouse ship-from ZIP is not configured. Set FEDEX_SHIPPER_ZIP or SHIPSTATION_SHIPPER_ZIP."
+    );
+  }
+
+  const allRates: Array<
+    ShipStationRateQuote & { carrierCode: string; totalCost: number }
+  > = [];
+
+  for (const carrier of accountCarriers) {
+    const rates = await getRatesForCarrier(
+      carrier.code,
+      shipFrom.postalCode,
+      shipTo,
+      packageWeightLbs
+    );
+    for (const rate of rates) {
+      allRates.push({
+        ...rate,
+        totalCost: rate.shipmentCost + (rate.otherCost || 0),
+      });
+    }
+  }
+
+  if (allRates.length > 0) {
+    const best = pickRateForStrategy(allRates, strategy, shipTo);
+    if (best) {
+      const normalized = normalizeFedExServiceForResidential(
+        best.carrierCode,
+        best.serviceCode,
+        best.serviceName,
+        shipTo
+      );
+      return {
+        carrierCode: best.carrierCode,
+        serviceCode: normalized.serviceCode,
+        displayName: displayNameForCarrierCode(best.carrierCode, accountCarriers),
+        serviceName: normalized.serviceName,
+        estimatedCost: best.totalCost,
+        rateStrategy: strategy,
+      };
+    }
+  }
+
+  const fallbackCarrier = resolveCarrierOnAccount("shipstation", accountCarriers);
+  const fallbackService = await resolveServiceCode(
+    fallbackCarrier.carrierCode,
+    "shipstation",
+    shipTo
+  );
+  const normalizedFallback = normalizeFedExServiceForResidential(
+    fallbackCarrier.carrierCode,
+    fallbackService,
+    fallbackService,
+    shipTo
+  );
+
+  return {
+    carrierCode: fallbackCarrier.carrierCode,
+    serviceCode: normalizedFallback.serviceCode,
+    displayName: fallbackCarrier.displayName,
+    serviceName: normalizedFallback.serviceName,
+    estimatedCost: 0,
+    rateStrategy: strategy,
+  };
+}
+
+async function createOrUpdateOrder(
+  request: CreateShipStationLabelRequest,
+  shipTo: ShipStationAddress,
+  warehouseId: number
+): Promise<number> {
+  const shipFrom = getShipFromAddress();
+  if (!shipFrom.street1 || !shipFrom.city || !shipFrom.postalCode || !shipFrom.state) {
+    throw new Error(
+      "Warehouse ship-from address is not configured. Set FEDEX_SHIPPER_* or SHIPSTATION_SHIPPER_* env vars."
+    );
+  }
+
+  const orderDate = new Date().toISOString();
+  const requestedShippingService = speedToRequestedService(request.shippingSpeedPreference);
+  const payload: Record<string, unknown> = {
+    orderNumber: request.orderNumber,
+    orderKey: request.orderKey,
+    orderDate,
+    orderStatus: "awaiting_shipment",
+    customerEmail: request.customerEmail || "orders@7degreesco.com",
+    billTo: toShipStationAddress(shipTo),
+    shipTo: toShipStationAddress(shipTo),
+    items: request.items.map((item, index) => ({
+      lineItemKey: item.lineItemKey || `${request.orderKey}-${index}`,
+      sku: item.sku || `ITEM-${index + 1}`,
+      name: item.name,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice > 0 ? item.unitPrice : 1,
+      weight: {
+        value: Math.max(request.packageWeightLbs / request.items.length, 0.1),
+        units: "pounds",
+      },
+    })),
+    amountPaid: 1,
+    taxAmount: 0,
+    shippingAmount: 0,
+    paymentMethod: "Other",
+    advancedOptions: {
+      warehouseId,
+    },
+  };
+
+  if (requestedShippingService) {
+    payload.requestedShippingService = requestedShippingService;
+  }
+
+  const result = await shipStationRequest<ShipStationCreateOrderResponse>(
+    "/orders/createorder",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!result.orderId) {
+    throw new Error("ShipStation did not return an order ID");
+  }
+
+  return result.orderId;
+}
+
+/**
+ * Push order to ShipStation and create a shipping label.
+ * Carrier + service are chosen at label time via rate shopping (never at order creation).
+ */
+export async function createShipStationLabel(
+  request: CreateShipStationLabelRequest
+): Promise<CreateShipStationLabelResult> {
+  const accountCarriers = await listAccountCarriers();
+  const warehouseId = await getOrCreateWarehouseId();
+  const rateStrategy = resolveRateStrategy(request);
+
+  const selected = await selectBestRate(
+    accountCarriers,
+    request.shipTo,
+    request.packageWeightLbs,
+    rateStrategy
+  );
+  const carrierCode = selected.carrierCode;
+  const normalizedService = normalizeFedExServiceForResidential(
+    carrierCode,
+    selected.serviceCode,
+    selected.serviceName,
+    request.shipTo
+  );
+  const serviceCode = normalizedService.serviceCode;
+  const carrierDisplayName = selected.displayName;
+
+  if (isShipStationTestMode()) {
+    const testTracking = `TEST-${request.orderNumber.replace(/[^A-Z0-9]/gi, "").slice(0, 12) || request.orderKey.slice(0, 8)}`;
+    return {
+      trackingNumber: testTracking,
+      labelPdfBase64: "",
+      shipmentId: 0,
+      shipStationOrderId: 0,
+      carrierCode,
+      serviceCode,
+      carrier: carrierDisplayName,
+      actualCost: selected.estimatedCost > 0 ? selected.estimatedCost : null,
+      testMode: true,
+    };
+  }
+
+  const shipStationOrderId = await createOrUpdateOrder(
+    request,
+    request.shipTo,
+    warehouseId
+  );
+
+  const labelPayload = {
+    orderId: shipStationOrderId,
+    carrierCode,
+    serviceCode,
+    packageCode: "package",
+    confirmation: "none",
+    shipDate: request.shipDate,
+    weight: {
+      value: request.packageWeightLbs,
+      units: "pounds",
+    },
+    dimensions: null,
+    insuranceOptions: null,
+    internationalOptions: null,
+    advancedOptions: null,
+    testLabel: false,
+  };
+
+  const label = await shipStationRequest<ShipStationCreateLabelResponse>(
+    "/orders/createlabelfororder",
+    {
+      method: "POST",
+      body: JSON.stringify(labelPayload),
+    }
+  );
+
+  if (!label.trackingNumber || !label.labelData) {
+    throw new Error("ShipStation did not return a tracking number or label");
+  }
+
+  return {
+    trackingNumber: label.trackingNumber,
+    labelPdfBase64: label.labelData,
+    shipmentId: label.shipmentId,
+    shipStationOrderId,
+    carrierCode: label.carrierCode || carrierCode,
+    serviceCode: label.serviceCode || serviceCode,
+    carrier: displayNameForCarrierCode(
+      label.carrierCode || carrierCode,
+      accountCarriers
+    ) || carrierDisplayName,
+    actualCost: label.shipmentCost ?? null,
+  };
+}

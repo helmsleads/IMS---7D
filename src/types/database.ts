@@ -887,8 +887,9 @@ export interface OutboundOrder {
 
   // FedEx shipping integration
   fedex_shipment_id: string | null
+  shipstation_order_id: string | null
   label_url: string | null
-  shipping_method: 'manual' | 'fedex_api' | 'pickup' | 'fedex_voided'
+  shipping_method: 'manual' | 'fedex_api' | 'pickup' | 'fedex_voided' | 'shipstation_api'
   // Shipping cost tracking
   shipping_cost: number | null
   client_shipping_cost: number | null
