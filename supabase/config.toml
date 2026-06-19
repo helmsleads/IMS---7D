@@ -1,0 +1,21 @@
+# Supabase local / linked project auth settings.
+# For hosted projects, also set Dashboard → Authentication → Providers → Email
+# → Email OTP Expiration, or use SUPABASE_ACCESS_TOKEN sync (see supabase-auth-config.ts).
+
+project_id = "qqxbhgwhrgdacekrlxzq"
+
+[auth]
+enabled = true
+site_url = "https://ims-7-d-jl3b.vercel.app"
+additional_redirect_urls = [
+  "https://ims-7-d-jl3b.vercel.app/reset-password",
+  "https://ims-7-d-jl3b.vercel.app/auth/accept-invite",
+  "https://ims-7-d-jl3b.vercel.app/auth/callback",
+]
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+# Invite + password-reset links valid for 7 days (default Supabase is 1 hour).
+otp_expiry = 604800

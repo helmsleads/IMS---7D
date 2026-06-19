@@ -123,7 +123,7 @@ export function userInviteEmail({
               <!-- Note -->
               <div style="background-color: #eff6ff; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
                 <div style="font-size: 13px; color: #1e40af; line-height: 1.5;">
-                  <strong>First time?</strong> You don't have a password yet — the button above is how you create one. This invitation link expires for security; if it stops working, ask your administrator to resend the invite.
+                  <strong>First time?</strong> You don't have a password yet — the button above is how you create one. This invitation link is valid for 7 days. If it expires, ask your administrator to resend the invite.
                 </div>
               </div>
 

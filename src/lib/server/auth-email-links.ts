@@ -3,6 +3,7 @@ import {
   getAppUrlForExternalLinks,
   getSupabaseAuthUrlInstructions,
 } from "@/lib/server/app-url";
+import { ensureSupabaseAuthOtpExpiry } from "@/lib/server/supabase-auth-config";
 
 export type AuthLinkType = "invite" | "recovery";
 
@@ -29,6 +30,8 @@ export async function generateAuthEmailLink(
   const normalizedEmail = email.trim().toLowerCase();
   const appOrigin = getAppUrlForExternalLinks();
   const attemptErrors: string[] = [];
+
+  await ensureSupabaseAuthOtpExpiry();
 
   for (const type of types) {
     const { data, error } = await service.auth.admin.generateLink({

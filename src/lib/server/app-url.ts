@@ -146,11 +146,17 @@ export function getAuthCallbackUrl(
 }
 
 export function getSupabaseAuthUrlInstructions(): string {
+  const expirySeconds =
+    process.env.AUTH_EMAIL_OTP_EXPIRY_SECONDS?.trim() || "604800";
+  const expiryDays = Math.round(Number(expirySeconds) / 86400) || 7;
+
   return [
     `Site URL: ${PRODUCTION_APP_URL}`,
     `Redirect URLs: ${PRODUCTION_APP_URL}/reset-password`,
+    `Redirect URLs: ${PRODUCTION_APP_URL}/auth/accept-invite`,
     `Redirect URLs: ${PRODUCTION_APP_URL}/auth/callback`,
     `Redirect URLs: ${PRODUCTION_APP_URL}/** (wildcard recommended)`,
+    `Email OTP expiration: ${expirySeconds} seconds (${expiryDays} days) — Authentication → Providers → Email`,
     "Remove http://localhost:3000 from Site URL and Redirect URLs in production.",
   ].join("\n");
 }
