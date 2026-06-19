@@ -11,7 +11,12 @@ import EmptyState from "@/components/ui/EmptyState";
 import FetchError from "@/components/ui/FetchError";
 import Pagination from "@/components/ui/Pagination";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import { getOutboundOrders, deleteOutboundOrder, OutboundOrderWithClient } from "@/lib/api/outbound";
+import {
+  getOutboundOrders,
+  deleteOutboundOrder,
+  isShipStationOutboundOrder,
+  OutboundOrderWithClient,
+} from "@/lib/api/outbound";
 import { handleApiError } from "@/lib/utils/error-handler";
 import { formatDate, formatStatus } from "@/lib/utils/formatting";
 import { getPreferredCarrierLabel } from "@/lib/outbound-service-options";
@@ -61,6 +66,7 @@ export default function OutboundPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [deleteOrder, setDeleteOrder] = useState<OutboundOrderWithCount | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [shipstationTestMode, setShipstationTestMode] = useState(false);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -93,6 +99,20 @@ export default function OutboundPage() {
   useEffect(() => {
     fetchOrders();
   }, []);
+
+  useEffect(() => {
+    fetch("/api/shipping/shipstation")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setShipstationTestMode(Boolean(data?.testMode)))
+      .catch(() => setShipstationTestMode(false));
+  }, []);
+
+  const canDeleteOrder = (order: OutboundOrderWithCount) => {
+    if (order.status === "pending" || order.status === "processing") {
+      return true;
+    }
+    return shipstationTestMode && isShipStationOutboundOrder(order);
+  };
 
   const statusCounts = useMemo(() => {
     const counts: Record<StatusFilter, number> = {
@@ -238,10 +258,11 @@ export default function OutboundPage() {
       render: (order: OutboundOrderWithCount) => {
         const isFedExActive = order.shipping_method === "fedex_api" && order.fedex_shipment_id;
         const isFedExVoided = order.shipping_method === "fedex_voided";
+        const isShipStation = isShipStationOutboundOrder(order);
         const hasShippingInfo = order.carrier || order.tracking_number;
         const hasPreferred = order.preferred_carrier && !order.carrier;
 
-        if (!isFedExActive && !isFedExVoided && !hasShippingInfo && !hasPreferred) {
+        if (!isFedExActive && !isFedExVoided && !isShipStation && !hasShippingInfo && !hasPreferred) {
           return <span className="text-gray-400">—</span>;
         }
         return (
@@ -250,6 +271,11 @@ export default function OutboundPage() {
             {isFedExActive && (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-700 w-fit">
                 FedEx
+              </span>
+            )}
+            {isShipStation && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold bg-teal-100 text-teal-700 w-fit">
+                ShipStation{shipstationTestMode ? " (test)" : ""}
               </span>
             )}
             {/* FedEx voided/cancelled badge */}
@@ -304,7 +330,7 @@ export default function OutboundPage() {
               <Truck className="w-4 h-4 text-indigo-600" />
             </Button>
           )}
-          {(order.status === "pending" || order.status === "processing") && (
+          {canDeleteOrder(order) && (
             <Button
               variant="ghost"
               size="sm"
@@ -312,7 +338,11 @@ export default function OutboundPage() {
                 e.stopPropagation();
                 setDeleteOrder(order);
               }}
-              title="Delete order"
+              title={
+                isShipStationOutboundOrder(order)
+                  ? "Remove ShipStation test order"
+                  : "Delete order"
+              }
             >
               <Trash2 className="w-4 h-4 text-red-500" />
             </Button>
@@ -494,9 +524,19 @@ export default function OutboundPage() {
         isOpen={!!deleteOrder}
         onClose={() => setDeleteOrder(null)}
         onConfirm={handleDelete}
-        title="Delete Outbound Order"
-        description={`Are you sure you want to delete this order? This action cannot be undone.`}
-        confirmLabel="Delete"
+        title={
+          deleteOrder && isShipStationOutboundOrder(deleteOrder)
+            ? "Remove ShipStation Test Order"
+            : "Delete Outbound Order"
+        }
+        description={
+          deleteOrder && isShipStationOutboundOrder(deleteOrder)
+            ? `Remove ${deleteOrder.order_number}? This deletes the test ShipStation shipment and restores any inventory that was deducted. This cannot be undone.`
+            : "Are you sure you want to delete this order? This action cannot be undone."
+        }
+        confirmLabel={
+          deleteOrder && isShipStationOutboundOrder(deleteOrder) ? "Remove" : "Delete"
+        }
         variant="danger"
         loading={deleting}
       />

@@ -791,10 +791,27 @@ export async function shipOutboundItem(
   return updatedItem;
 }
 
+export function isShipStationOutboundOrder(order: {
+  shipping_method?: string | null;
+}): boolean {
+  return order.shipping_method === "shipstation_api";
+}
+
 export async function deleteOutboundOrder(id: string): Promise<void> {
   const supabase = createClient();
 
-  // Check if any items have been shipped
+  const { data: order, error: orderError } = await supabase
+    .from("outbound_orders")
+    .select("id, shipping_method")
+    .eq("id", id)
+    .single();
+
+  if (orderError) {
+    throw new Error(orderError.message);
+  }
+
+  const allowShippedDelete = isShipStationOutboundOrder(order);
+
   const { data: items, error: itemsError } = await supabase
     .from("outbound_items")
     .select("qty_shipped")
@@ -805,8 +822,38 @@ export async function deleteOutboundOrder(id: string): Promise<void> {
   }
 
   const hasShippedItems = items?.some((item) => item.qty_shipped > 0);
-  if (hasShippedItems) {
+  if (hasShippedItems && !allowShippedDelete) {
     throw new Error("Cannot delete order with shipped items");
+  }
+
+  if (allowShippedDelete && hasShippedItems) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: shipTransactions, error: txError } = await supabase
+      .from("inventory_transactions")
+      .select("product_id, location_id, qty_change, lot_id, sublocation_id")
+      .eq("reference_type", "outbound_order")
+      .eq("reference_id", id)
+      .eq("transaction_type", "ship");
+
+    if (txError) {
+      throw new Error(txError.message);
+    }
+
+    for (const tx of shipTransactions || []) {
+      if (tx.qty_change >= 0) continue;
+      await updateInventoryWithTransaction({
+        productId: tx.product_id,
+        locationId: tx.location_id,
+        qtyChange: Math.abs(tx.qty_change),
+        transactionType: "adjust",
+        referenceType: "outbound_order",
+        referenceId: id,
+        lotId: tx.lot_id || undefined,
+        sublocationId: tx.sublocation_id || undefined,
+        reason: "ShipStation test order removed",
+        performedBy: user?.id,
+      });
+    }
   }
 
   const { error } = await supabase
