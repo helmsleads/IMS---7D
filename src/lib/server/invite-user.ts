@@ -2,9 +2,11 @@ import { createServiceClient } from "@/lib/supabase-service";
 import { sendEmail } from "@/lib/api/email";
 import { isEmailServiceConfigured } from "@/lib/email";
 import {
-  getAppUrl,
   getAuthCallbackUrl,
   getAppUrlConfigurationError,
+  getRedirectToFromActionLink,
+  isLocalhostUrl,
+  patchAuthActionLinkRedirect,
 } from "@/lib/server/app-url";
 import type { ClientUserRole, UserRole } from "@/types/database";
 
@@ -56,10 +58,6 @@ export interface InviteUserParams {
   resend_user_id?: string;
 }
 
-export type SendUserInvitationOptions = {
-  /** Use request host when env URL is missing (recommended on Vercel). */
-  request?: Request;
-};
 
 function inviteEmailHtml(
   firstName: string,
@@ -118,7 +116,7 @@ export async function findAuthUserIdByEmail(email: string): Promise<string | nul
   }
 }
 
-function checkInviteConfiguration(request?: Request): InviteFailure | null {
+function checkInviteConfiguration(): InviteFailure | null {
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     !process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -132,7 +130,7 @@ function checkInviteConfiguration(request?: Request): InviteFailure | null {
     };
   }
 
-  const appUrlError = getAppUrlConfigurationError(request);
+  const appUrlError = getAppUrlConfigurationError();
   if (appUrlError) {
     return {
       success: false,
@@ -170,9 +168,27 @@ async function generateAuthInviteLink(
     });
 
     if (!error && data?.properties?.action_link && data?.user?.id) {
+      const actionLink = patchAuthActionLinkRedirect(
+        data.properties.action_link,
+        redirectTo
+      );
+      const embeddedRedirect = getRedirectToFromActionLink(actionLink);
+
+      if (embeddedRedirect && isLocalhostUrl(embeddedRedirect)) {
+        return {
+          error: "Invitation link would redirect to localhost.",
+          details: [
+            `Redirect URL used: ${redirectTo}`,
+            "Update Supabase → Authentication → URL Configuration:",
+            `- Site URL: your production domain (not http://localhost:3000)`,
+            `- Redirect URLs: include ${redirectTo}`,
+          ].join(" "),
+        };
+      }
+
       return {
         userId: data.user.id,
-        actionLink: data.properties.action_link,
+        actionLink,
       };
     }
 
@@ -298,10 +314,9 @@ async function ensurePortalUserRecords(
  * Replaces the missing Supabase `invite-user` edge function.
  */
 export async function sendUserInvitation(
-  params: InviteUserParams,
-  options?: SendUserInvitationOptions
+  params: InviteUserParams
 ): Promise<InviteSuccess | InviteFailure> {
-  const configError = checkInviteConfiguration(options?.request);
+  const configError = checkInviteConfiguration();
   if (configError) {
     console.error("invite configuration:", configError);
     return configError;
@@ -309,7 +324,9 @@ export async function sendUserInvitation(
 
   try {
     const firstName = params.full_name.trim().split(/\s+/)[0] || "";
-    const redirectTo = getAuthCallbackUrl("/reset-password", options?.request);
+    const redirectTo = getAuthCallbackUrl("/reset-password", {
+      forEmailLink: true,
+    });
 
     const linkResult = await generateAuthInviteLink(
       params.email,

@@ -130,19 +130,16 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const inviteResult = await sendUserInvitation(
-        {
-          email,
-          full_name: displayName,
-          phone,
-          user_type: "portal",
-          client_id: clientId,
-          role,
-          invited_by: admin.adminId,
-          resend_user_id: existingProfile?.id,
-        },
-        { request }
-      );
+      const inviteResult = await sendUserInvitation({
+        email,
+        full_name: displayName,
+        phone,
+        user_type: "portal",
+        client_id: clientId,
+        role,
+        invited_by: admin.adminId,
+        resend_user_id: existingProfile?.id,
+      });
 
       if (!inviteResult.success) {
         return inviteErrorResponse(inviteResult);
@@ -183,18 +180,15 @@ export async function POST(request: NextRequest) {
         .limit(1)
         .maybeSingle();
 
-      const inviteResult = await sendUserInvitation(
-        {
-          email,
-          full_name: profile?.full_name || email.split("@")[0],
-          user_type: "portal",
-          role: access?.role,
-          client_id: access?.client_id,
-          invited_by: admin.adminId,
-          resend_user_id: resendUserId,
-        },
-        { request }
-      );
+      const inviteResult = await sendUserInvitation({
+        email,
+        full_name: profile?.full_name || email.split("@")[0],
+        user_type: "portal",
+        role: access?.role,
+        client_id: access?.client_id,
+        invited_by: admin.adminId,
+        resend_user_id: resendUserId,
+      });
 
       if (!inviteResult.success) {
         return inviteErrorResponse(inviteResult);

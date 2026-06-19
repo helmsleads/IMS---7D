@@ -1,3 +1,6 @@
+/** Production app origin — update if your Vercel domain changes. */
+export const PRODUCTION_APP_URL = "https://ims-7-d-jl3b.vercel.app";
+
 function normalizeAppUrl(value: string | undefined | null): string | null {
   if (!value) return null;
   const trimmed = value.trim().replace(/\/$/, "");
@@ -8,7 +11,7 @@ function normalizeAppUrl(value: string | undefined | null): string | null {
   return `https://${trimmed}`;
 }
 
-function isLocalhostUrl(url: string): boolean {
+export function isLocalhostUrl(url: string): boolean {
   try {
     const { hostname } = new URL(url);
     return (
@@ -41,61 +44,129 @@ function originFromRequest(request: Request): string | null {
   return normalized;
 }
 
-/**
- * Resolve the public app origin for server-generated links (invites, emails, OAuth).
- * Prefers explicit env vars, then the incoming request host on Vercel/production.
- */
-export function getAppUrl(request?: Request): string {
+function configuredAppUrlCandidates(request?: Request): string[] {
   const fromRequest = request ? originFromRequest(request) : null;
 
-  const candidates = [
-    fromRequest,
-    normalizeAppUrl(process.env.NEXT_PUBLIC_APP_URL),
+  return [
     normalizeAppUrl(process.env.APP_URL),
+    normalizeAppUrl(process.env.NEXT_PUBLIC_APP_URL),
+    normalizeAppUrl(PRODUCTION_APP_URL),
     process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? normalizeAppUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL)
       : null,
     process.env.VERCEL_URL ? normalizeAppUrl(process.env.VERCEL_URL) : null,
+    fromRequest,
   ].filter((value): value is string => !!value);
+}
 
-  const isProduction = process.env.NODE_ENV === "production";
-
+function pickAppUrl(candidates: string[], allowLocalhost: boolean): string | null {
   for (const candidate of candidates) {
-    if (isProduction && isLocalhostUrl(candidate)) continue;
+    if (!allowLocalhost && isLocalhostUrl(candidate)) continue;
     return candidate;
   }
+  return null;
+}
+
+function looksLikeProductionUrl(url: string | undefined | null): boolean {
+  const normalized = normalizeAppUrl(url);
+  if (!normalized || isLocalhostUrl(normalized)) return false;
+  const hostname = new URL(normalized).hostname;
+  if (hostname.includes("ngrok")) return false;
+  return true;
+}
+
+function configuredAppUrlForExternalLinks(): string[] {
+  return [
+    normalizeAppUrl(process.env.APP_URL),
+    normalizeAppUrl(PRODUCTION_APP_URL),
+    process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? normalizeAppUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL)
+      : null,
+    process.env.VERCEL_URL ? normalizeAppUrl(process.env.VERCEL_URL) : null,
+    looksLikeProductionUrl(process.env.NEXT_PUBLIC_APP_URL)
+      ? normalizeAppUrl(process.env.NEXT_PUBLIC_APP_URL)
+      : null,
+  ].filter((value): value is string => !!value);
+}
+
+/**
+ * Resolve the public app origin for server-generated links (invites, emails).
+ * Never uses the request host — invite links must not depend on where the admin clicked.
+ */
+export function getAppUrlForExternalLinks(): string {
+  const isProduction = process.env.NODE_ENV === "production";
+  const picked = pickAppUrl(configuredAppUrlForExternalLinks(), !isProduction);
+
+  if (picked) return picked;
 
   if (!isProduction) {
     return "http://localhost:3000";
   }
 
-  return candidates[0] || "http://localhost:3000";
+  return PRODUCTION_APP_URL;
+}
+
+/**
+ * Resolve app origin (e.g. OAuth callbacks that can use the current request host).
+ */
+export function getAppUrl(request?: Request): string {
+  const isProduction = process.env.NODE_ENV === "production";
+  const picked = pickAppUrl(configuredAppUrlCandidates(request), !isProduction);
+
+  if (picked) return picked;
+
+  if (!isProduction) {
+    return "http://localhost:3000";
+  }
+
+  return PRODUCTION_APP_URL;
 }
 
 export function getAuthCallbackUrl(
   nextPath = "/reset-password",
-  request?: Request
+  options?: { request?: Request; forEmailLink?: boolean }
 ): string {
-  return `${getAppUrl(request)}/auth/callback?next=${encodeURIComponent(nextPath)}`;
+  const origin = options?.forEmailLink
+    ? getAppUrlForExternalLinks()
+    : getAppUrl(options?.request);
+
+  return `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
 }
 
-export function getAppUrlConfigurationError(request?: Request): string | null {
-  const url = getAppUrl(request);
+export function getAppUrlConfigurationError(): string | null {
+  const url = getAppUrlForExternalLinks();
   if (process.env.NODE_ENV === "production" && isLocalhostUrl(url)) {
     return [
       "App URL resolves to localhost in production.",
-      "Set NEXT_PUBLIC_APP_URL to your production domain (e.g. https://ims-7-d-jl3b.vercel.app) in Vercel environment variables.",
-      "Also set Supabase → Authentication → URL Configuration → Site URL to the same domain,",
-      "and add https://your-domain.com/auth/callback to Redirect URLs.",
+      `Set APP_URL or NEXT_PUBLIC_APP_URL to ${PRODUCTION_APP_URL} in Vercel.`,
+      "Set Supabase → Authentication → Site URL to the same domain,",
+      `and add ${PRODUCTION_APP_URL}/auth/callback to Redirect URLs.`,
     ].join(" ");
   }
-  if (
-    !process.env.NEXT_PUBLIC_APP_URL &&
-    !process.env.APP_URL &&
-    !process.env.VERCEL_URL &&
-    !request
-  ) {
-    return "Set NEXT_PUBLIC_APP_URL (used for invite redirect links). Example: https://your-domain.com";
-  }
   return null;
+}
+
+/**
+ * Supabase may replace redirect_to with Site URL when the callback is not allowlisted.
+ * Force the intended callback URL into the verify link we email to users.
+ */
+export function patchAuthActionLinkRedirect(
+  actionLink: string,
+  redirectTo: string
+): string {
+  try {
+    const url = new URL(actionLink);
+    url.searchParams.set("redirect_to", redirectTo);
+    return url.toString();
+  } catch {
+    return actionLink;
+  }
+}
+
+export function getRedirectToFromActionLink(actionLink: string): string | null {
+  try {
+    return new URL(actionLink).searchParams.get("redirect_to");
+  } catch {
+    return null;
+  }
 }
