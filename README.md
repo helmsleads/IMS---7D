@@ -96,7 +96,30 @@ Shopify integrations are configured per-client with these settings:
 SHOPIFY_CLIENT_ID=         # Shopify app client ID
 SHOPIFY_CLIENT_SECRET=     # Shopify app client secret (also used for webhook HMAC)
 CRON_SECRET=               # Authorization token for cron endpoints
+DTC_API_KEY=               # Shared bearer secret for DTC backend (catalog + outbound orders)
 ```
+
+## DTC Backend Integration
+
+Service-to-service API for the DTC commerce backend (`DTC_backend`). Uses bearer auth like cron jobs — **not** Supabase cookies.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/dtc/clients/[clientId]/catalog` | GET | Products for a client (`page`, `limit`, `sku`) |
+| `/api/dtc/clients/[clientId]/orders` | POST | Create outbound order (`external_platform: dtc`) |
+| `/api/dtc/clients/[clientId]/orders/[externalOrderId]` | GET | Order status + tracking |
+
+**Auth:** `Authorization: Bearer <DTC_API_KEY>` (same value as `SEVEN_D_API_KEY` in DTC backend)
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `src/lib/server/dtc-auth.ts` | Bearer API key verification |
+| `src/lib/api/dtc/catalog.ts` | Product catalog by `client_id` |
+| `src/lib/api/dtc/orders.ts` | Outbound order create + lookup |
+
+Fulfillment after create uses existing warehouse UI + FedEx (`/api/shipping/fedex`).
 
 ## Cron Jobs
 

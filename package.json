@@ -12,7 +12,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "docs:shopify-connect-pdf": "node scripts/build-shopify-connect-pdf.mjs"
+    "docs:shopify-connect-pdf": "node scripts/build-shopify-connect-pdf.mjs",
+    "docs:invite-users-pdf": "node scripts/build-invite-users-pdf.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1069.0",
