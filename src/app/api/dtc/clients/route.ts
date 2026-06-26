@@ -16,11 +16,12 @@ export async function GET(request: NextRequest) {
   try {
     const email = request.nextUrl.searchParams.get("email")?.trim();
     const companyName = request.nextUrl.searchParams.get("company_name")?.trim() || null;
+    const clientId = request.nextUrl.searchParams.get("client_id")?.trim() || null;
     if (!email) {
       return NextResponse.json({ error: "email query parameter is required" }, { status: 400 });
     }
 
-    const result = await resolveDtcIntegrationByEmail(email, companyName);
+    const result = await resolveDtcIntegrationByEmail(email, companyName, clientId);
     if (!result) {
       return NextResponse.json(
         {

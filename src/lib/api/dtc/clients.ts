@@ -105,11 +105,12 @@ export async function findActiveClientByCompanyName(companyName: string) {
 }
 
 /**
- * Resolve DTC integration: admin user by email + warehouse client by company name.
+ * Resolve DTC integration: admin user by email + warehouse client by ID or company name.
  */
 export async function resolveDtcIntegrationByEmail(
   email: string,
   companyName?: string | null,
+  clientId?: string | null,
 ) {
   const adminResult = await findActiveAdminByPortalEmail(email);
   if (!adminResult) {
@@ -119,7 +120,13 @@ export async function resolveDtcIntegrationByEmail(
   let client: DtcClientRecord | null = null;
   let matchedBy = adminResult.matched_by;
 
-  if (companyName?.trim()) {
+  const normalizedClientId = clientId?.trim();
+  if (normalizedClientId) {
+    client = await getActiveClient(normalizedClientId);
+    if (client) {
+      matchedBy = "admin_and_client_id";
+    }
+  } else if (companyName?.trim()) {
     client = await findActiveClientByCompanyName(companyName);
     if (client) {
       matchedBy = "admin_and_company";

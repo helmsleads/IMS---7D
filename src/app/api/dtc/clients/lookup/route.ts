@@ -17,12 +17,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const email = body?.email?.trim();
     const companyName = body?.company_name?.trim() || null;
+    const clientId = body?.client_id?.trim() || null;
 
     if (!email) {
       return NextResponse.json({ error: "email is required" }, { status: 400 });
     }
 
-    const result = await resolveDtcIntegrationByEmail(email, companyName);
+    const result = await resolveDtcIntegrationByEmail(email, companyName, clientId);
     if (!result) {
       return NextResponse.json(
         {
