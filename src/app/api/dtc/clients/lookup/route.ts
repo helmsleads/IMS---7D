@@ -5,7 +5,7 @@ import { verifyDtcApiRequest } from "@/lib/server/dtc-auth";
 /**
  * POST /api/dtc/clients/lookup
  *
- * Resolve an existing 7D internal admin user by email and optional company name.
+ * Resolve an existing 7D portal account by email and optional warehouse client.
  */
 export async function POST(request: NextRequest) {
   const authError = verifyDtcApiRequest(request);
@@ -27,8 +27,7 @@ export async function POST(request: NextRequest) {
     if (!result) {
       return NextResponse.json(
         {
-          error:
-            "No active 7D admin account found for this email. Client portal emails are not supported.",
+          error: "No active 7D account found for this email. Use your 7 Degrees admin or client portal login.",
         },
         { status: 404 },
       );

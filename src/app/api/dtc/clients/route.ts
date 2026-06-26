@@ -5,7 +5,7 @@ import { verifyDtcApiRequest } from "@/lib/server/dtc-auth";
 /**
  * GET /api/dtc/clients?email=&company_name=
  *
- * Resolve an existing 7D internal admin user by email and optional company name.
+ * Resolve an existing 7D portal account by email and optional warehouse client.
  */
 export async function GET(request: NextRequest) {
   const authError = verifyDtcApiRequest(request);
@@ -25,8 +25,7 @@ export async function GET(request: NextRequest) {
     if (!result) {
       return NextResponse.json(
         {
-          error:
-            "No active 7D admin account found for this email. Client portal emails are not supported.",
+          error: "No active 7D account found for this email. Use your 7 Degrees admin or client portal login.",
         },
         { status: 404 },
       );
@@ -58,7 +57,7 @@ export async function POST() {
   return NextResponse.json(
     {
       error:
-        "Creating 7D clients via DTC is disabled. Connect an existing 7D admin portal email instead.",
+        "Creating 7D clients via DTC is disabled. Connect an existing 7D admin or client portal account instead.",
     },
     { status: 410 },
   );
