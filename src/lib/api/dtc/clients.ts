@@ -7,8 +7,16 @@ export interface DtcClientRecord {
   active: boolean;
 }
 
+export interface DtcAdminUserRecord {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  active: boolean;
+}
+
 export interface DtcPortalAccount {
-  company_name: string;
+  company_name: string | null;
   email: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -31,28 +39,12 @@ function parsePortalUserName(fullName: string | null | undefined) {
   };
 }
 
-function buildPortalAccount(
-  client: DtcClientRecord & { contact_name?: string | null },
-  portalUser?: { email?: string | null; full_name?: string | null } | null,
-): DtcPortalAccount {
-  const nameParts = portalUser?.full_name
-    ? parsePortalUserName(portalUser.full_name)
-    : parsePortalUserName(client.contact_name);
-
-  return {
-    company_name: client.company_name,
-    email: portalUser?.email ?? client.email ?? null,
-    first_name: nameParts.first_name,
-    last_name: nameParts.last_name,
-  };
-}
-
 export async function getActiveClient(clientId: string) {
   const supabase = createServiceClient();
 
   const { data, error } = await supabase
     .from("clients")
-    .select("id, company_name, active")
+    .select("id, company_name, email, active")
     .eq("id", clientId)
     .maybeSingle();
 
@@ -67,7 +59,92 @@ export async function getActiveClient(clientId: string) {
   return data;
 }
 
-export async function findActiveClientByPortalEmail(email: string) {
+/**
+ * Find an active 7D warehouse client by company name (case-insensitive exact match).
+ */
+export async function findActiveClientByCompanyName(companyName: string) {
+  const normalized = companyName.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const supabase = createServiceClient();
+  const target = normalized.toLowerCase();
+
+  const { data, error } = await supabase
+    .from("clients")
+    .select("id, company_name, email, active")
+    .eq("active", true)
+    .ilike("company_name", normalized);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!data?.length) {
+    return null;
+  }
+
+  const exactMatches = data.filter(
+    (row) => row.company_name?.trim().toLowerCase() === target,
+  );
+
+  if (exactMatches.length === 1) {
+    return exactMatches[0] as DtcClientRecord;
+  }
+
+  if (exactMatches.length > 1) {
+    const conflict = new Error(
+      `Multiple active 7D clients match company name "${normalized}"`,
+    );
+    (conflict as Error & { status?: number }).status = 409;
+    throw conflict;
+  }
+
+  return data.length === 1 ? (data[0] as DtcClientRecord) : null;
+}
+
+/**
+ * Resolve DTC integration: admin user by email + warehouse client by company name.
+ */
+export async function resolveDtcIntegrationByEmail(
+  email: string,
+  companyName?: string | null,
+) {
+  const adminResult = await findActiveAdminByPortalEmail(email);
+  if (!adminResult) {
+    return null;
+  }
+
+  let client: DtcClientRecord | null = null;
+  let matchedBy = adminResult.matched_by;
+
+  if (companyName?.trim()) {
+    client = await findActiveClientByCompanyName(companyName);
+    if (client) {
+      matchedBy = "admin_and_company";
+    }
+  }
+
+  return {
+    admin_user: adminResult.admin_user,
+    portal_user: adminResult.portal_user,
+    client,
+    account: {
+      company_name: client?.company_name ?? companyName?.trim() ?? null,
+      email: adminResult.account?.email ?? null,
+      first_name: adminResult.account?.first_name ?? null,
+      last_name: adminResult.account?.last_name ?? null,
+    },
+    matched_by: matchedBy,
+  };
+}
+
+/**
+ * Look up an existing 7D internal admin (staff) user by email.
+ * Does not create users or clients — returns null when not found.
+ */
+export async function findActiveAdminByPortalEmail(email: string) {
   const supabase = createServiceClient();
   const normalizedEmail = email.trim().toLowerCase();
 
@@ -77,132 +154,38 @@ export async function findActiveClientByPortalEmail(email: string) {
     throw error;
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("user_profiles")
-    .select("id, email, full_name")
-    .eq("email", normalizedEmail)
-    .maybeSingle();
-
-  if (profileError) {
-    throw new Error(profileError.message);
-  }
-
-  if (profile) {
-    const { data: clientUsers, error: clientUsersError } = await supabase
-      .from("client_users")
-      .select("client_id, is_primary, client:clients(id, company_name, email, contact_name, active)")
-      .eq("user_id", profile.id)
-      .order("is_primary", { ascending: false });
-
-    if (clientUsersError) {
-      throw new Error(clientUsersError.message);
-    }
-
-    for (const row of clientUsers ?? []) {
-      const client = Array.isArray(row.client) ? row.client[0] : row.client;
-      if (client?.active) {
-        return {
-          client: client as DtcClientRecord,
-          portal_user: {
-            id: profile.id,
-            email: profile.email,
-            full_name: profile.full_name,
-          },
-          account: buildPortalAccount(client as DtcClientRecord, profile),
-          matched_by: "portal_user",
-        };
-      }
-    }
-
-    const { data: legacyClient, error: legacyError } = await supabase
-      .from("clients")
-      .select("id, company_name, email, contact_name, active")
-      .eq("auth_id", profile.id)
-      .eq("active", true)
-      .maybeSingle();
-
-    if (legacyError) {
-      throw new Error(legacyError.message);
-    }
-
-    if (legacyClient) {
-      return {
-        client: legacyClient as DtcClientRecord,
-        portal_user: {
-          id: profile.id,
-          email: profile.email,
-          full_name: profile.full_name,
-        },
-        account: buildPortalAccount(legacyClient as DtcClientRecord, profile),
-        matched_by: "legacy_auth_id",
-      };
-    }
-  }
-
-  const { data: clientByEmail, error: clientEmailError } = await supabase
-    .from("clients")
-    .select("id, company_name, email, active")
-    .eq("email", normalizedEmail)
+  const { data: staffUser, error } = await supabase
+    .from("users")
+    .select("id, name, email, role, active")
+    .ilike("email", normalizedEmail)
     .eq("active", true)
     .maybeSingle();
-
-  if (clientEmailError) {
-    throw new Error(clientEmailError.message);
-  }
-
-  if (clientByEmail) {
-    return {
-      client: clientByEmail as DtcClientRecord,
-      portal_user: null,
-      account: buildPortalAccount(clientByEmail),
-      matched_by: "client_email",
-    };
-  }
-
-  return null;
-}
-
-export interface CreateDtcClientInput {
-  company_name: string;
-  email: string;
-  contact_name?: string | null;
-  dtc_portal_user_id?: string | null;
-}
-
-export async function createDtcClient(input: CreateDtcClientInput) {
-  const supabase = createServiceClient();
-  const normalizedEmail = input.email.trim().toLowerCase();
-  const companyName = input.company_name.trim();
-  const portalUserId = input.dtc_portal_user_id?.trim() || null;
-
-  if (!companyName) {
-    const error = new Error("company_name is required");
-    (error as Error & { status?: number }).status = 400;
-    throw error;
-  }
-
-  if (!normalizedEmail) {
-    const error = new Error("email is required");
-    (error as Error & { status?: number }).status = 400;
-    throw error;
-  }
-
-  const { data, error } = await supabase
-    .from("clients")
-    .insert({
-      company_name: companyName,
-      email: normalizedEmail,
-      contact_name: input.contact_name?.trim() || null,
-      active: true,
-      industries: ["wine", "spirits"],
-      allow_product_workflow_override: false,
-    })
-    .select("id, company_name, email, active")
-    .single();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return { client: data as DtcClientRecord, created: true, dtc_portal_user_id: portalUserId };
+  if (!staffUser) {
+    return null;
+  }
+
+  const nameParts = parsePortalUserName(staffUser.name);
+
+  return {
+    admin_user: staffUser as DtcAdminUserRecord,
+    portal_user: null,
+    client: null,
+    account: {
+      company_name: null,
+      email: staffUser.email,
+      first_name: nameParts.first_name,
+      last_name: nameParts.last_name,
+    },
+    matched_by: "internal_admin",
+  };
+}
+
+/** @deprecated Use findActiveAdminByPortalEmail — lookup only, no provisioning. */
+export async function findActiveClientByPortalEmail(email: string) {
+  return findActiveAdminByPortalEmail(email);
 }

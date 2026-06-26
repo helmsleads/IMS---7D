@@ -105,7 +105,7 @@ Service-to-service API for the DTC commerce backend (`DTC_backend`). Uses bearer
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/dtc/clients` | POST | Provision a new 7D client when a DTC portal user signs up |
+| `/api/dtc/clients/lookup` | POST | Look up an existing 7D internal admin by email (no create) |
 | `/api/dtc/clients/[clientId]/catalog` | GET | Products for a client (`page`, `limit`, `sku`) |
 | `/api/dtc/clients/[clientId]/orders` | POST | Create outbound order (`external_platform: dtc`) |
 | `/api/dtc/clients/[clientId]/orders/[externalOrderId]` | GET | Order status + tracking |

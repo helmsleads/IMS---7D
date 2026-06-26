@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createDtcClient, findActiveClientByPortalEmail } from "@/lib/api/dtc/clients";
+import { resolveDtcIntegrationByEmail } from "@/lib/api/dtc/clients";
 import { verifyDtcApiRequest } from "@/lib/server/dtc-auth";
 
 /**
- * GET /api/dtc/clients?email=
+ * GET /api/dtc/clients?email=&company_name=
  *
- * Resolve an active 7D client for a portal user email (DTC integration linking).
+ * Resolve an existing 7D internal admin user by email and optional company name.
  */
 export async function GET(request: NextRequest) {
   const authError = verifyDtcApiRequest(request);
@@ -15,19 +15,24 @@ export async function GET(request: NextRequest) {
 
   try {
     const email = request.nextUrl.searchParams.get("email")?.trim();
+    const companyName = request.nextUrl.searchParams.get("company_name")?.trim() || null;
     if (!email) {
       return NextResponse.json({ error: "email query parameter is required" }, { status: 400 });
     }
 
-    const result = await findActiveClientByPortalEmail(email);
+    const result = await resolveDtcIntegrationByEmail(email, companyName);
     if (!result) {
       return NextResponse.json(
-        { error: "No active 7D account found for this email" },
+        {
+          error:
+            "No active 7D admin account found for this email. Client portal emails are not supported.",
+        },
         { status: 404 },
       );
     }
 
     return NextResponse.json({
+      admin_user: result.admin_user,
       client: result.client,
       portal_user: result.portal_user,
       account: result.account,
@@ -35,9 +40,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const status = (error as Error & { status?: number }).status ?? 500;
-    console.error("DTC client lookup error:", error);
+    console.error("DTC admin lookup error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to lookup client" },
+      { error: error instanceof Error ? error.message : "Failed to lookup admin user" },
       { status },
     );
   }
@@ -46,50 +51,14 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/dtc/clients
  *
- * Provision a new 7D client for a DTC portal signup.
- * Service-to-service only — not linked to 7D portal login credentials.
+ * Client provisioning is disabled — DTC must link existing 7D admin accounts only.
  */
-export async function POST(request: NextRequest) {
-  const authError = verifyDtcApiRequest(request);
-  if (authError) {
-    return authError;
-  }
-
-  try {
-    const body = await request.json();
-    const company_name = body?.company_name;
-    const email = body?.email;
-    const contact_name = body?.contact_name ?? null;
-    const dtc_portal_user_id = body?.dtc_portal_user_id ?? null;
-
-    if (!company_name || typeof company_name !== "string") {
-      return NextResponse.json({ error: "company_name is required" }, { status: 400 });
-    }
-
-    if (!email || typeof email !== "string") {
-      return NextResponse.json({ error: "email is required" }, { status: 400 });
-    }
-
-    const result = await createDtcClient({
-      company_name,
-      email,
-      contact_name,
-      dtc_portal_user_id,
-    });
-
-    return NextResponse.json(
-      {
-        client: result.client,
-        created: result.created,
-      },
-      { status: 201 },
-    );
-  } catch (error) {
-    const status = (error as Error & { status?: number }).status ?? 500;
-    console.error("DTC client create error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to create client" },
-      { status },
-    );
-  }
+export async function POST() {
+  return NextResponse.json(
+    {
+      error:
+        "Creating 7D clients via DTC is disabled. Connect an existing 7D admin portal email instead.",
+    },
+    { status: 410 },
+  );
 }
