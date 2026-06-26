@@ -13,6 +13,12 @@
 
 export { ShopifyClient, createShopifyClient, ShopifyApiError } from './client'
 export {
+  getShopifyAccessToken,
+  createShopifyClientForIntegration,
+  exchangeAuthorizationCode,
+  buildStoredTokenFields,
+} from './tokens'
+export {
   processShopifyOrder,
   syncShopifyOrders,
   applyShopifyStatusToOrder,

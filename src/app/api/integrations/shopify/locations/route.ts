@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { createServiceClient } from '@/lib/supabase-service'
-import { decryptToken } from '@/lib/encryption'
+import { getShopifyAccessToken } from '@/lib/api/shopify/tokens'
 import {
   getShopifyLocations,
   verifyLocationExists,
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
 
   // Decrypt access token and fetch locations from Shopify
   try {
-    const accessToken = decryptToken(integration.access_token)
+    const accessToken = await getShopifyAccessToken(integration)
     const locations = await getShopifyLocations(
       integration.shop_domain,
       accessToken
@@ -177,7 +177,7 @@ export async function PUT(request: NextRequest) {
 
   // Verify the location exists in Shopify
   try {
-    const accessToken = decryptToken(integration.access_token)
+    const accessToken = await getShopifyAccessToken(integration)
     const exists = await verifyLocationExists(
       integration.shop_domain,
       accessToken,

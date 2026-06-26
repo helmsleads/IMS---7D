@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase-service'
 import { encryptToken, isEncryptionConfigured } from '@/lib/encryption'
+import {
+  buildStoredTokenFields,
+  exchangeAuthorizationCode,
+} from '@/lib/api/shopify/tokens'
 import { ensureShopifyLocation } from '@/lib/api/shopify/location-management'
 import { SHOPIFY_ADMIN_API_VERSION } from '@/lib/api/shopify/constants'
 import { normalizeShopifyShopDomain } from '@/lib/api/shopify/shop-domain'
 import { ensureIntegrationWarehouseLocation } from '@/lib/api/shopify/shopify-order-payload'
 import type { IntegrationSettings } from '@/types/database'
 
-const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID!
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET!
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL!
 
@@ -71,26 +74,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${APP_URL}/portal/integrations?error=invalid_state`)
   }
 
-  // Exchange code for access token
-  let tokenData: { access_token: string; scope: string }
+  // Exchange code for expiring offline access token (+ refresh token)
+  let tokenData: Awaited<ReturnType<typeof exchangeAuthorizationCode>>
   try {
-    const tokenResponse = await fetch(`https://${shopDomain}/admin/oauth/access_token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: SHOPIFY_CLIENT_ID,
-        client_secret: SHOPIFY_CLIENT_SECRET,
-        code,
-      }),
-    })
-
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text()
-      console.error('Token exchange failed:', errorText)
-      return NextResponse.redirect(`${APP_URL}/portal/integrations?error=token_exchange_failed`)
-    }
-
-    tokenData = await tokenResponse.json()
+    tokenData = await exchangeAuthorizationCode(shopDomain, code)
   } catch (e) {
     console.error('Token exchange error:', e)
     return NextResponse.redirect(`${APP_URL}/portal/integrations?error=token_exchange_failed`)
@@ -136,12 +123,10 @@ export async function GET(request: NextRequest) {
   // Generate webhook secret
   const webhookSecret = crypto.randomBytes(32).toString('hex')
 
-  // Encrypt sensitive tokens before storage
-  let encryptedAccessToken = tokenData.access_token
+  const storedTokens = buildStoredTokenFields(tokenData)
   let encryptedWebhookSecret = webhookSecret
 
   if (isEncryptionConfigured()) {
-    encryptedAccessToken = encryptToken(tokenData.access_token)
     encryptedWebhookSecret = encryptToken(webhookSecret)
     console.log('Tokens encrypted before storage')
   } else {
@@ -159,7 +144,9 @@ export async function GET(request: NextRequest) {
         platform: 'shopify',
         shop_domain: shop,
         shop_name: shopName,
-        access_token: encryptedAccessToken,
+        access_token: storedTokens.access_token,
+        refresh_token: storedTokens.refresh_token,
+        token_expires_at: storedTokens.token_expires_at,
         scope: tokenData.scope,
         webhook_secret: encryptedWebhookSecret,
         status: 'active',

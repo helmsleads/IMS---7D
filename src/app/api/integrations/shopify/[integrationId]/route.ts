@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { createServiceClient } from '@/lib/supabase-service'
-import { decryptToken } from '@/lib/encryption'
+import { getShopifyAccessToken } from '@/lib/api/shopify/tokens'
 import { deactivateShopifyLocation } from '@/lib/api/shopify/location-management'
 import { SHOPIFY_ADMIN_API_VERSION } from '@/lib/api/shopify/constants'
 
@@ -76,7 +76,7 @@ export async function DELETE(
     // Attempt to clean up in Shopify (best effort - don't fail disconnect if this fails)
     if (integration?.access_token && integration?.shop_domain) {
       try {
-        const accessToken = decryptToken(integration.access_token)
+        const accessToken = await getShopifyAccessToken(integration)
 
         await deregisterShopifyWebhooks(integration.shop_domain, accessToken)
 
@@ -101,6 +101,7 @@ export async function DELETE(
         status: 'disconnected',
         access_token: null,
         refresh_token: null,
+        token_expires_at: null,
         webhook_secret: null,
         webhooks_registered: false,
         status_message: 'Disconnected by user',

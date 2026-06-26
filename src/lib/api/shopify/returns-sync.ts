@@ -1,6 +1,5 @@
 import { createServiceClient } from '@/lib/supabase-service'
-import { createShopifyClient } from './client'
-import { decryptToken } from '@/lib/encryption'
+import { createShopifyClientForIntegration } from './tokens'
 import { logSyncResult } from './sync-logger'
 
 /**
@@ -79,10 +78,7 @@ export async function syncReturnToShopify(returnId: string): Promise<void> {
 
   const variantMap = new Map(mappings.map((m) => [m.product_id, m.external_variant_id]))
 
-  const client = createShopifyClient({
-    shopDomain: integration.shop_domain,
-    accessToken: decryptToken(integration.access_token),
-  })
+  const client = await createShopifyClientForIntegration(integration)
 
   try {
     // Fetch the Shopify order to get line_item IDs by variant_id

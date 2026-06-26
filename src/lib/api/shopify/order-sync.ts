@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/lib/supabase-service'
-import { decryptToken } from '@/lib/encryption'
-import { createShopifyClient, ShopifyApiError } from './client'
+import { ShopifyApiError } from './client'
+import { createShopifyClientForIntegration } from './tokens'
 import { fetchOrdersForSync } from './graphql/orders-sync'
 import { logSyncResult } from './sync-logger'
 import {
@@ -488,11 +488,7 @@ export async function syncShopifyOrders(
       ? new Date(integration.last_order_sync_at)
       : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
 
-  const accessToken = decryptToken(integration.access_token)
-  const client = createShopifyClient({
-    shopDomain: integration.shop_domain,
-    accessToken,
-  })
+  const client = await createShopifyClientForIntegration(integration)
 
   let orders: ShopifyOrder[]
   try {

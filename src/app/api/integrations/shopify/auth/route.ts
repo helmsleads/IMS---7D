@@ -121,6 +121,7 @@ export async function GET(request: NextRequest) {
   authUrl.searchParams.set('scope', SHOPIFY_SCOPES)
   authUrl.searchParams.set('redirect_uri', `${APP_URL}/api/integrations/shopify/callback`)
   authUrl.searchParams.set('state', `${nonce}:${state}`)
+  authUrl.searchParams.append('grant_options[]', 'offline')
 
   const nonceCookie = {
     httpOnly: true,

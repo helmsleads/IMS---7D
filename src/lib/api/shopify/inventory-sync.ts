@@ -1,6 +1,5 @@
 import { createServiceClient } from '@/lib/supabase-service'
-import { createShopifyClient } from './client'
-import { decryptToken } from '@/lib/encryption'
+import { createShopifyClientForIntegration } from './tokens'
 import {
   fetchInventoryItemLegacyIdsByVariantIds,
   fetchProductVariantsForInventorySync,
@@ -46,11 +45,7 @@ export async function syncInventoryToShopify(
     throw new Error('Integration not properly configured')
   }
 
-  const accessToken = decryptToken(integration.access_token)
-  const client = createShopifyClient({
-    shopDomain: integration.shop_domain,
-    accessToken,
-  })
+  const client = await createShopifyClientForIntegration(integration)
 
   // Portal "Inventory location" saves `shopify_location_id` on the row; older code used
   // `settings.shopify_location_id`. Support both. REST locations often omit `primary`, so
@@ -330,10 +325,7 @@ export async function fetchShopifyProducts(
     throw new Error('Integration not configured')
   }
 
-  const client = createShopifyClient({
-    shopDomain: integration.shop_domain,
-    accessToken: decryptToken(integration.access_token),
-  })
+  const client = await createShopifyClientForIntegration(integration)
 
   return fetchProductVariantsForInventorySync(client)
 }

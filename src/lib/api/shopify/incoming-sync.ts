@@ -1,6 +1,5 @@
 import { createServiceClient } from '@/lib/supabase-service'
-import { createShopifyClient } from './client'
-import { decryptToken } from '@/lib/encryption'
+import { createShopifyClientForIntegration } from './tokens'
 import { logSyncResult } from './sync-logger'
 
 /**
@@ -107,10 +106,7 @@ export async function syncIncomingToShopify(
     return { updated: 0, failed: 0 }
   }
 
-  const client = createShopifyClient({
-    shopDomain: integration.shop_domain,
-    accessToken: decryptToken(integration.access_token),
-  })
+  const client = await createShopifyClientForIntegration(integration)
 
   let updated = 0
   let failed = 0

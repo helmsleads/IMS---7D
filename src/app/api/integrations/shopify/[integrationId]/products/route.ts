@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { createServiceClient } from '@/lib/supabase-service'
-import { decryptToken } from '@/lib/encryption'
-import { createShopifyClient } from '@/lib/api/shopify/client'
+import { createShopifyClientForIntegration } from '@/lib/api/shopify/tokens'
 import { fetchProductsForIntegrationMapping } from '@/lib/api/shopify/graphql/products-mapping'
 
 /**
@@ -62,10 +61,7 @@ export async function GET(
       return NextResponse.json({ error: 'Integration not properly configured' }, { status: 400 })
     }
 
-    const client = createShopifyClient({
-      shopDomain: integration.shop_domain,
-      accessToken: decryptToken(integration.access_token),
-    })
+    const client = await createShopifyClientForIntegration(integration)
     const shopifyProducts = await fetchProductsForIntegrationMapping(client)
 
     return NextResponse.json({ products: shopifyProducts })
