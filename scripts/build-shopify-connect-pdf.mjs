@@ -21,27 +21,59 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;')
 }
 
+function inlineFormat(text) {
+  return escapeHtml(text)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+}
+
 function mdToHtml(md) {
   const lines = md.split('\n')
   const out = []
   let inList = false
+  let listType = null
+  let inCode = false
+  const codeLines = []
 
   const closeList = () => {
     if (inList) {
-      out.push('</ul>')
+      out.push(listType === 'ol' ? '</ol>' : '</ul>')
       inList = false
+      listType = null
     }
   }
 
+  const flushCode = () => {
+    if (!inCode) return
+    out.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`)
+    codeLines.length = 0
+    inCode = false
+  }
+
   for (const line of lines) {
+    if (line.startsWith('```')) {
+      closeList()
+      if (inCode) flushCode()
+      else inCode = true
+      continue
+    }
+    if (inCode) {
+      codeLines.push(line)
+      continue
+    }
     if (line.startsWith('# ')) {
       closeList()
-      out.push(`<h1>${escapeHtml(line.slice(2))}</h1>`)
+      out.push(`<h1>${inlineFormat(line.slice(2))}</h1>`)
       continue
     }
     if (line.startsWith('## ')) {
       closeList()
-      out.push(`<h2>${escapeHtml(line.slice(3))}</h2>`)
+      out.push(`<h2>${inlineFormat(line.slice(3))}</h2>`)
+      continue
+    }
+    if (line.startsWith('### ')) {
+      closeList()
+      out.push(`<h3>${inlineFormat(line.slice(4))}</h3>`)
       continue
     }
     if (line.startsWith('![')) {
@@ -56,14 +88,30 @@ function mdToHtml(md) {
       }
       continue
     }
+    const numbered = line.match(/^(\d+)\.\s+(.*)$/)
+    if (numbered) {
+      if (!inList || listType !== 'ol') {
+        closeList()
+        out.push('<ol>')
+        inList = true
+        listType = 'ol'
+      }
+      out.push(`<li>${inlineFormat(numbered[2])}</li>`)
+      continue
+    }
     if (line.startsWith('- ')) {
-      if (!inList) {
+      if (!inList || listType !== 'ul') {
+        closeList()
         out.push('<ul>')
         inList = true
+        listType = 'ul'
       }
-      let text = line.slice(2)
-      text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      out.push(`<li>${text}</li>`)
+      out.push(`<li>${inlineFormat(line.slice(2))}</li>`)
+      continue
+    }
+    if (line.startsWith('> ')) {
+      closeList()
+      out.push(`<blockquote>${inlineFormat(line.slice(2))}</blockquote>`)
       continue
     }
     if (line.trim() === '---') {
@@ -76,11 +124,10 @@ function mdToHtml(md) {
       continue
     }
     closeList()
-    let text = escapeHtml(line)
-    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    out.push(`<p>${text}</p>`)
+    out.push(`<p>${inlineFormat(line)}</p>`)
   }
   closeList()
+  flushCode()
   return out.join('\n')
 }
 
@@ -119,8 +166,40 @@ async function main() {
       margin-bottom: 10px;
       page-break-after: avoid;
     }
+    h3 {
+      color: #475569;
+      font-size: 12pt;
+      margin-top: 16px;
+      margin-bottom: 8px;
+      page-break-after: avoid;
+    }
     p, li { margin: 6px 0; }
-    ul { padding-left: 22px; }
+    ul, ol { padding-left: 22px; }
+    code {
+      background: #f1f5f9;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 9.5pt;
+    }
+    pre {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      overflow-x: auto;
+      font-size: 8pt;
+      white-space: pre-wrap;
+      word-break: break-all;
+      page-break-inside: avoid;
+    }
+    pre code { background: none; padding: 0; }
+    blockquote {
+      margin: 10px 0;
+      padding: 10px 14px;
+      background: #ecfdf5;
+      border-left: 4px solid #10b981;
+      color: #065f46;
+    }
     figure {
       margin: 14px 0 18px;
       page-break-inside: avoid;
