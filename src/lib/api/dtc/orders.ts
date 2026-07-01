@@ -34,7 +34,7 @@ export async function findDtcOutboundOrder(clientId: string, externalOrderId: st
   const { data, error } = await supabase
     .from("outbound_orders")
     .select(
-      "id, order_number, client_id, status, external_order_id, external_platform, external_order_number, tracking_number, carrier, shipped_date, delivered_date, created_at, updated_at",
+      "id, order_number, client_id, status, external_order_id, external_platform, external_order_number, tracking_number, carrier, shipped_date, delivered_date, created_at",
     )
     .eq("client_id", clientId)
     .eq("external_platform", DTC_OUTBOUND_PLATFORM)
@@ -116,7 +116,7 @@ export async function createDtcOutboundOrder(
       requested_at: new Date().toISOString(),
     })
     .select(
-      "id, order_number, client_id, status, external_order_id, external_platform, external_order_number, tracking_number, carrier, shipped_date, delivered_date, created_at, updated_at",
+      "id, order_number, client_id, status, external_order_id, external_platform, external_order_number, tracking_number, carrier, shipped_date, delivered_date, created_at",
     )
     .single();
 
