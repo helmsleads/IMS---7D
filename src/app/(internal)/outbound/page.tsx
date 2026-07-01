@@ -15,6 +15,8 @@ import {
   getOutboundOrders,
   deleteOutboundOrder,
   isShipStationOutboundOrder,
+  isDtcOutboundOrder,
+  DTC_DELETABLE_STATUSES,
   OutboundOrderWithClient,
 } from "@/lib/api/outbound";
 import { handleApiError } from "@/lib/utils/error-handler";
@@ -108,6 +110,9 @@ export default function OutboundPage() {
   }, []);
 
   const canDeleteOrder = (order: OutboundOrderWithCount) => {
+    if (isDtcOutboundOrder(order)) {
+      return DTC_DELETABLE_STATUSES.has(order.status);
+    }
     if (order.status === "pending" || order.status === "processing") {
       return true;
     }
@@ -192,7 +197,14 @@ export default function OutboundPage() {
       render: (order: OutboundOrderWithCount) => (
         <div className="flex items-center gap-2">
           {/* Source Badge */}
-          {order.source === "portal" ? (
+          {isDtcOutboundOrder(order) ? (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded bg-violet-100 text-violet-700"
+              title="DTC Order - Synced from DTC commerce"
+            >
+              DTC
+            </span>
+          ) : order.source === "portal" ? (
             <span
               className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium rounded bg-slate-100 text-slate-600"
               title="Portal Order - Customer requested"
@@ -339,7 +351,9 @@ export default function OutboundPage() {
                 setDeleteOrder(order);
               }}
               title={
-                isShipStationOutboundOrder(order)
+                isDtcOutboundOrder(order)
+                  ? "Remove DTC order"
+                  : isShipStationOutboundOrder(order)
                   ? "Remove ShipStation test order"
                   : "Delete order"
               }

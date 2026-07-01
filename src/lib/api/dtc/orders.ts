@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase-service";
+import { DTC_OUTBOUND_PLATFORM, formatDtcOrderNumber } from "./constants";
 
 export interface DtcShipTo {
   name?: string | null;
@@ -36,7 +37,7 @@ export async function findDtcOutboundOrder(clientId: string, externalOrderId: st
       "id, order_number, client_id, status, external_order_id, external_platform, external_order_number, tracking_number, carrier, shipped_date, delivered_date, created_at, updated_at",
     )
     .eq("client_id", clientId)
-    .eq("external_platform", "dtc")
+    .eq("external_platform", DTC_OUTBOUND_PLATFORM)
     .eq("external_order_id", externalOrderId)
     .maybeSingle();
 
@@ -86,7 +87,10 @@ export async function createDtcOutboundOrder(
   }
 
   const shipTo = input.ship_to ?? {};
-  const orderNumber = `DTC-${input.external_order_number || input.external_order_id.slice(0, 8).toUpperCase()}`;
+  const orderNumber = formatDtcOrderNumber(
+    input.external_order_number ?? "",
+    input.external_order_id,
+  );
 
   const { data: newOrder, error: orderError } = await supabase
     .from("outbound_orders")
@@ -96,7 +100,7 @@ export async function createDtcOutboundOrder(
       source: "api",
       status: "pending",
       external_order_id: input.external_order_id,
-      external_platform: "dtc",
+      external_platform: DTC_OUTBOUND_PLATFORM,
       external_order_number: input.external_order_number ?? input.external_order_id,
       ship_to_name: shipTo.name ?? null,
       ship_to_company: shipTo.company ?? null,

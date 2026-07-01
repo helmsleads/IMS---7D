@@ -97,6 +97,7 @@ SHOPIFY_CLIENT_ID=         # Shopify app client ID
 SHOPIFY_CLIENT_SECRET=     # Shopify app client secret (also used for webhook HMAC)
 CRON_SECRET=               # Authorization token for cron endpoints
 DTC_API_KEY=               # Shared bearer secret for DTC backend (catalog + outbound orders)
+DTC_BACKEND_URL=           # DTC backend URL for ship-event webhooks (e.g. http://localhost:3000)
 ```
 
 ## DTC Backend Integration
@@ -110,6 +111,10 @@ Service-to-service API for the DTC commerce backend (`DTC_backend`). Uses bearer
 | `/api/dtc/clients/[clientId]/orders` | POST | Create outbound order (`external_platform: dtc`) |
 | `/api/dtc/clients/[clientId]/orders/[externalOrderId]` | GET | Order status + tracking |
 
+When a DTC-synced outbound order ships, 7D POSTs to `DTC_BACKEND_URL/v1/webhooks/7d/ship` with bearer `DTC_API_KEY`.
+
+DTC-synced orders use `DTC-` prefixed `order_number` and appear with a **DTC** badge on the outbound page. They can be deleted from outbound while status is pending through shipped (inventory is restored when items were shipped).
+
 **Auth:** `Authorization: Bearer <DTC_API_KEY>` (same value as `SEVEN_D_API_KEY` in DTC backend)
 
 **Key files:**
@@ -119,6 +124,7 @@ Service-to-service API for the DTC commerce backend (`DTC_backend`). Uses bearer
 | `src/lib/server/dtc-auth.ts` | Bearer API key verification |
 | `src/lib/api/dtc/catalog.ts` | Product catalog by `client_id` |
 | `src/lib/api/dtc/orders.ts` | Outbound order create + lookup |
+| `src/lib/api/dtc/ship-notify.ts` | Push ship events to DTC backend |
 
 Fulfillment after create uses existing warehouse UI + FedEx (`/api/shipping/fedex`).
 

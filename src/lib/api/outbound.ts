@@ -5,6 +5,10 @@ import { updateInventoryWithTransaction } from "./inventory-transactions";
 import { autoAssignBoxesForOrder } from "./box-usage";
 import { generateShipmentInvoice } from "./invoices";
 import { syncFulfillmentToShopify } from "./shopify/fulfillment-sync";
+import { isDtcOutboundOrder, DTC_DELETABLE_STATUSES } from "./dtc/constants";
+import { notifyDtcOrderShipped } from "./dtc/ship-notify";
+
+export { isDtcOutboundOrder, DTC_DELETABLE_STATUSES } from "./dtc/constants";
 
 export type OrderSource = 'portal' | 'internal' | 'api';
 
@@ -65,6 +69,10 @@ export interface OutboundOrder {
   // Tracking sync fields
   tracking_status?: string | null;
   tracking_status_updated_at?: string | null;
+  // External platform integration (DTC, Shopify, etc.)
+  external_platform?: string | null;
+  external_order_id?: string | null;
+  external_order_number?: string | null;
 }
 
 export interface OutboundItem {
@@ -616,6 +624,16 @@ export async function updateOutboundOrderStatus(
         console.error("Failed to sync fulfillment to Shopify:", err)
       );
     }
+
+    // Notify DTC backend when a DTC-synced order ships (server-side only)
+    if (typeof window === "undefined" && isDtcOutboundOrder(data)) {
+      notifyDtcOrderShipped({
+        ...data,
+        external_order_id: data.external_order_id!,
+      }).catch((err) =>
+        console.error("Failed to notify DTC of ship event:", err)
+      );
+    }
   } else if (status === "delivered") {
     fireAndForgetEmail("/api/email/order-delivered", id);
   }
@@ -802,7 +820,7 @@ export async function deleteOutboundOrder(id: string): Promise<void> {
 
   const { data: order, error: orderError } = await supabase
     .from("outbound_orders")
-    .select("id, shipping_method")
+    .select("id, shipping_method, external_platform, status")
     .eq("id", id)
     .single();
 
@@ -810,7 +828,8 @@ export async function deleteOutboundOrder(id: string): Promise<void> {
     throw new Error(orderError.message);
   }
 
-  const allowShippedDelete = isShipStationOutboundOrder(order);
+  const allowShippedDelete =
+    isShipStationOutboundOrder(order) || isDtcOutboundOrder(order);
 
   const { data: items, error: itemsError } = await supabase
     .from("outbound_items")
@@ -850,7 +869,9 @@ export async function deleteOutboundOrder(id: string): Promise<void> {
         referenceId: id,
         lotId: tx.lot_id || undefined,
         sublocationId: tx.sublocation_id || undefined,
-        reason: "ShipStation test order removed",
+        reason: isDtcOutboundOrder(order)
+          ? "DTC test order removed"
+          : "ShipStation test order removed",
         performedBy: user?.id,
       });
     }

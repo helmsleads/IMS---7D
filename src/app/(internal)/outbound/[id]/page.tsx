@@ -56,6 +56,8 @@ import {
   updateOutboundItem,
   addOutboundItem,
   deleteOutboundItem,
+  isDtcOutboundOrder,
+  DTC_DELETABLE_STATUSES,
   OutboundOrderWithItems,
   OutboundItemWithProduct,
   UpdateOutboundOrderData,
@@ -1264,7 +1266,10 @@ export default function OutboundOrderDetailPage() {
       icon: <XCircle className="w-4 h-4" />,
       onClick: () => setShowCancelModal(true),
       variant: "danger" as const,
-      disabled: order.status !== "pending",
+      disabled: !(
+        order.status === "pending" ||
+        (isDtcOutboundOrder(order) && DTC_DELETABLE_STATUSES.has(order.status))
+      ),
       divider: true,
     },
   ] : [];
