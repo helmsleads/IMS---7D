@@ -17,10 +17,16 @@ export function isDtcOutboundOrder(order: {
   return order.external_platform === DTC_OUTBOUND_PLATFORM;
 }
 
-export function formatDtcOrderNumber(externalOrderNumber: string, externalOrderId: string): string {
-  const base = externalOrderNumber || externalOrderId.slice(0, 8).toUpperCase();
-  if (base.startsWith(DTC_ORDER_NUMBER_PREFIX)) {
-    return base;
-  }
-  return `${DTC_ORDER_NUMBER_PREFIX}${base}`;
+const MAX_ORDER_NUMBER_LENGTH = 50;
+
+/** Warehouse order_number is VARCHAR(50); keep DTC numbers compact and unique per external order id. */
+export function formatDtcOrderNumber(
+  _externalOrderNumber: string,
+  externalOrderId: string,
+): string {
+  const idPart = externalOrderId.replace(/-/g, "").toUpperCase() || "ORDER";
+  const orderNumber = `${DTC_ORDER_NUMBER_PREFIX}${idPart}`;
+  return orderNumber.length <= MAX_ORDER_NUMBER_LENGTH
+    ? orderNumber
+    : orderNumber.slice(0, MAX_ORDER_NUMBER_LENGTH);
 }

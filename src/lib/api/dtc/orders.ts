@@ -1,6 +1,15 @@
 import { createServiceClient } from "@/lib/supabase-service";
 import { DTC_OUTBOUND_PLATFORM, formatDtcOrderNumber } from "./constants";
 
+const MAX_VARCHAR_50 = 50;
+
+function fitVarchar50(value: string, fallback: string): string {
+  if (value.length <= MAX_VARCHAR_50) {
+    return value;
+  }
+  return fallback.length <= MAX_VARCHAR_50 ? fallback : fallback.slice(0, MAX_VARCHAR_50);
+}
+
 export interface DtcShipTo {
   name?: string | null;
   company?: string | null;
@@ -91,6 +100,10 @@ export async function createDtcOutboundOrder(
     input.external_order_number ?? "",
     input.external_order_id,
   );
+  const externalOrderNumber = fitVarchar50(
+    input.external_order_number ?? input.external_order_id,
+    input.external_order_id,
+  );
 
   const { data: newOrder, error: orderError } = await supabase
     .from("outbound_orders")
@@ -101,7 +114,7 @@ export async function createDtcOutboundOrder(
       status: "pending",
       external_order_id: input.external_order_id,
       external_platform: DTC_OUTBOUND_PLATFORM,
-      external_order_number: input.external_order_number ?? input.external_order_id,
+      external_order_number: externalOrderNumber,
       ship_to_name: shipTo.name ?? null,
       ship_to_company: shipTo.company ?? null,
       ship_to_address: shipTo.line1 ?? null,
