@@ -93,6 +93,8 @@ Shopify integrations are configured per-client with these settings:
 ### Environment Variables
 
 ```
+APP_URL=                   # Production: https://app.7degreesco.com (invite/reset links, OAuth)
+NEXT_PUBLIC_APP_URL=       # Same as APP_URL for client-side links
 SHOPIFY_CLIENT_ID=         # Shopify app client ID
 SHOPIFY_CLIENT_SECRET=     # Shopify app client secret (also used for webhook HMAC)
 CRON_SECRET=               # Authorization token for cron endpoints

@@ -1,5 +1,5 @@
-/** Production app origin — update if your Vercel domain changes. */
-export const PRODUCTION_APP_URL = "https://ims-7-d-jl3b.vercel.app";
+/** Production app origin — custom domain on Vercel. */
+export const PRODUCTION_APP_URL = "https://app.7degreesco.com";
 
 function normalizeAppUrl(value: string | undefined | null): string | null {
   if (!value) return null;

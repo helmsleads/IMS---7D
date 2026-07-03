@@ -6,8 +6,11 @@ project_id = "qqxbhgwhrgdacekrlxzq"
 
 [auth]
 enabled = true
-site_url = "https://ims-7-d-jl3b.vercel.app"
+site_url = "https://app.7degreesco.com"
 additional_redirect_urls = [
+  "https://app.7degreesco.com/reset-password",
+  "https://app.7degreesco.com/auth/accept-invite",
+  "https://app.7degreesco.com/auth/callback",
   "https://ims-7-d-jl3b.vercel.app/reset-password",
   "https://ims-7-d-jl3b.vercel.app/auth/accept-invite",
   "https://ims-7-d-jl3b.vercel.app/auth/callback",
