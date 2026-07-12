@@ -39,6 +39,7 @@ export interface InventoryWithDetails {
     container_type: string | null;
     units_per_case: number | null;
     client_id: string | null;
+    active: boolean;
   };
   location: {
     id: string;
@@ -115,7 +116,8 @@ export async function getInventory(): Promise<InventoryWithDetails[]> {
         reorder_point,
         container_type,
         units_per_case,
-        client_id
+        client_id,
+        active
       ),
       location:locations (
         id,
@@ -163,7 +165,8 @@ export async function getInventoryByLocation(
         reorder_point,
         container_type,
         units_per_case,
-        client_id
+        client_id,
+        active
       ),
       location:locations (
         id,
@@ -200,7 +203,8 @@ export async function getInventoryByProduct(
         reorder_point,
         container_type,
         units_per_case,
-        client_id
+        client_id,
+        active
       ),
       location:locations (
         id,
@@ -235,7 +239,8 @@ export async function getLowStockItems(): Promise<InventoryWithDetails[]> {
         reorder_point,
         container_type,
         units_per_case,
-        client_id
+        client_id,
+        active
       ),
       location:locations (
         id,
@@ -326,7 +331,8 @@ export async function adjustStock({
         reorder_point,
         container_type,
         units_per_case,
-        client_id
+        client_id,
+        active
       ),
       location:locations (
         id,
@@ -500,7 +506,8 @@ export async function updateInventoryStatus(
         reorder_point,
         container_type,
         units_per_case,
-        client_id
+        client_id,
+        active
       ),
       location:locations (
         id,
@@ -552,7 +559,8 @@ export async function getInventoryByStatus(
         reorder_point,
         container_type,
         units_per_case,
-        client_id
+        client_id,
+        active
       ),
       location:locations (
         id,
@@ -597,7 +605,8 @@ export async function getInventoryBySublocation(
         reorder_point,
         container_type,
         units_per_case,
-        client_id
+        client_id,
+        active
       ),
       location:locations (
         id,
@@ -637,7 +646,8 @@ export async function moveToSublocation(
         reorder_point,
         container_type,
         units_per_case,
-        client_id
+        client_id,
+        active
       ),
       location:locations (
         id,
@@ -1087,7 +1097,8 @@ export async function confirmPutAway(
         reorder_point,
         container_type,
         units_per_case,
-        client_id
+        client_id,
+        active
       ),
       location:locations (
         id,

@@ -649,7 +649,12 @@ export default function InventoryPage() {
           const client = item.product.client_id ? clients.find(c => c.id === item.product.client_id) : null;
           return (
             <div>
-              <div className="font-medium text-gray-900">{item.product.name}</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-gray-900">{item.product.name}</span>
+                <Badge variant={item.product.active ? "success" : "default"} size="sm">
+                  {item.product.active ? "Active" : "Inactive"}
+                </Badge>
+              </div>
               <div className="text-sm text-gray-500">
                 {item.product.sku}
                 {client && <span className="ml-2 text-gray-400">· {client.company_name}</span>}
