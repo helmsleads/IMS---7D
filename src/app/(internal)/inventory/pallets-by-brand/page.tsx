@@ -547,7 +547,7 @@ export default function PalletsByBrandPage() {
         {activeTab === "movement" && (
           <Card
             title="Stock movement by brand"
-            subtitle="Start/end units from daily snapshots. In = receive/returns, Out = ship/write-off/expire, Adj = adjust/cycle count."
+            subtitle="Excludes samples, merchandise, raw materials, and empty bottles. Start/end from daily snapshots. In = receive/returns, Out = ship/write-off/expire, Adj = adjust/cycle count."
             actions={
               <div className="flex flex-wrap items-center gap-2">
                 <input

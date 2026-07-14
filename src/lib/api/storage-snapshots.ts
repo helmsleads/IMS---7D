@@ -446,7 +446,8 @@ async function aggregateSnapshotsByBrand(
       qty_on_hand,
       pallet_count,
       barrel_count,
-      client:clients ( id, company_name )
+      client:clients ( id, company_name ),
+      product:products ( container_type )
     `
     )
     .eq("snapshot_date", snapshotDate);
@@ -458,8 +459,14 @@ async function aggregateSnapshotsByBrand(
   const { data, error } = await query;
   if (error) throw new Error(error.message);
 
+  const found = (data || []).length > 0;
   const byClient = new Map<string, SnapshotBrandAgg>();
   for (const row of data || []) {
+    const product = asSingle<{ container_type: string | null }>(row.product);
+    const containerType = product?.container_type || "";
+    // Exclude samples / merch / etc. from stock movement beginning/ending qty
+    if (NON_PALLET_CONTAINER_TYPES.has(containerType)) continue;
+
     const client = asSingle<{ id: string; company_name: string }>(row.client);
     const id = row.client_id as string;
     const existing = byClient.get(id) || {
@@ -475,7 +482,7 @@ async function aggregateSnapshotsByBrand(
     byClient.set(id, existing);
   }
 
-  return { found: byClient.size > 0, byClient };
+  return { found, byClient };
 }
 
 /**
@@ -518,6 +525,7 @@ export async function getBrandStockMovementReport(params: {
         transaction_type,
         product:products!inner (
           client_id,
+          container_type,
           client:clients ( id, company_name )
         )
       `
@@ -538,9 +546,11 @@ export async function getBrandStockMovementReport(params: {
     for (const row of rows) {
       const product = asSingle<{
         client_id: string | null;
+        container_type: string | null;
         client: { id: string; company_name: string } | { id: string; company_name: string }[] | null;
       }>(row.product);
       if (!product?.client_id) continue;
+      if (NON_PALLET_CONTAINER_TYPES.has(product.container_type || "")) continue;
 
       const client = asSingle<{ id: string; company_name: string }>(product.client);
       const qty = Number(row.qty_change) || 0;
