@@ -3,16 +3,19 @@ import { createServiceClient } from "@/lib/supabase-service";
 
 /**
  * Daily Storage Snapshot
- * POST /api/cron/daily-storage-snapshot
+ * GET|POST /api/cron/daily-storage-snapshot
  *
  * Takes a snapshot of current inventory storage for billing calculations.
  * The `take_storage_snapshot` RPC records qty_on_hand per client/product/location
  * so monthly billing can calculate average storage usage.
  *
- * Schedule: 0 2 * * * (daily at 2 AM)
+ * Schedule: 0 7 * * * (daily 07:00 UTC ≈ 2–3 AM US)
  * Auth: Bearer <CRON_SECRET>
+ *
+ * Vercel Cron invokes GET; external schedulers (QStash) typically use POST.
  */
-export async function POST(request: NextRequest) {
+
+async function runDailyStorageSnapshot(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
 
@@ -33,18 +36,18 @@ export async function POST(request: NextRequest) {
 
   try {
     const supabase = createServiceClient();
+    // UTC calendar date — keep consistent with cron schedule timezone (UTC)
     const snapshotDate = new Date().toISOString().split("T")[0];
 
+    // Always pass p_force so Postgres never hits an ambiguous overload
     const { data, error } = await supabase.rpc("take_storage_snapshot", {
       p_snapshot_date: snapshotDate,
+      p_force: false,
     });
 
     if (error) {
       console.error("[daily-storage-snapshot] RPC error:", error.message);
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     const duration = Date.now() - startTime;
@@ -58,6 +61,7 @@ export async function POST(request: NextRequest) {
       success: true,
       snapshotDate,
       snapshotsCreated,
+      alreadyExisted: snapshotsCreated === 0,
       duration: `${duration}ms`,
     });
   } catch (error) {
@@ -69,13 +73,22 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function POST(request: NextRequest) {
+  return runDailyStorageSnapshot(request);
+}
+
+export async function GET(request: NextRequest) {
+  // Vercel Cron uses GET with Authorization: Bearer <CRON_SECRET>
+  if (request.headers.get("authorization")) {
+    return runDailyStorageSnapshot(request);
+  }
+
   return NextResponse.json({
     endpoint: "/api/cron/daily-storage-snapshot",
-    method: "POST",
+    method: "GET or POST",
     auth: "Bearer <CRON_SECRET>",
-    schedule: "0 2 * * * (daily at 2 AM)",
+    schedule: "0 7 * * * (daily 07:00 UTC)",
     description:
-      "Takes a daily storage snapshot for billing calculations",
+      "Takes a daily storage snapshot for billing calculations. Stores rows in storage_snapshots.",
   });
 }

@@ -1,8 +1,5 @@
--- Fix storage snapshot pallet math:
--- 1. Sample / merch / raw / empty stock is still snapshotted for qty visibility,
---    but must NOT inflate STR-PLT pallet_count (qty is often ML or loose units).
--- 2. Allow p_force to rebuild a day's snapshot (delete + re-insert).
--- Drop prior signatures first to avoid ambiguous overloads (cron passes date only).
+-- Remove ambiguous overloads: cron calls with only p_snapshot_date were failing with
+-- "Could not choose the best candidate function between ...take_storage_snapshot..."
 
 DROP FUNCTION IF EXISTS take_storage_snapshot(DATE);
 DROP FUNCTION IF EXISTS take_storage_snapshot(DATE, BOOLEAN);
@@ -33,9 +30,7 @@ BEGIN
     i.qty_on_hand,
     i.qty_reserved,
     CASE
-      -- Kegs billed as barrels, not pallets
       WHEN p.container_type = 'keg' THEN 0
-      -- Non-case inventory: keep qty for visibility, zero pallets for billing
       WHEN COALESCE(p.container_type, '') IN (
         'sample', 'merchandise', 'raw_materials', 'empty_bottle'
       ) THEN 0
@@ -65,12 +60,5 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Correct any existing snapshots that incorrectly billed samples as pallets
-UPDATE storage_snapshots ss
-SET pallet_count = 0
-FROM products p
-WHERE p.id = ss.product_id
-  AND COALESCE(p.container_type, '') IN (
-    'sample', 'merchandise', 'raw_materials', 'empty_bottle'
-  )
-  AND COALESCE(ss.pallet_count, 0) <> 0;
+COMMENT ON FUNCTION take_storage_snapshot(DATE, BOOLEAN) IS
+  'Captures inventory into storage_snapshots for a date. Pass p_force=true to rebuild.';
