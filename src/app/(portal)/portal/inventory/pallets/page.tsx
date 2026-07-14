@@ -14,6 +14,7 @@ import { useClient } from "@/lib/client-auth";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Spinner from "@/components/ui/Spinner";
+import { getUnitLabel } from "@/lib/labels";
 import {
   BrandPalletDetailRow,
   BrandPalletSummary,
@@ -34,6 +35,15 @@ function formatDateLabel(date: string | null) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function qtyLabel(row: BrandPalletDetailRow) {
+  const unit = getUnitLabel(row.containerType);
+  const qty = formatNumber(row.qtyOnHand);
+  if (row.caseCount != null) {
+    return `${qty} ${unit} (${formatNumber(row.caseCount)} cs)`;
+  }
+  return `${qty} ${unit}`;
 }
 
 export default function PortalPalletsPage() {
@@ -221,8 +231,9 @@ export default function PortalPalletsPage() {
                         <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                           <th className="px-2 py-2 font-medium">SKU</th>
                           <th className="px-2 py-2 font-medium">Product</th>
+                          <th className="px-2 py-2 font-medium">Type</th>
                           <th className="px-2 py-2 font-medium">Location</th>
-                          <th className="px-2 py-2 font-medium text-right">Qty</th>
+                          <th className="px-2 py-2 font-medium text-right">On hand</th>
                           <th className="px-2 py-2 font-medium text-right">Pallets</th>
                           <th className="px-2 py-2 font-medium text-right">Barrels</th>
                         </tr>
@@ -232,8 +243,11 @@ export default function PortalPalletsPage() {
                           <tr key={row.id} className="border-b border-slate-100">
                             <td className="px-2 py-2.5 font-mono text-slate-700">{row.productSku}</td>
                             <td className="px-2 py-2.5 text-slate-900">{row.productName}</td>
+                            <td className="px-2 py-2.5 text-slate-500 capitalize">
+                              {row.containerType || "—"}
+                            </td>
                             <td className="px-2 py-2.5 text-slate-600">{row.locationName || "—"}</td>
-                            <td className="px-2 py-2.5 text-right">{formatNumber(row.qtyOnHand)}</td>
+                            <td className="px-2 py-2.5 text-right whitespace-nowrap">{qtyLabel(row)}</td>
                             <td className="px-2 py-2.5 text-right font-medium">
                               {formatNumber(row.palletCount)}
                             </td>

@@ -12,6 +12,14 @@ export interface BrandPalletSummary {
   qtyOnHand: number;
 }
 
+/** Container types that are snapshotted for qty visibility but not billed as pallets. */
+export const NON_PALLET_CONTAINER_TYPES = new Set([
+  "sample",
+  "merchandise",
+  "raw_materials",
+  "empty_bottle",
+]);
+
 export interface BrandPalletDetailRow {
   id: string;
   snapshotDate: string;
@@ -20,12 +28,16 @@ export interface BrandPalletDetailRow {
   productId: string;
   productSku: string;
   productName: string;
+  containerType: string | null;
+  unitsPerCase: number;
   locationId: string | null;
   locationName: string | null;
   qtyOnHand: number;
   qtyReserved: number;
   palletCount: number;
   barrelCount: number;
+  /** Cases estimate when units_per_case > 1; null for ML/sample-style units. */
+  caseCount: number | null;
 }
 
 export interface StorageSnapshotOverview {
@@ -191,7 +203,7 @@ export async function getBrandPalletDetails(params: {
   clientId: string;
 }): Promise<BrandPalletDetailRow[]> {
   const supabase = createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("storage_snapshots")
     .select(
       `
@@ -205,7 +217,7 @@ export async function getBrandPalletDetails(params: {
       pallet_count,
       barrel_count,
       client:clients ( id, company_name ),
-      product:products ( id, sku, name ),
+      product:products ( id, sku, name, container_type, units_per_case ),
       location:locations ( id, name )
     `
     )
@@ -213,12 +225,25 @@ export async function getBrandPalletDetails(params: {
     .eq("client_id", params.clientId)
     .order("pallet_count", { ascending: false });
 
+  const { data, error } = await query;
+
   if (error) throw new Error(error.message);
 
   return (data || []).map((row) => {
     const client = asSingle<{ id: string; company_name: string }>(row.client);
-    const product = asSingle<{ id: string; sku: string; name: string }>(row.product);
+    const product = asSingle<{
+      id: string;
+      sku: string;
+      name: string;
+      container_type: string | null;
+      units_per_case: number | null;
+    }>(row.product);
     const location = asSingle<{ id: string; name: string }>(row.location);
+    const qtyOnHand = Number(row.qty_on_hand) || 0;
+    const unitsPerCase = Math.max(Number(product?.units_per_case) || 1, 1);
+    const containerType = product?.container_type || null;
+    const isNonPallet =
+      !!containerType && NON_PALLET_CONTAINER_TYPES.has(containerType);
     return {
       id: row.id,
       snapshotDate: String(row.snapshot_date),
@@ -227,12 +252,18 @@ export async function getBrandPalletDetails(params: {
       productId: row.product_id,
       productSku: product?.sku || "—",
       productName: product?.name || "Unknown product",
+      containerType,
+      unitsPerCase,
       locationId: row.location_id,
       locationName: location?.name || null,
-      qtyOnHand: Number(row.qty_on_hand) || 0,
+      qtyOnHand,
       qtyReserved: Number(row.qty_reserved) || 0,
       palletCount: Number(row.pallet_count) || 0,
       barrelCount: Number(row.barrel_count) || 0,
+      caseCount:
+        !isNonPallet && unitsPerCase > 1
+          ? Math.round((qtyOnHand / unitsPerCase) * 10) / 10
+          : null,
     };
   });
 }
@@ -286,9 +317,14 @@ export async function getLivePalletsByBrand(params?: {
 
     const client = asSingle<{ id: string; company_name: string }>(product.client);
     const qty = Number(row.qty_on_hand) || 0;
-    const isKeg = product.container_type === "keg";
+    const containerType = product.container_type || "";
+    const isKeg = containerType === "keg";
+    const isNonPallet = NON_PALLET_CONTAINER_TYPES.has(containerType);
     const unitsPerCase = Math.max(Number(product.units_per_case) || 1, 1);
-    const pallets = isKeg ? 0 : Math.max(1, Math.ceil(qty / unitsPerCase / 60));
+    const pallets =
+      isKeg || isNonPallet
+        ? 0
+        : Math.max(1, Math.ceil(qty / unitsPerCase / 60));
     const barrels = isKeg ? qty : 0;
 
     const existing = byClient.get(product.client_id) || {
@@ -319,18 +355,24 @@ export async function getLivePalletsByBrand(params?: {
 
 /**
  * Run the same RPC used by the daily cron.
- * Returns rows created (0 if a snapshot for that date already exists).
+ * Returns rows created (0 if a snapshot for that date already exists and force=false).
  */
-export async function runStorageSnapshotNow(snapshotDate?: string): Promise<{
+export async function runStorageSnapshotNow(options?: {
+  snapshotDate?: string;
+  force?: boolean;
+}): Promise<{
   rowsCreated: number;
   snapshotDate: string;
   alreadyExists: boolean;
+  forced: boolean;
 }> {
-  const date = snapshotDate || new Date().toISOString().split("T")[0];
-  const rowsCreated = await takeStorageSnapshot(date);
+  const date = options?.snapshotDate || new Date().toISOString().split("T")[0];
+  const force = Boolean(options?.force);
+  const rowsCreated = await takeStorageSnapshot(date, force);
   return {
     rowsCreated,
     snapshotDate: date,
-    alreadyExists: rowsCreated === 0,
+    alreadyExists: !force && rowsCreated === 0,
+    forced: force,
   };
 }

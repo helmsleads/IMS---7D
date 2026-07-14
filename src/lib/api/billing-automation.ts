@@ -383,12 +383,14 @@ export async function calculateStorageFees(
 }
 
 export async function takeStorageSnapshot(
-  snapshotDate?: string
+  snapshotDate?: string,
+  force = false
 ): Promise<number> {
   const supabase = createClient();
 
   const { data, error } = await supabase.rpc("take_storage_snapshot", {
     p_snapshot_date: snapshotDate || new Date().toISOString().split("T")[0],
+    p_force: force,
   });
 
   if (error) {

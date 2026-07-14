@@ -19,6 +19,7 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import Spinner from "@/components/ui/Spinner";
+import { getUnitLabel } from "@/lib/labels";
 import {
   BrandPalletDetailRow,
   BrandPalletSummary,
@@ -32,6 +33,15 @@ import {
 
 function formatNumber(n: number) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(n);
+}
+
+function qtyLabel(row: BrandPalletDetailRow) {
+  const unit = getUnitLabel(row.containerType);
+  const qty = formatNumber(row.qtyOnHand);
+  if (row.caseCount != null) {
+    return `${qty} ${unit} (${formatNumber(row.caseCount)} cs)`;
+  }
+  return `${qty} ${unit}`;
 }
 
 function formatDateLabel(date: string | null) {
@@ -120,20 +130,26 @@ export default function PalletsByBrandPage() {
     }
   };
 
-  const handleRunSnapshot = async () => {
+  const handleRunSnapshot = async (force = false) => {
+    if (force) {
+      const ok = window.confirm(
+        "Rebuild today's storage snapshot? This replaces existing rows for today using current inventory."
+      );
+      if (!ok) return;
+    }
     setRunning(true);
     setMessage(null);
     try {
-      const result = await runStorageSnapshotNow();
+      const result = await runStorageSnapshotNow({ force });
       if (result.alreadyExists) {
         setMessage({
           type: "info",
-          text: `Snapshot for ${formatDateLabel(result.snapshotDate)} already exists. Showing saved data.`,
+          text: `Snapshot for ${formatDateLabel(result.snapshotDate)} already exists. Use “Rebuild today” to refresh it.`,
         });
       } else {
         setMessage({
           type: "success",
-          text: `Storage snapshot completed — ${result.rowsCreated} inventory record${result.rowsCreated === 1 ? "" : "s"} captured for ${formatDateLabel(result.snapshotDate)}.`,
+          text: `Storage snapshot ${result.forced ? "rebuilt" : "completed"} — ${result.rowsCreated} inventory record${result.rowsCreated === 1 ? "" : "s"} for ${formatDateLabel(result.snapshotDate)}. Qty comes from inventory.qty_on_hand; samples are excluded from pallet billing.`,
         });
       }
       await load(result.snapshotDate);
@@ -184,10 +200,20 @@ export default function PalletsByBrandPage() {
               Refresh
             </Button>
           </div>
-          <Button onClick={() => void handleRunSnapshot()} disabled={running || loading} loading={running}>
-            <Play className="w-4 h-4" />
-            Run storage snapshot
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => void handleRunSnapshot(true)}
+              disabled={running || loading}
+            >
+              <Database className="w-4 h-4" />
+              Rebuild today
+            </Button>
+            <Button onClick={() => void handleRunSnapshot(false)} disabled={running || loading} loading={running}>
+              <Play className="w-4 h-4" />
+              Run storage snapshot
+            </Button>
+          </div>
         </div>
 
         {message && (
@@ -255,7 +281,7 @@ export default function PalletsByBrandPage() {
 
         <Card
           title="Pallets by brand"
-          subtitle="Estimated from inventory (cases ÷ ~60). Used for monthly storage billing."
+          subtitle="Pallets = sellable cases ÷ ~60. Qty is from inventory on hand (samples / merch show units but 0 pallets)."
           actions={
             <input
               type="search"
@@ -279,7 +305,7 @@ export default function PalletsByBrandPage() {
                 <code className="text-xs bg-gray-100 px-1 rounded">storage_snapshots</code>, then
                 review pallets per brand below.
               </p>
-              <Button onClick={() => void handleRunSnapshot()} loading={running}>
+              <Button onClick={() => void handleRunSnapshot(false)} loading={running}>
                 <Play className="w-4 h-4" />
                 Run storage snapshot now
               </Button>
@@ -347,8 +373,9 @@ export default function PalletsByBrandPage() {
                                     <tr className="text-left text-gray-500 border-b border-gray-200">
                                       <th className="py-2 pr-3 font-medium">SKU</th>
                                       <th className="py-2 pr-3 font-medium">Product</th>
+                                      <th className="py-2 pr-3 font-medium">Type</th>
                                       <th className="py-2 pr-3 font-medium">Location</th>
-                                      <th className="py-2 pr-3 font-medium text-right">Qty</th>
+                                      <th className="py-2 pr-3 font-medium text-right">On hand</th>
                                       <th className="py-2 pr-3 font-medium text-right">Pallets</th>
                                       <th className="py-2 font-medium text-right">Barrels</th>
                                     </tr>
@@ -360,11 +387,14 @@ export default function PalletsByBrandPage() {
                                           {row.productSku}
                                         </td>
                                         <td className="py-2 pr-3 text-gray-800">{row.productName}</td>
+                                        <td className="py-2 pr-3 text-gray-500 capitalize">
+                                          {row.containerType || "—"}
+                                        </td>
                                         <td className="py-2 pr-3 text-gray-600">
                                           {row.locationName || "—"}
                                         </td>
-                                        <td className="py-2 pr-3 text-right">
-                                          {formatNumber(row.qtyOnHand)}
+                                        <td className="py-2 pr-3 text-right whitespace-nowrap">
+                                          {qtyLabel(row)}
                                         </td>
                                         <td className="py-2 pr-3 text-right font-medium">
                                           {formatNumber(row.palletCount)}
