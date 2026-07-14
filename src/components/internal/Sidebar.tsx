@@ -102,6 +102,7 @@ const navGroups: NavGroup[] = [
         path: "/inventory",
         children: [
           { label: "All Inventory", path: "/inventory", icon: Warehouse },
+          { label: "Pallets by Brand", path: "/inventory/pallets-by-brand", icon: Package },
           { label: "Pallet Breakdown", path: "/inventory/pallet-breakdown", icon: Package },
         ],
       },

@@ -1255,6 +1255,7 @@ export interface StorageSnapshot {
   qty_on_hand: number
   qty_reserved: number
   pallet_count: number
+  barrel_count?: number
   cubic_feet: number
   weight_lbs: number
   created_at: string

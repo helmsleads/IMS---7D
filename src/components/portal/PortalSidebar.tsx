@@ -30,6 +30,7 @@ import {
   PanelLeft,
   Eye,
   ArrowLeft,
+  Boxes,
 } from "lucide-react";
 
 interface NavLink {
@@ -64,6 +65,7 @@ const navGroups: NavGroup[] = [
     label: "Inventory",
     links: [
       { label: "Inventory", icon: Package, path: "/portal/inventory" },
+      { label: "Pallets", icon: Boxes, path: "/portal/inventory/pallets" },
       { label: "Lots", icon: Layers, path: "/portal/lots" },
     ],
   },
@@ -260,7 +262,17 @@ export default function PortalSidebar({ companyName }: { companyName: string }) 
     if (href === "/portal/dashboard") {
       return pathname === "/portal" || pathname === "/portal/dashboard";
     }
-    return pathname === href || pathname.startsWith(href + "/");
+    if (pathname === href) return true;
+    if (!pathname.startsWith(href + "/")) return false;
+    // Don't keep a parent link active when a more specific nav item matches.
+    const allPaths = navGroups.flatMap((g) => g.links.map((l) => l.path));
+    const hasMoreSpecific = allPaths.some(
+      (p) =>
+        p !== href &&
+        p.startsWith(href + "/") &&
+        (pathname === p || pathname.startsWith(p + "/"))
+    );
+    return !hasMoreSpecific;
   };
 
   const getBadgeForLink = (link: NavLink) => {
