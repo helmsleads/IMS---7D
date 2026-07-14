@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveDtcIntegrationByEmail } from "@/lib/api/dtc/clients";
+import { provisionDtcClientAndPortalUser } from "@/lib/api/dtc/provision";
 import { verifyDtcApiRequest } from "@/lib/server/dtc-auth";
 
 /**
@@ -25,7 +26,8 @@ export async function GET(request: NextRequest) {
     if (!result) {
       return NextResponse.json(
         {
-          error: "No active 7D account found for this email. Use your 7 Degrees admin or client portal login.",
+          error:
+            "No active 7D account found for this email. Use your 7 Degrees admin or client portal login.",
         },
         { status: 404 },
       );
@@ -51,14 +53,50 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/dtc/clients
  *
- * Client provisioning is disabled — DTC must link existing 7D admin accounts only.
+ * Provision a warehouse client + 7D portal invite for a DTC signup.
+ * Body: { email, company_name, contact_name?, brand_affiliation?, signup_source? }
  */
-export async function POST() {
-  return NextResponse.json(
-    {
-      error:
-        "Creating 7D clients via DTC is disabled. Connect an existing 7D admin or client portal account instead.",
-    },
-    { status: 410 },
-  );
+export async function POST(request: NextRequest) {
+  const authError = verifyDtcApiRequest(request);
+  if (authError) {
+    return authError;
+  }
+
+  try {
+    const body = await request.json();
+    const result = await provisionDtcClientAndPortalUser({
+      email: body?.email,
+      company_name: body?.company_name,
+      contact_name: body?.contact_name ?? body?.name ?? null,
+      brand_affiliation: body?.brand_affiliation ?? body?.company_name ?? null,
+      signup_source: body?.signup_source === "7d_invitation" ? "7d_invitation" : "dtc",
+    });
+
+    return NextResponse.json(
+      {
+        client: result.client,
+        created_client: result.created_client,
+        portal_invite: result.portal_invite,
+        signup_source: result.signup_source,
+        brand_affiliation: result.brand_affiliation,
+        account: {
+          company_name: result.client.company_name,
+          email: body?.email?.trim()?.toLowerCase() ?? null,
+          first_name: null,
+          last_name: null,
+        },
+      },
+      { status: result.created_client ? 201 : 200 },
+    );
+  } catch (error) {
+    const status = (error as Error & { status?: number }).status ?? 500;
+    console.error("DTC client provision error:", error);
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Failed to provision 7D client",
+        details: (error as Error & { details?: string }).details,
+      },
+      { status },
+    );
+  }
 }

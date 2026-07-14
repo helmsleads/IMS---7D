@@ -376,3 +376,267 @@ export async function runStorageSnapshotNow(options?: {
     forced: force,
   };
 }
+
+/** Types that increase on-hand stock for the movement report. */
+const STOCK_IN_TYPES = new Set(["receive", "return_restock"]);
+/** Types that decrease on-hand stock for the movement report. */
+const STOCK_OUT_TYPES = new Set([
+  "ship",
+  "damage_writeoff",
+  "expire",
+  "quarantine",
+]);
+/** Net adjustments (can be + or −). */
+const STOCK_ADJ_TYPES = new Set(["adjust", "cycle_count"]);
+
+export interface BrandStockMovementRow {
+  clientId: string;
+  brandName: string;
+  startQty: number;
+  startPallets: number;
+  startBarrels: number;
+  inQty: number;
+  outQty: number;
+  adjQty: number;
+  endQty: number;
+  endPallets: number;
+  endBarrels: number;
+  /** start + in − out + adj − end; near 0 when data is complete. */
+  varianceQty: number;
+  hasStartSnapshot: boolean;
+  hasEndSnapshot: boolean;
+}
+
+export interface BrandStockMovementReport {
+  startDate: string;
+  endDate: string;
+  hasStartSnapshot: boolean;
+  hasEndSnapshot: boolean;
+  brands: BrandStockMovementRow[];
+  totals: {
+    startQty: number;
+    startPallets: number;
+    inQty: number;
+    outQty: number;
+    adjQty: number;
+    endQty: number;
+    endPallets: number;
+    varianceQty: number;
+  };
+}
+
+type SnapshotBrandAgg = {
+  clientId: string;
+  brandName: string;
+  qtyOnHand: number;
+  palletCount: number;
+  barrelCount: number;
+};
+
+async function aggregateSnapshotsByBrand(
+  snapshotDate: string,
+  clientId?: string
+): Promise<{ found: boolean; byClient: Map<string, SnapshotBrandAgg> }> {
+  const supabase = createClient();
+  let query = supabase
+    .from("storage_snapshots")
+    .select(
+      `
+      client_id,
+      qty_on_hand,
+      pallet_count,
+      barrel_count,
+      client:clients ( id, company_name )
+    `
+    )
+    .eq("snapshot_date", snapshotDate);
+
+  if (clientId) {
+    query = query.eq("client_id", clientId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const byClient = new Map<string, SnapshotBrandAgg>();
+  for (const row of data || []) {
+    const client = asSingle<{ id: string; company_name: string }>(row.client);
+    const id = row.client_id as string;
+    const existing = byClient.get(id) || {
+      clientId: id,
+      brandName: client?.company_name || "Unknown brand",
+      qtyOnHand: 0,
+      palletCount: 0,
+      barrelCount: 0,
+    };
+    existing.qtyOnHand += Number(row.qty_on_hand) || 0;
+    existing.palletCount += Number(row.pallet_count) || 0;
+    existing.barrelCount += Number(row.barrel_count) || 0;
+    byClient.set(id, existing);
+  }
+
+  return { found: byClient.size > 0, byClient };
+}
+
+/**
+ * Date-range stock statement per brand:
+ * start/end from storage_snapshots; in/out/adj from inventory_transactions.
+ */
+export async function getBrandStockMovementReport(params: {
+  startDate: string;
+  endDate: string;
+  clientId?: string;
+}): Promise<BrandStockMovementReport> {
+  const { startDate, endDate, clientId } = params;
+  if (!startDate || !endDate) {
+    throw new Error("Start date and end date are required");
+  }
+  if (startDate > endDate) {
+    throw new Error("Start date must be on or before end date");
+  }
+
+  const supabase = createClient();
+  const [startAgg, endAgg] = await Promise.all([
+    aggregateSnapshotsByBrand(startDate, clientId),
+    aggregateSnapshotsByBrand(endDate, clientId),
+  ]);
+
+  type TxAgg = { inQty: number; outQty: number; adjQty: number; brandName: string };
+  const txByClient = new Map<string, TxAgg>();
+
+  const startIso = `${startDate}T00:00:00.000Z`;
+  const endIso = `${endDate}T23:59:59.999Z`;
+  const pageSize = 1000;
+  let from = 0;
+
+  for (;;) {
+    let query = supabase
+      .from("inventory_transactions")
+      .select(
+        `
+        qty_change,
+        transaction_type,
+        product:products!inner (
+          client_id,
+          client:clients ( id, company_name )
+        )
+      `
+      )
+      .gte("created_at", startIso)
+      .lte("created_at", endIso)
+      .order("created_at", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (clientId) {
+      query = query.eq("product.client_id", clientId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+
+    const rows = data || [];
+    for (const row of rows) {
+      const product = asSingle<{
+        client_id: string | null;
+        client: { id: string; company_name: string } | { id: string; company_name: string }[] | null;
+      }>(row.product);
+      if (!product?.client_id) continue;
+
+      const client = asSingle<{ id: string; company_name: string }>(product.client);
+      const qty = Number(row.qty_change) || 0;
+      const type = String(row.transaction_type || "");
+      const existing = txByClient.get(product.client_id) || {
+        inQty: 0,
+        outQty: 0,
+        adjQty: 0,
+        brandName: client?.company_name || "Unknown brand",
+      };
+
+      if (STOCK_IN_TYPES.has(type)) {
+        existing.inQty += Math.abs(qty);
+      } else if (STOCK_OUT_TYPES.has(type)) {
+        existing.outQty += Math.abs(qty);
+      } else if (STOCK_ADJ_TYPES.has(type)) {
+        existing.adjQty += qty;
+      }
+
+      if (client?.company_name) existing.brandName = client.company_name;
+      txByClient.set(product.client_id, existing);
+    }
+
+    if (rows.length < pageSize) break;
+    from += pageSize;
+  }
+
+  const clientIds = new Set<string>([
+    ...startAgg.byClient.keys(),
+    ...endAgg.byClient.keys(),
+    ...txByClient.keys(),
+  ]);
+
+  const brands: BrandStockMovementRow[] = Array.from(clientIds)
+    .map((id) => {
+      const start = startAgg.byClient.get(id);
+      const end = endAgg.byClient.get(id);
+      const tx = txByClient.get(id);
+      const startQty = start?.qtyOnHand ?? 0;
+      const endQty = end?.qtyOnHand ?? 0;
+      const inQty = tx?.inQty ?? 0;
+      const outQty = tx?.outQty ?? 0;
+      const adjQty = tx?.adjQty ?? 0;
+      return {
+        clientId: id,
+        brandName:
+          start?.brandName || end?.brandName || tx?.brandName || "Unknown brand",
+        startQty,
+        startPallets: start?.palletCount ?? 0,
+        startBarrels: start?.barrelCount ?? 0,
+        inQty,
+        outQty,
+        adjQty,
+        endQty,
+        endPallets: end?.palletCount ?? 0,
+        endBarrels: end?.barrelCount ?? 0,
+        varianceQty: startQty + inQty - outQty + adjQty - endQty,
+        hasStartSnapshot: Boolean(start),
+        hasEndSnapshot: Boolean(end),
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.endPallets - a.endPallets || a.brandName.localeCompare(b.brandName)
+    );
+
+  const totals = brands.reduce(
+    (acc, b) => {
+      acc.startQty += b.startQty;
+      acc.startPallets += b.startPallets;
+      acc.inQty += b.inQty;
+      acc.outQty += b.outQty;
+      acc.adjQty += b.adjQty;
+      acc.endQty += b.endQty;
+      acc.endPallets += b.endPallets;
+      acc.varianceQty += b.varianceQty;
+      return acc;
+    },
+    {
+      startQty: 0,
+      startPallets: 0,
+      inQty: 0,
+      outQty: 0,
+      adjQty: 0,
+      endQty: 0,
+      endPallets: 0,
+      varianceQty: 0,
+    }
+  );
+
+  return {
+    startDate,
+    endDate,
+    hasStartSnapshot: startAgg.found,
+    hasEndSnapshot: endAgg.found,
+    brands,
+    totals,
+  };
+}

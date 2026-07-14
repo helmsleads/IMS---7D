@@ -35,6 +35,8 @@ When making changes, update these sections as needed:
 
 | Date | Change | Reason | Files Affected |
 |------|--------|--------|----------------|
+| 2026-07-14 | Partner deck + fee PDF absorbed; alc/non-alc product types; multi-carrier via 7D | DTC owns checkout/verify; brand merchandising; Helmsman MoR fees | `DTC_backend/docs/*`, migration 023, productType.js |
+| 2026-07-14 | DTC portal Shopify connect + auto 7D provision + shipment billing prefs | Brands connect Shopify in DTC (not manual 7D OTP); reuse 7D OAuth/defaults | `7d/src/app/api/dtc/clients/**`, `DTC_backend/**`, `DTC_frontend/**`, docs |
 | 2024-02-02 | Initial plan created | Planning phase | N/A |
 | 2026-02-02 | Full implementation completed | Code implementation | All Shopify files |
 | 2026-02-02 | Card import fixed | Card is default export not named | integrations/page.tsx |

@@ -2,6 +2,11 @@
 
 > **For beginners** - This guide assumes no prior experience with Shopify APIs or OAuth.
 > Follow each step exactly. Do not skip ahead.
+>
+> **DTC brands:** Prefer connecting Shopify from the **DTC portal** Integrations card.
+> OAuth reuses this 7D Shopify app; tokens and webhooks stay in 7D. See
+> `DTC_backend/docs/dtc-shopify-flow.md` for the DTC product flow (signup → Shopify →
+> shipment invoices / monthly accrual).
 
 ---
 

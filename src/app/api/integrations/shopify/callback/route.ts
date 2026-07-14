@@ -54,23 +54,56 @@ export async function GET(request: NextRequest) {
 
   const shopDomain = normalizeShopifyShopDomain(shop)
 
-  // Verify nonce from state
+  // Verify nonce from state (portal cookie OR DTC-initiated DB state)
   const nonceCookie = request.cookies.get('shopify_oauth_nonce')?.value
   const [stateNonce, stateData] = state.split(':')
 
-  if (!nonceCookie || nonceCookie !== stateNonce) {
-    console.error('Invalid state/nonce')
-    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=invalid_state`)
-  }
-
-  // Parse client ID from state
+  // Parse client ID / return URL from state
   let clientId: string
+  let oauthSource: string | null = null
+  let dtcReturnUrl: string | null = null
   try {
     const decoded = JSON.parse(atob(stateData))
     clientId = decoded.clientId
+    oauthSource = decoded.source ?? null
+    dtcReturnUrl =
+      typeof decoded.returnUrl === 'string' && decoded.returnUrl.startsWith('http')
+        ? decoded.returnUrl
+        : null
     if (!clientId) throw new Error('No clientId in state')
   } catch (e) {
     console.error('Failed to parse state:', e)
+    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=invalid_state`)
+  }
+
+  if (oauthSource === 'dtc') {
+    const supabaseForState = createServiceClient()
+    const { data: oauthState, error: oauthStateError } = await supabaseForState
+      .from('dtc_shopify_oauth_states')
+      .select('id, client_id, return_url, expires_at')
+      .eq('nonce', stateNonce)
+      .maybeSingle()
+
+    if (
+      oauthStateError ||
+      !oauthState ||
+      oauthState.client_id !== clientId ||
+      new Date(oauthState.expires_at).getTime() < Date.now()
+    ) {
+      console.error('Invalid DTC Shopify OAuth state/nonce')
+      const failUrl = dtcReturnUrl
+        ? `${dtcReturnUrl}${dtcReturnUrl.includes('?') ? '&' : '?'}shopify=error&reason=invalid_state`
+        : `${APP_URL}/portal/integrations?error=invalid_state`
+      return NextResponse.redirect(failUrl)
+    }
+
+    if (!dtcReturnUrl && oauthState.return_url) {
+      dtcReturnUrl = oauthState.return_url
+    }
+
+    await supabaseForState.from('dtc_shopify_oauth_states').delete().eq('id', oauthState.id)
+  } else if (!nonceCookie || nonceCookie !== stateNonce) {
+    console.error('Invalid state/nonce')
     return NextResponse.redirect(`${APP_URL}/portal/integrations?error=invalid_state`)
   }
 
@@ -198,10 +231,12 @@ export async function GET(request: NextRequest) {
     .update({ webhooks_registered: true })
     .eq('id', integration.id)
 
-  // Clear nonce cookie and redirect to success
-  const response = NextResponse.redirect(
-    `${APP_URL}/portal/integrations?success=shopify_connected`
-  )
+  // Clear nonce cookie and redirect to success (DTC portal or 7D portal)
+  const successRedirect =
+    oauthSource === 'dtc' && dtcReturnUrl
+      ? `${dtcReturnUrl}${dtcReturnUrl.includes('?') ? '&' : '?'}shopify=connected`
+      : `${APP_URL}/portal/integrations?success=shopify_connected`
+  const response = NextResponse.redirect(successRedirect)
   response.cookies.delete('shopify_oauth_nonce')
 
   return response
