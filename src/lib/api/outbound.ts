@@ -7,6 +7,7 @@ import { generateShipmentInvoice } from "./invoices";
 import { syncFulfillmentToShopify } from "./shopify/fulfillment-sync";
 import { isDtcOutboundOrder, DTC_DELETABLE_STATUSES } from "./dtc/constants";
 import { notifyDtcOrderShipped } from "./dtc/ship-notify";
+import { toBillableHandlingUnits } from "./billing-codes";
 
 export { isDtcOutboundOrder, DTC_DELETABLE_STATUSES } from "./dtc/constants";
 
@@ -91,6 +92,7 @@ export interface OutboundItemWithProduct extends OutboundItem {
     name: string;
     client_id?: string | null;
     container_type?: string | null;
+    units_per_case?: number | null;
   };
 }
 
@@ -265,7 +267,8 @@ export async function getOutboundOrder(id: string): Promise<OutboundOrderWithIte
           sku,
           name,
           client_id,
-          container_type
+          container_type,
+          units_per_case
         )
       )
     `)
@@ -932,7 +935,7 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
       *,
       items:outbound_items (
         qty_shipped,
-        product:products (id, sku, name, client_id, container_type)
+        product:products (id, sku, name, client_id, container_type, units_per_case)
       )
     `)
     .eq("id", orderId)
@@ -942,19 +945,30 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
     throw new Error(orderError.message);
   }
 
-  // Group shipped items by owning client AND rate code (barrel vs unit)
-  const clientShipped = new Map<string, { units: number; barrels: number }>();
+  // Group shipped items by owning client AND rate code (barrel vs unit).
+  // Rate card bills per case/bottle: convert eaches → cases via units_per_case.
+  const clientShipped = new Map<
+    string,
+    { units: number; barrels: number; inventoryUnits: number }
+  >();
   for (const item of (order.items || []) as any[]) {
     const qty = item.qty_shipped || 0;
     if (qty === 0) continue;
     const product = Array.isArray(item.product) ? item.product[0] : item.product;
     const ownerClientId = product?.client_id || order.client_id;
     if (!ownerClientId) continue;
-    const entry = clientShipped.get(ownerClientId) || { units: 0, barrels: 0 };
+    const entry = clientShipped.get(ownerClientId) || {
+      units: 0,
+      barrels: 0,
+      inventoryUnits: 0,
+    };
     if (product?.container_type === "keg") {
       entry.barrels += qty;
+      entry.inventoryUnits += qty;
     } else {
-      entry.units += qty;
+      const billable = toBillableHandlingUnits(qty, product?.units_per_case);
+      entry.units += billable;
+      entry.inventoryUnits += qty;
     }
     clientShipped.set(ownerClientId, entry);
   }
@@ -969,6 +983,10 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
   for (const [billingClientId, counts] of clientShipped) {
     if (counts.units > 0) {
       try {
+        const caseNote =
+          counts.inventoryUnits !== counts.units
+            ? ` (${counts.inventoryUnits} eaches → ${counts.units} cases)`
+            : "";
         await supabase.rpc("record_billable_event", {
           p_client_id: billingClientId,
           p_rate_code: "PICK_UNIT",
@@ -976,7 +994,7 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
           p_reference_type: "outbound_order",
           p_reference_id: orderId,
           p_usage_date: usageDate,
-          p_notes: `Order ${order.order_number} - Outgoing handling: ${counts.units} cases/bottles`,
+          p_notes: `Order ${order.order_number} - Outgoing handling: ${counts.units} cases/bottles${caseNote}`,
         });
       } catch (billingError) {
         console.error(`Failed to record billable events for client ${billingClientId}:`, billingError);
@@ -1014,6 +1032,7 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
     if (clientService) {
       const service = clientService.service as any;
       const unitPrice = clientService.custom_price ?? service?.base_price ?? 0;
+      const billableQty = counts.units + counts.barrels;
 
       const { error: usageError } = await supabase
         .from("usage_records")
@@ -1021,14 +1040,14 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
           client_id: billingClientId,
           service_id: clientService.service_id,
           usage_type: "fulfillment",
-          quantity: counts.units + counts.barrels,
+          quantity: billableQty,
           unit_price: unitPrice,
-          total: (counts.units + counts.barrels) * unitPrice,
+          total: billableQty * unitPrice,
           reference_type: "outbound_order",
           reference_id: orderId,
           usage_date: usageDate,
           invoiced: false,
-          notes: `Order ${order.order_number} - ${counts.units + counts.barrels} items`,
+          notes: `Order ${order.order_number} - ${billableQty} items`,
         });
 
       if (usageError) {
@@ -1040,15 +1059,15 @@ export async function recordOutboundUsage(orderId: string): Promise<void> {
   // Record shipping/freight cost split proportionally by brand
   const shippingCost = order.client_shipping_cost || order.shipping_cost || 0;
   if (shippingCost > 0 && clientShipped.size > 0) {
-    // Calculate total items across all brands for percentage split
+    // Split by inventory eaches so mixed pack sizes stay proportional
     let totalItems = 0;
     for (const counts of clientShipped.values()) {
-      totalItems += counts.units + counts.barrels;
+      totalItems += counts.inventoryUnits;
     }
 
     if (totalItems > 0) {
       for (const [billingClientId, counts] of clientShipped) {
-        const clientItems = counts.units + counts.barrels;
+        const clientItems = counts.inventoryUnits;
         const fraction = clientItems / totalItems;
         const clientFreight = Math.round(shippingCost * fraction * 100) / 100;
         if (clientFreight <= 0) continue;
@@ -1157,7 +1176,7 @@ export async function updateOutboundItem(
     .from("outbound_items")
     .update(updatePayload)
     .eq("id", itemId)
-    .select("*, product:products (id, sku, name, client_id, container_type)")
+    .select("*, product:products (id, sku, name, client_id, container_type, units_per_case)")
     .single();
 
   if (updateError) throw new Error(updateError.message);
@@ -1206,7 +1225,7 @@ export async function addOutboundItem(
       qty_shipped: 0,
       unit_price: data.unit_price || 0,
     })
-    .select("*, product:products (id, sku, name, client_id, container_type)")
+    .select("*, product:products (id, sku, name, client_id, container_type, units_per_case)")
     .single();
 
   if (error) throw new Error(error.message);

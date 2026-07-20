@@ -3,7 +3,7 @@ import { sendInternalAlert } from "@/lib/api/notifications";
 import { createLPN, addLPNContent, LPN } from "@/lib/api/lpns";
 import { updateInventoryWithTransaction } from "@/lib/api/inventory-transactions";
 import { getClientInboundRules } from "@/lib/api/workflow-profiles";
-import { getInboundRateCode } from "@/lib/api/billing-codes";
+import { getInboundRateCode, toBillableReceiveUnits, resolveUnitsPerCase } from "@/lib/api/billing-codes";
 
 export interface InboundOrder {
   id: string;
@@ -327,7 +327,8 @@ export async function updateInboundOrderStatus(
         qty_expected,
         qty_received,
         uom,
-        units_per_case
+        units_per_case,
+        product:products (units_per_case)
       `)
       .eq("order_id", id);
 
@@ -358,10 +359,16 @@ export async function updateInboundOrderStatus(
 
           if (qtyToReceive <= 0) continue;
 
+          const product = Array.isArray(item.product) ? item.product[0] : item.product;
+          const unitsPerCase = resolveUnitsPerCase(
+            item.units_per_case,
+            product?.units_per_case
+          );
+
           // Convert cases to individual units if applicable
           const inventoryQty =
-            item.uom === "cases" && item.units_per_case
-              ? qtyToReceive * item.units_per_case
+            item.uom === "cases" && unitsPerCase
+              ? qtyToReceive * unitsPerCase
               : qtyToReceive;
 
           // Check current inventory for this product
@@ -426,11 +433,17 @@ export async function updateInboundOrderStatus(
                 await supabase.rpc("record_billable_event", {
                   p_client_id: data.client_id,
                   p_rate_code: await getInboundRateCode(item.product_id),
-                  p_quantity: qtyToReceive,
+                  p_quantity: toBillableReceiveUnits({
+                    qtyInUom: qtyToReceive,
+                    inventoryQty,
+                    uom: item.uom,
+                    unitsPerCase: item.units_per_case,
+                    productUnitsPerCase: product?.units_per_case,
+                  }),
                   p_reference_type: "inbound_order",
                   p_reference_id: id,
                   p_usage_date: new Date().toISOString().split("T")[0],
-                  p_notes: `Received ${qtyToReceive} units (order-level receive)`,
+                  p_notes: `Received ${qtyToReceive} units (order-level receive)${item.uom === "cases" ? ` (${qtyToReceive} cases × ${unitsPerCase})` : ""}`,
                 });
               } catch (billingError) {
                 console.error("Failed to record billable event:", billingError);
@@ -497,7 +510,15 @@ export async function reprocessInboundInventory(
   // Fetch all items
   const { data: items, error: itemsError } = await supabase
     .from("inbound_items")
-    .select("id, product_id, qty_expected, qty_received, uom, units_per_case")
+    .select(`
+      id,
+      product_id,
+      qty_expected,
+      qty_received,
+      uom,
+      units_per_case,
+      product:products (units_per_case)
+    `)
     .eq("order_id", orderId);
 
   if (itemsError || !items) {
@@ -536,10 +557,16 @@ export async function reprocessInboundInventory(
     const qtyToReceive = item.qty_received || item.qty_expected;
     if (qtyToReceive <= 0) continue;
 
+    const product = Array.isArray(item.product) ? item.product[0] : item.product;
+    const unitsPerCase = resolveUnitsPerCase(
+      item.units_per_case,
+      product?.units_per_case
+    );
+
     // Convert cases to individual units if applicable
     const inventoryQty =
-      item.uom === "cases" && item.units_per_case
-        ? qtyToReceive * item.units_per_case
+      item.uom === "cases" && unitsPerCase
+        ? qtyToReceive * unitsPerCase
         : qtyToReceive;
 
     // Check if this item was already individually received
@@ -553,7 +580,7 @@ export async function reprocessInboundInventory(
     if (receiveLogCount && receiveLogCount > 0) {
       // Already received — but check if case conversion was missed
       // (items received before the conversion fix would have raw case count in inventory)
-      if (item.uom === "cases" && item.units_per_case && item.units_per_case > 1) {
+      if (item.uom === "cases" && unitsPerCase && unitsPerCase > 1) {
         // Check if a case conversion correction was already applied
         const { count: correctionLogCount } = await supabase
           .from("activity_log")
@@ -563,7 +590,7 @@ export async function reprocessInboundInventory(
           .eq("action", "case_conversion_correction");
 
         if (!correctionLogCount || correctionLogCount === 0) {
-          const correctionQty = qtyToReceive * (item.units_per_case - 1);
+          const correctionQty = qtyToReceive * (unitsPerCase - 1);
 
           const { error: correctionError } = await supabase.rpc("update_inventory", {
             p_product_id: item.product_id,
@@ -589,7 +616,7 @@ export async function reprocessInboundInventory(
               new_qty: inventoryQty,
               qty_added: correctionQty,
               uom: item.uom,
-              units_per_case: item.units_per_case,
+              units_per_case: unitsPerCase,
               location_id: locationId,
               source: "reprocess_case_conversion",
             },
@@ -645,11 +672,17 @@ export async function reprocessInboundInventory(
         await supabase.rpc("record_billable_event", {
           p_client_id: order.client_id,
           p_rate_code: await getInboundRateCode(item.product_id),
-          p_quantity: inventoryQty,
+          p_quantity: toBillableReceiveUnits({
+            qtyInUom: qtyToReceive,
+            inventoryQty,
+            uom: item.uom,
+            unitsPerCase: item.units_per_case,
+            productUnitsPerCase: product?.units_per_case,
+          }),
           p_reference_type: "inbound_order",
           p_reference_id: orderId,
           p_usage_date: new Date().toISOString().split("T")[0],
-          p_notes: `Reprocessed ${inventoryQty} units${item.uom === "cases" ? ` (${qtyToReceive} cases × ${item.units_per_case})` : ""}`,
+          p_notes: `Reprocessed ${inventoryQty} units${item.uom === "cases" ? ` (${qtyToReceive} cases × ${unitsPerCase})` : ""}`,
         });
       } catch (billingError) {
         console.error("Failed to record billable event:", billingError);
@@ -678,7 +711,8 @@ export async function receiveInboundItem(
       product:products (
         id,
         sku,
-        name
+        name,
+        units_per_case
       ),
       order:inbound_orders (
         id,
@@ -702,7 +736,8 @@ export async function receiveInboundItem(
       product:products (
         id,
         sku,
-        name
+        name,
+        units_per_case
       )
     `)
     .single();
@@ -713,11 +748,16 @@ export async function receiveInboundItem(
 
   // Calculate the difference to add to inventory
   const qtyDiff = qtyReceived - item.qty_received;
+  const product = Array.isArray(item.product) ? item.product[0] : item.product;
+  const unitsPerCase = resolveUnitsPerCase(
+    item.units_per_case,
+    product?.units_per_case
+  );
 
   // Convert cases to individual units if applicable
   const inventoryDiff =
-    item.uom === "cases" && item.units_per_case
-      ? qtyDiff * item.units_per_case
+    item.uom === "cases" && unitsPerCase
+      ? qtyDiff * unitsPerCase
       : qtyDiff;
 
   if (qtyDiff !== 0) {
@@ -761,11 +801,17 @@ export async function receiveInboundItem(
         await supabase.rpc("record_billable_event", {
           p_client_id: order.client_id,
           p_rate_code: await getInboundRateCode(item.product_id),
-          p_quantity: inventoryDiff,
+          p_quantity: toBillableReceiveUnits({
+            qtyInUom: qtyDiff,
+            inventoryQty: inventoryDiff,
+            uom: item.uom,
+            unitsPerCase: item.units_per_case,
+            productUnitsPerCase: product?.units_per_case,
+          }),
           p_reference_type: "inbound_order",
           p_reference_id: order.id,
           p_usage_date: new Date().toISOString().split("T")[0],
-          p_notes: `Received ${qtyDiff} units of ${item.product?.sku || item.product_id}`,
+          p_notes: `Received ${qtyDiff} units of ${item.product?.sku || item.product_id}${item.uom === "cases" ? ` (${qtyDiff} cases × ${unitsPerCase})` : ""}`,
         });
       } catch (billingError) {
         // Log billing error but don't fail the receive operation
@@ -964,7 +1010,8 @@ export async function receiveWithLot(
         sku,
         name,
         lot_tracking_enabled,
-        default_expiration_days
+        default_expiration_days,
+        units_per_case
       )
     `)
     .eq("id", itemId)
@@ -1021,13 +1068,17 @@ export async function receiveWithLot(
 
   // Convert cases to individual units if applicable
   const qtyDiffRaw = qtyReceived - item.qty_received;
+  const unitsPerCase = resolveUnitsPerCase(
+    item.units_per_case,
+    product?.units_per_case
+  );
   const inventoryDiff =
-    item.uom === "cases" && item.units_per_case
-      ? qtyDiffRaw * item.units_per_case
+    item.uom === "cases" && unitsPerCase
+      ? qtyDiffRaw * unitsPerCase
       : qtyDiffRaw;
   const inventoryQtyReceived =
-    item.uom === "cases" && item.units_per_case
-      ? qtyReceived * item.units_per_case
+    item.uom === "cases" && unitsPerCase
+      ? qtyReceived * unitsPerCase
       : qtyReceived;
 
   // Update lot inventory (in individual units)
@@ -1120,11 +1171,17 @@ export async function receiveWithLot(
       await supabase.rpc("record_billable_event", {
         p_client_id: order.client_id,
         p_rate_code: await getInboundRateCode(item.product_id),
-        p_quantity: inventoryDiff,
+        p_quantity: toBillableReceiveUnits({
+          qtyInUom: qtyDiffRaw,
+          inventoryQty: inventoryDiff,
+          uom: item.uom,
+          unitsPerCase: item.units_per_case,
+          productUnitsPerCase: product?.units_per_case,
+        }),
         p_reference_type: "inbound_order",
         p_reference_id: order.id,
         p_usage_date: new Date().toISOString().split("T")[0],
-        p_notes: `Received ${inventoryDiff} units of ${product?.sku || item.product_id} (Lot: ${lotNumber})${item.uom === "cases" ? ` (${qtyDiffRaw} cases × ${item.units_per_case})` : ""}`,
+        p_notes: `Received ${inventoryDiff} units of ${product?.sku || item.product_id} (Lot: ${lotNumber})${item.uom === "cases" ? ` (${qtyDiffRaw} cases × ${unitsPerCase})` : ""}`,
       });
     } catch (billingError) {
       // Log billing error but don't fail the receive operation
@@ -1284,7 +1341,7 @@ export async function receiveInboundItemToPallet(params: {
     .from("inbound_items")
     .select(`
       *,
-      product:products (id, sku, name),
+      product:products (id, sku, name, units_per_case),
       order:inbound_orders (id, client_id)
     `)
     .eq("id", params.itemId)
@@ -1299,10 +1356,16 @@ export async function receiveInboundItemToPallet(params: {
     throw new Error("No additional quantity to receive");
   }
 
+  const product = Array.isArray(item.product) ? item.product[0] : item.product;
+  const unitsPerCase = resolveUnitsPerCase(
+    item.units_per_case,
+    product?.units_per_case
+  );
+
   // Convert cases to individual units if applicable
   const inventoryDiff =
-    item.uom === "cases" && item.units_per_case
-      ? qtyDiff * item.units_per_case
+    item.uom === "cases" && unitsPerCase
+      ? qtyDiff * unitsPerCase
       : qtyDiff;
 
   // 1. Update the inbound item's received quantity
@@ -1368,11 +1431,17 @@ export async function receiveInboundItemToPallet(params: {
       await supabase.rpc("record_billable_event", {
         p_client_id: order.client_id,
         p_rate_code: await getInboundRateCode(item.product_id),
-        p_quantity: inventoryDiff,
+        p_quantity: toBillableReceiveUnits({
+          qtyInUom: qtyDiff,
+          inventoryQty: inventoryDiff,
+          uom: item.uom,
+          unitsPerCase: item.units_per_case,
+          productUnitsPerCase: product?.units_per_case,
+        }),
         p_reference_type: "inbound_order",
         p_reference_id: order.id,
         p_usage_date: new Date().toISOString().split("T")[0],
-        p_notes: `Received ${inventoryDiff} units of ${item.product?.sku || item.product_id} to pallet${item.uom === "cases" ? ` (${qtyDiff} cases × ${item.units_per_case})` : ""}`,
+        p_notes: `Received ${inventoryDiff} units of ${item.product?.sku || item.product_id} to pallet${item.uom === "cases" ? ` (${qtyDiff} cases × ${unitsPerCase})` : ""}`,
       });
     } catch (billingError) {
       console.error("Failed to record billable event:", billingError);

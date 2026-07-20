@@ -29,11 +29,11 @@ VALUES
   ('Standard', true, 'inbound', 'RECEIVE_BARREL', 'Inbound Barrel Handling', 'Receiving barrels ($100/barrel)', 100.00, 'per_unit', '[]'::jsonb, 100.00, true),
 
   -- Outbound handling (fired as PICK_UNIT)
-  -- Volume tiers: first location $4.50 min, additional locations $1.00 min, per unit $1.00
-  ('Standard', true, 'outbound', 'PICK_UNIT', 'Outbound Handling', 'Picking/shipping cases/bottles ($4.50 first location, $1.00/unit)',
+  -- Rate card: $1.00 per unit (cancels location minimums). Not inbound first-unit tiers.
+  ('Standard', true, 'outbound', 'PICK_UNIT', 'Outbound Handling', 'Picking/shipping cases/bottles ($1.00/unit; location minimums cancelled by per-unit charge)',
    1.00, 'per_unit',
-   '[{"min_qty": 1, "max_qty": 1, "unit_price": 4.50}, {"min_qty": 2, "max_qty": null, "unit_price": 1.00}]'::jsonb,
-   4.50, true),
+   '[]'::jsonb,
+   0, true),
 
   -- Outbound barrel handling
   ('Standard', true, 'outbound', 'PICK_BARREL', 'Outbound Barrel Handling', 'Shipping barrels ($50/barrel)', 50.00, 'per_unit', '[]'::jsonb, 50.00, true),

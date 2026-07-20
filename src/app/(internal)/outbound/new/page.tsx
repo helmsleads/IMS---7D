@@ -22,6 +22,7 @@ import {
 import { NEW_ORDER_PREFERRED_CARRIER_OPTIONS } from "@/lib/outbound-service-options";
 import { getContainerBadge, getUnitLabel } from "@/lib/labels";
 import { formatStreetAddress, formatCity, formatState, formatName, formatZip } from "@/lib/format-address";
+import { toBillableHandlingUnits } from "@/lib/api/billing-codes";
 interface OrderItem {
   id: string;
   product_id: string;
@@ -315,6 +316,14 @@ export default function NewOutboundOrderPage() {
   };
 
   const totalUnits = items.reduce((sum, item) => sum + item.qty_requested, 0);
+  const billableHandlingUnits = items.reduce((sum, item) => {
+    const product = products.find((p) => p.id === item.product_id);
+    return sum + toBillableHandlingUnits(item.qty_requested, product?.units_per_case);
+  }, 0);
+  const usesCaseBilling = items.some((item) => {
+    const product = products.find((p) => p.id === item.product_id);
+    return (product?.units_per_case ?? 1) > 1;
+  });
   const totalValue = items.reduce(
     (sum, item) => sum + item.qty_requested * item.unit_price,
     0
@@ -691,24 +700,44 @@ export default function NewOutboundOrderPage() {
                               </div>
                             </td>
                             <td className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                <Input
-                                  name={`qty-${item.id}`}
-                                  type="number"
-                                  min={1}
-                                  value={item.qty_requested}
-                                  className="w-20"
-                                  onChange={(e) =>
-                                    updateItem(
-                                      item.id,
-                                      "qty_requested",
-                                      parseInt(e.target.value) || 0
-                                    )
-                                  }
-                                />
-                                <span className="text-xs text-slate-500 whitespace-nowrap">
-                                  {getUnitLabel(product?.container_type)}
-                                </span>
+                              <div className="flex flex-col gap-0.5">
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    name={`qty-${item.id}`}
+                                    type="number"
+                                    min={1}
+                                    value={item.qty_requested}
+                                    className="w-20"
+                                    onChange={(e) =>
+                                      updateItem(
+                                        item.id,
+                                        "qty_requested",
+                                        parseInt(e.target.value) || 0
+                                      )
+                                    }
+                                  />
+                                  <span className="text-xs text-slate-500 whitespace-nowrap">
+                                    {getUnitLabel(product?.container_type)}
+                                  </span>
+                                </div>
+                                {(product?.units_per_case ?? 1) > 1 && item.qty_requested > 0 && (
+                                  <p className="text-[11px] text-slate-500 pl-0.5">
+                                    {product!.units_per_case}/case ·{" "}
+                                    <span className="font-medium text-slate-700">
+                                      {toBillableHandlingUnits(
+                                        item.qty_requested,
+                                        product!.units_per_case
+                                      )}{" "}
+                                      billable case
+                                      {toBillableHandlingUnits(
+                                        item.qty_requested,
+                                        product!.units_per_case
+                                      ) === 1
+                                        ? ""
+                                        : "s"}
+                                    </span>
+                                  </p>
+                                )}
                               </div>
                             </td>
                             <td className="px-4 py-3">
@@ -807,6 +836,17 @@ export default function NewOutboundOrderPage() {
                       {totalUnits.toLocaleString()}
                     </span>
                   </div>
+                  {usesCaseBilling && billableHandlingUnits !== totalUnits && (
+                    <div className="flex justify-between text-sm mt-1">
+                      <span className="text-gray-600">Billable Cases</span>
+                      <span className="font-medium text-gray-900">
+                        {billableHandlingUnits.toLocaleString()}
+                        <span className="ml-1 text-xs font-normal text-gray-500">
+                          ($1.00/case handling)
+                        </span>
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div className="border-t border-gray-200 pt-3">
                   <div className="flex justify-between text-base">

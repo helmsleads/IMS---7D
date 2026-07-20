@@ -66,6 +66,7 @@ import { getProducts, ProductWithCategory } from "@/lib/api/products";
 import { getClients, Client } from "@/lib/api/clients";
 import { createClient } from "@/lib/supabase";
 import { getContainerBadge, getUnitLabel } from "@/lib/labels";
+import { toBillableHandlingUnits } from "@/lib/api/billing-codes";
 import { getLocations, Location } from "@/lib/api/locations";
 import { getInventory, InventoryWithDetails } from "@/lib/api/inventory";
 import {
@@ -2112,6 +2113,22 @@ export default function OutboundOrderDetailPage() {
                             >
                               {item.qty_requested}
                               <span className="text-gray-500 text-xs ml-1">{getUnitLabel(item.product?.container_type)}</span>
+                              {(item.product?.units_per_case ?? 1) > 1 && (
+                                <span className="block text-[11px] font-normal text-slate-500 mt-0.5">
+                                  {item.product.units_per_case}/case ·{" "}
+                                  {toBillableHandlingUnits(
+                                    item.qty_requested,
+                                    item.product.units_per_case
+                                  )}{" "}
+                                  billable case
+                                  {toBillableHandlingUnits(
+                                    item.qty_requested,
+                                    item.product.units_per_case
+                                  ) === 1
+                                    ? ""
+                                    : "s"}
+                                </span>
+                              )}
                             </span>
                           )}
                         </td>

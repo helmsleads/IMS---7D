@@ -24,6 +24,15 @@ interface InventoryItem {
   active: boolean;
   /** From product_mappings.external_title when linked to Shopify */
   shopify_listing_title: string | null;
+  units_per_case: number | null;
+}
+
+/** Whole cases on hand (partial packs count as 1 case). */
+function getCaseCount(qtyOnHand: number, unitsPerCase: number | null | undefined): number | null {
+  const upc = Number(unitsPerCase) || 0;
+  if (upc <= 1) return null;
+  if (qtyOnHand <= 0) return 0;
+  return Math.ceil(qtyOnHand / upc);
 }
 
 interface CartItem {
@@ -113,14 +122,15 @@ export default function PortalInventoryPage() {
             reorder_point,
             category,
             client_id,
-            active
+            active,
+            units_per_case
           )
         `)
         .eq("product.client_id", client.id)
         .order("qty_on_hand", { ascending: false }),
       supabase
         .from("products")
-        .select("id, name, sku, image_url, reorder_point, category, active")
+        .select("id, name, sku, image_url, reorder_point, category, active, units_per_case")
         .eq("client_id", client.id),
       supabase
         .from("client_integrations")
@@ -169,6 +179,7 @@ export default function PortalInventoryPage() {
         category: product?.category || null,
         active: product?.active !== false,
         shopify_listing_title: shopifyTitleByProductId.get(productId) ?? null,
+        units_per_case: product?.units_per_case ?? null,
       };
     });
 
@@ -187,6 +198,7 @@ export default function PortalInventoryPage() {
           category: product.category || null,
           active: product.active !== false,
           shopify_listing_title: shopifyTitleByProductId.get(product.id) ?? null,
+          units_per_case: product.units_per_case ?? null,
         });
       }
     }
@@ -684,6 +696,7 @@ export default function PortalInventoryPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredInventory.map((item) => {
               const status = getStockStatus(item.qty_on_hand, item.reorder_point);
+              const caseCount = getCaseCount(item.qty_on_hand, item.units_per_case);
 
               return (
                 <div
@@ -749,6 +762,15 @@ export default function PortalInventoryPage() {
                         {item.qty_on_hand.toLocaleString()}
                       </p>
                       <p className="text-xs text-slate-400">units</p>
+                      {caseCount !== null && (
+                        <p className="mt-2 text-sm font-semibold text-slate-700">
+                          {caseCount.toLocaleString()}{" "}
+                          {caseCount === 1 ? "case" : "cases"}
+                          <span className="ml-1 font-normal text-slate-400">
+                            ({item.units_per_case}/case)
+                          </span>
+                        </p>
+                      )}
                     </div>
 
                     {/* Value Columns (when enabled) */}
@@ -881,6 +903,9 @@ export default function PortalInventoryPage() {
                     <th className="text-right py-4 px-4 text-sm font-semibold text-slate-600">
                       Available
                     </th>
+                    <th className="text-right py-4 px-4 text-sm font-semibold text-slate-600">
+                      Cases
+                    </th>
                     {showSalePrice && (
                       <th className="text-right py-4 px-4 text-sm font-semibold text-slate-600">
                         Sale Price
@@ -910,6 +935,7 @@ export default function PortalInventoryPage() {
                 <tbody>
                   {filteredInventory.map((item) => {
                     const status = getStockStatus(item.qty_on_hand, item.reorder_point);
+                    const caseCount = getCaseCount(item.qty_on_hand, item.units_per_case);
 
                     return (
                       <tr
@@ -953,6 +979,18 @@ export default function PortalInventoryPage() {
                           <span className="font-semibold text-slate-900">
                             {item.qty_on_hand.toLocaleString()}
                           </span>
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          {caseCount !== null ? (
+                            <span className="font-semibold text-slate-900">
+                              {caseCount.toLocaleString()}
+                              <span className="ml-1 text-xs font-normal text-slate-400">
+                                ({item.units_per_case}/case)
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">{"\u2014"}</span>
+                          )}
                         </td>
                         {showSalePrice && (
                           <td className="py-4 px-4 text-right">

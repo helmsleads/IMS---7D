@@ -15,6 +15,10 @@ import {
   getPortalRequestCarrierOptions,
   getPreferredCarrierLabel,
 } from "@/lib/outbound-service-options";
+import { toBillableHandlingUnits } from "@/lib/api/billing-codes";
+
+/** Rate-card default for outgoing handling ($1.00 per case/bottle). */
+const OUTBOUND_HANDLING_RATE_FALLBACK = 1.0;
 
 interface ShippingAddress {
   id: string;
@@ -38,6 +42,7 @@ interface InventoryItem {
   /** Shopify listing title from product_mappings.external_title when linked */
   shopify_listing_title: string | null;
   product_category: { name: string; slug: string } | null;
+  units_per_case: number | null;
 }
 
 interface SelectedProduct {
@@ -48,6 +53,7 @@ interface SelectedProduct {
   qty_to_ship: number;
   qty_available: number;
   shopify_listing_title?: string | null;
+  units_per_case?: number | null;
 }
 
 interface AdditionalInfo {
@@ -95,6 +101,9 @@ export default function RequestShipmentPage() {
     requiresRepack: true,
   });
   const [hasRushAddon, setHasRushAddon] = useState(false);
+  const [outboundHandlingRate, setOutboundHandlingRate] = useState(
+    OUTBOUND_HANDLING_RATE_FALLBACK
+  );
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templates, setTemplates] = useState<PortalTemplate[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -150,6 +159,7 @@ export default function RequestShipmentPage() {
             sku,
             image_url,
             client_id,
+            units_per_case,
             product_category:product_categories (name, slug)
           )
         `)
@@ -199,6 +209,7 @@ export default function RequestShipmentPage() {
           product_category: category?.name && category?.slug
             ? { name: category.name, slug: category.slug }
             : null,
+          units_per_case: product?.units_per_case ?? null,
         };
       });
 
@@ -223,6 +234,7 @@ export default function RequestShipmentPage() {
                 qty_to_ship: Math.min(cartItem.qty_to_ship, inventoryItem?.qty_available || cartItem.qty_to_ship),
                 shopify_listing_title:
                   inventoryItem?.shopify_listing_title ?? cartItem.shopify_listing_title ?? null,
+                units_per_case: inventoryItem?.units_per_case ?? cartItem.units_per_case ?? null,
               };
             });
 
@@ -241,7 +253,7 @@ export default function RequestShipmentPage() {
     fetchInventory();
   }, [client]);
 
-  // Check if client has rush processing add-on
+  // Check if client has rush processing add-on + load outbound handling rate
   useEffect(() => {
     const checkRushAddon = async () => {
       if (!client || client.id === "staff-preview") return;
@@ -265,7 +277,27 @@ export default function RequestShipmentPage() {
       }
     };
 
+    const loadOutboundHandlingRate = async () => {
+      if (!client || client.id === "staff-preview") return;
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from("client_rate_cards")
+          .select("unit_price")
+          .eq("client_id", client.id)
+          .eq("rate_code", "PICK_UNIT")
+          .eq("is_active", true)
+          .maybeSingle();
+        if (data?.unit_price != null && Number(data.unit_price) > 0) {
+          setOutboundHandlingRate(Number(data.unit_price));
+        }
+      } catch (err) {
+        console.error("Failed to load outbound handling rate:", err);
+      }
+    };
+
     checkRushAddon();
+    loadOutboundHandlingRate();
   }, [client]);
 
   // Fetch saved addresses from client profile
@@ -334,6 +366,7 @@ export default function RequestShipmentPage() {
               qty_to_ship: Math.min(item.quantity, invItem.qty_available),
               qty_available: invItem.qty_available,
               shopify_listing_title: invItem.shopify_listing_title ?? null,
+              units_per_case: invItem.units_per_case,
             });
           }
         }
@@ -398,6 +431,7 @@ export default function RequestShipmentPage() {
             qty_to_ship: Math.min(item.quantity, invItem.qty_available),
             qty_available: invItem.qty_available,
             shopify_listing_title: invItem.shopify_listing_title ?? null,
+            units_per_case: invItem.units_per_case,
           });
         }
       }
@@ -583,6 +617,7 @@ export default function RequestShipmentPage() {
             additionalInfo={additionalInfo}
             clientId={client.id}
             isAlcoholOrder={isAlcoholOrder}
+            outboundHandlingRate={outboundHandlingRate}
           />
         )}
       </div>
@@ -748,6 +783,7 @@ function StepSelectProducts({
             qty_to_ship: validQty,
             qty_available: item.qty_available,
             shopify_listing_title: item.shopify_listing_title,
+            units_per_case: item.units_per_case,
           },
         ]);
       }
@@ -787,6 +823,7 @@ function StepSelectProducts({
             qty_to_ship: clampedQty,
             qty_available: item.qty_available,
             shopify_listing_title: item.shopify_listing_title,
+            units_per_case: item.units_per_case,
           },
         ]);
       }
@@ -818,6 +855,13 @@ function StepSelectProducts({
 
   const totalItems = selectedProducts.reduce((sum, p) => sum + p.qty_to_ship, 0);
   const totalProducts = selectedProducts.length;
+  const billableCases = selectedProducts.reduce(
+    (sum, p) => sum + toBillableHandlingUnits(p.qty_to_ship, p.units_per_case),
+    0
+  );
+  const usesCaseBilling = selectedProducts.some(
+    (p) => (p.units_per_case ?? 1) > 1
+  );
 
   if (loading) {
     return (
@@ -832,7 +876,8 @@ function StepSelectProducts({
       <div>
         <h2 className="text-lg font-semibold text-slate-900">Select Products</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Choose the products and quantities you want to ship
+          Choose the products and quantities you want to ship. Quantities are in
+          units (eaches); pack-size products are billed per case on the rate card.
         </p>
       </div>
 
@@ -870,6 +915,12 @@ function StepSelectProducts({
                 const isSelected = qty > 0;
                 const error = inputErrors[item.id];
                 const inputValue = getInputValue(item.id);
+                const upc = item.units_per_case && item.units_per_case > 1 ? item.units_per_case : null;
+                const availableCases = upc
+                  ? toBillableHandlingUnits(item.qty_available, upc)
+                  : null;
+                const selectedCases =
+                  upc && qty > 0 ? toBillableHandlingUnits(qty, upc) : null;
 
                 return (
                   <tr
@@ -886,6 +937,11 @@ function StepSelectProducts({
                         <div>
                           <p className="font-medium text-slate-900">{item.product_name}</p>
                           <p className="text-sm text-slate-500 font-mono">{item.sku}</p>
+                          {upc && (
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {upc} units/case · billed per case
+                            </p>
+                          )}
                           {item.shopify_listing_title && (
                             <p className="text-xs text-slate-500 mt-1">
                               <span className="text-slate-400">Shopify:</span>{" "}
@@ -897,6 +953,13 @@ function StepSelectProducts({
                     </td>
                     <td className="py-3 px-4 text-center">
                       <span className="text-slate-600">{item.qty_available.toLocaleString()}</span>
+                      <span className="text-xs text-slate-400 block">units</span>
+                      {availableCases !== null && (
+                        <span className="text-xs text-slate-500 block mt-0.5">
+                          {availableCases.toLocaleString()}{" "}
+                          {availableCases === 1 ? "case" : "cases"}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex flex-col items-center gap-1">
@@ -937,6 +1000,13 @@ function StepSelectProducts({
                             +
                           </button>
                         </div>
+                        <span className="text-xs text-slate-400">units</span>
+                        {selectedCases !== null && (
+                          <span className="text-xs font-medium text-slate-600">
+                            = {selectedCases.toLocaleString()}{" "}
+                            {selectedCases === 1 ? "case" : "cases"} billed
+                          </span>
+                        )}
                         {error && (
                           <div className="flex items-center gap-1 text-red-600 text-xs">
                             <AlertCircle className="w-3 h-3" />
@@ -965,7 +1035,11 @@ function StepSelectProducts({
         <div>
           <p className="text-sm text-slate-500">Selected</p>
           <p className="font-semibold text-slate-900">
-            {totalProducts} product{totalProducts !== 1 ? "s" : ""}, {totalItems.toLocaleString()} unit{totalItems !== 1 ? "s" : ""}
+            {totalProducts} product{totalProducts !== 1 ? "s" : ""},{" "}
+            {totalItems.toLocaleString()} unit{totalItems !== 1 ? "s" : ""}
+            {usesCaseBilling && billableCases !== totalItems
+              ? ` → ${billableCases.toLocaleString()} billable case${billableCases !== 1 ? "s" : ""}`
+              : ""}
           </p>
         </div>
         {totalProducts > 0 && (
@@ -1396,6 +1470,7 @@ function StepReviewSubmit({
   additionalInfo,
   clientId,
   isAlcoholOrder,
+  outboundHandlingRate,
 }: {
   onBack: () => void;
   onEditStep: (step: Step) => void;
@@ -1404,6 +1479,7 @@ function StepReviewSubmit({
   additionalInfo: AdditionalInfo;
   clientId: string;
   isAlcoholOrder: boolean;
+  outboundHandlingRate: number;
 }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -1411,6 +1487,14 @@ function StepReviewSubmit({
   const [submitSuccess, setSubmitSuccess] = useState<{ orderId: string; orderNumber: string } | null>(null);
 
   const totalItems = selectedProducts.reduce((sum, p) => sum + p.qty_to_ship, 0);
+  const billableHandlingUnits = selectedProducts.reduce(
+    (sum, p) => sum + toBillableHandlingUnits(p.qty_to_ship, p.units_per_case),
+    0
+  );
+  const estimatedHandlingFee = billableHandlingUnits * outboundHandlingRate;
+  const usesCaseBilling = selectedProducts.some(
+    (p) => (p.units_per_case ?? 1) > 1
+  );
 
   // Generate order number: ORD-YYYYMMDD-XXXX
   const generateOrderNumber = () => {
@@ -1592,10 +1676,20 @@ function StepReviewSubmit({
                 <th className="text-right py-3 px-4 text-sm font-semibold text-slate-600">
                   Qty to Ship
                 </th>
+                {usesCaseBilling && (
+                  <th className="text-right py-3 px-4 text-sm font-semibold text-slate-600">
+                    Billable Cases
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
-              {selectedProducts.map((product) => (
+              {selectedProducts.map((product) => {
+                const billable = toBillableHandlingUnits(
+                  product.qty_to_ship,
+                  product.units_per_case
+                );
+                return (
                 <tr
                   key={product.inventory_id}
                   className="border-b border-slate-100 last:border-0"
@@ -1607,24 +1701,45 @@ function StepReviewSubmit({
                         <span className="text-slate-400">Shopify:</span> {product.shopify_listing_title}
                       </p>
                     )}
+                    {(product.units_per_case ?? 1) > 1 && (
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {product.units_per_case} units/case
+                      </p>
+                    )}
                   </td>
                   <td className="py-3 px-4">
                     <span className="text-sm text-slate-500 font-mono">{product.sku}</span>
                   </td>
                   <td className="py-3 px-4 text-right">
                     <span className="font-semibold text-slate-900">{product.qty_to_ship.toLocaleString()}</span>
+                    <span className="text-xs text-slate-400 block">units</span>
                   </td>
+                  {usesCaseBilling && (
+                    <td className="py-3 px-4 text-right">
+                      <span className="font-semibold text-slate-900">{billable.toLocaleString()}</span>
+                    </td>
+                  )}
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
             <tfoot>
               <tr className="bg-slate-50 border-t border-slate-200">
                 <td colSpan={2} className="py-3 px-4 text-right">
-                  <span className="font-medium text-slate-700">Total Units:</span>
+                  <span className="font-medium text-slate-700">
+                    {usesCaseBilling ? "Total Units / Cases:" : "Total Units:"}
+                  </span>
                 </td>
                 <td className="py-3 px-4 text-right">
                   <span className="font-bold text-slate-900 text-lg">{totalItems.toLocaleString()}</span>
                 </td>
+                {usesCaseBilling && (
+                  <td className="py-3 px-4 text-right">
+                    <span className="font-bold text-slate-900 text-lg">
+                      {billableHandlingUnits.toLocaleString()}
+                    </span>
+                  </td>
+                )}
               </tr>
             </tfoot>
           </table>
@@ -1716,15 +1831,25 @@ function StepReviewSubmit({
         </div>
         <div className="p-4">
           <div className="space-y-3">
-            {/* Fulfillment Fee */}
+            {/* Outgoing handling fee (rate card: $1.00 per case/bottle) */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Package className="w-4 h-4 text-slate-400" />
-                <span className="text-sm text-slate-600">Fulfillment Fee</span>
-                <span className="text-xs text-slate-400">({totalItems} items @ $0.50/item)</span>
+                <span className="text-sm text-slate-600">Outgoing Handling</span>
+                <span className="text-xs text-slate-400">
+                  ({billableHandlingUnits.toLocaleString()}{" "}
+                  {usesCaseBilling ? "case" : "unit"}
+                  {billableHandlingUnits === 1 ? "" : "s"} @ $
+                  {outboundHandlingRate.toFixed(2)}/
+                  {usesCaseBilling ? "case" : "unit"}
+                  {usesCaseBilling && totalItems !== billableHandlingUnits
+                    ? ` · ${totalItems.toLocaleString()} units`
+                    : ""}
+                  )
+                </span>
               </div>
               <span className="text-sm font-medium text-slate-900">
-                ${(totalItems * 0.50).toFixed(2)}
+                ${estimatedHandlingFee.toFixed(2)}
               </span>
             </div>
 
@@ -1757,7 +1882,7 @@ function StepReviewSubmit({
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-slate-700">Estimated Total</span>
                 <span className="text-lg font-bold text-slate-900">
-                  ${((totalItems * 0.50) + (additionalInfo.isRushOrder ? 15 : 0)).toFixed(2)}
+                  ${(estimatedHandlingFee + (additionalInfo.isRushOrder ? 15 : 0)).toFixed(2)}
                   <span className="text-sm font-normal text-slate-500 ml-1">+ shipping</span>
                 </span>
               </div>

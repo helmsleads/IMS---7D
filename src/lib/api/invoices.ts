@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase";
 import { Invoice, InvoiceItem, InvoiceStatus, UsageRecord, WorkflowProfile } from "@/types/database";
 import { getOrderSupplies } from "@/lib/api/supplies";
+import { toBillableHandlingUnits } from "@/lib/api/billing-codes";
 
 export interface InvoiceFilters {
   clientId?: string;
@@ -505,7 +506,10 @@ export async function generateShipmentInvoice(orderId: string): Promise<Invoice 
       client_id,
       shipped_date,
       client_shipping_cost,
-      items:outbound_items (qty_shipped)
+      items:outbound_items (
+        qty_shipped,
+        product:products (units_per_case, container_type)
+      )
     `)
     .eq("id", orderId)
     .single();
@@ -535,9 +539,21 @@ export async function generateShipmentInvoice(orderId: string): Promise<Invoice 
     return null;
   }
 
-  // 3. Calculate total units shipped
-  const items = order.items as { qty_shipped: number }[];
-  const totalUnitsShipped = items.reduce((sum, i) => sum + (i.qty_shipped || 0), 0);
+  // 3. Calculate billable handling units (cases when units_per_case is set)
+  const items = order.items as {
+    qty_shipped: number;
+    product?: { units_per_case?: number | null; container_type?: string | null } | { units_per_case?: number | null; container_type?: string | null }[];
+  }[];
+  let usesCaseBilling = false;
+  const totalUnitsShipped = items.reduce((sum, i) => {
+    const product = Array.isArray(i.product) ? i.product[0] : i.product;
+    const qty = i.qty_shipped || 0;
+    if (product?.container_type === "keg") return sum + qty;
+    const upc = product?.units_per_case;
+    if ((upc ?? 1) > 1) usesCaseBilling = true;
+    return sum + toBillableHandlingUnits(qty, upc);
+  }, 0);
+  const handlingUnitLabel = usesCaseBilling ? "cases" : "units";
 
   // 4. Fetch supply usage for this order
   const supplyUsage = await getOrderSupplies(orderId);
@@ -553,7 +569,7 @@ export async function generateShipmentInvoice(orderId: string): Promise<Invoice 
   const pickRate = profile.billing_pick_rate || 0;
   if (pickRate > 0 && totalUnitsShipped > 0) {
     lineItems.push({
-      description: `Pick fee (${totalUnitsShipped} units)`,
+      description: `Pick fee (${totalUnitsShipped} ${handlingUnitLabel})`,
       quantity: totalUnitsShipped,
       unit_price: pickRate,
       total: totalUnitsShipped * pickRate,
@@ -563,7 +579,7 @@ export async function generateShipmentInvoice(orderId: string): Promise<Invoice 
   const packRate = profile.billing_pack_rate || 0;
   if (packRate > 0 && totalUnitsShipped > 0) {
     lineItems.push({
-      description: `Pack fee (${totalUnitsShipped} units)`,
+      description: `Pack fee (${totalUnitsShipped} ${handlingUnitLabel})`,
       quantity: totalUnitsShipped,
       unit_price: packRate,
       total: totalUnitsShipped * packRate,
