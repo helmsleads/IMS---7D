@@ -17,6 +17,7 @@ import {
   updateUserNotificationSettingAdmin,
   AdminUserNotificationSettings,
 } from "@/lib/api/notifications";
+import { getSystemSetting } from "@/lib/api/settings";
 
 const NOTIFICATION_COLUMNS: {
   id: NotificationType;
@@ -37,13 +38,23 @@ export default function StaffNotificationsPage() {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
+  const [orderNotificationsEnabled, setOrderNotificationsEnabled] = useState(true);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await getAllUsersNotificationSettings();
+      const [data, orderSwitch] = await Promise.all([
+        getAllUsersNotificationSettings(),
+        getSystemSetting("notifications", "send_order_notifications"),
+      ]);
       setUsers(data);
+      // Missing setting defaults to enabled
+      setOrderNotificationsEnabled(
+        orderSwitch == null ||
+          (orderSwitch.setting_value !== false &&
+            orderSwitch.setting_value !== "false")
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load settings");
     } finally {
@@ -185,6 +196,25 @@ export default function StaffNotificationsPage() {
           >
             Retry
           </button>
+        </div>
+      )}
+
+      {!loading && !orderNotificationsEnabled && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2 text-amber-900 text-sm">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">Order Notifications are turned off globally</p>
+            <p className="mt-0.5">
+              Staff will not get new-order emails until you enable{" "}
+              <Link
+                href="/settings/system"
+                className="underline font-medium hover:text-amber-950"
+              >
+                System Settings → Notifications → Order Notifications
+              </Link>
+              .
+            </p>
+          </div>
         </div>
       )}
 
