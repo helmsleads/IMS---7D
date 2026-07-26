@@ -46,10 +46,16 @@ export async function getNotificationRecipients(
   return emails;
 }
 
+const DISABLED_DEFAULTS: Record<NotificationType, boolean> = {
+  new_order: false,
+  order_shipped: false,
+  low_stock: false,
+  inbound_arrived: false,
+};
+
 /**
- * Gets notification settings for a user
- * @param userId - The user's UUID
- * @returns Object with notification type as key and enabled status as value
+ * Gets notification settings for a user.
+ * Missing rows default to false so the UI matches who actually receives email.
  */
 export async function getUserNotificationSettings(
   userId: string
@@ -63,21 +69,10 @@ export async function getUserNotificationSettings(
 
   if (error) {
     console.error("Error fetching user notification settings:", error);
-    return {
-      new_order: true,
-      order_shipped: true,
-      low_stock: true,
-      inbound_arrived: true,
-    };
+    return { ...DISABLED_DEFAULTS };
   }
 
-  // Default all to true, then override with user's settings
-  const settings: Record<NotificationType, boolean> = {
-    new_order: true,
-    order_shipped: true,
-    low_stock: true,
-    inbound_arrived: true,
-  };
+  const settings: Record<NotificationType, boolean> = { ...DISABLED_DEFAULTS };
 
   (data || []).forEach((setting) => {
     const type = setting.notification_type as NotificationType;
@@ -87,6 +82,56 @@ export async function getUserNotificationSettings(
   });
 
   return settings;
+}
+
+export interface AdminUserNotificationSettings {
+  userId: string;
+  name: string;
+  email: string;
+  role: string;
+  active: boolean;
+  settings: Record<NotificationType, boolean>;
+}
+
+/** Admin: list all staff notification preferences */
+export async function getAllUsersNotificationSettings(): Promise<AdminUserNotificationSettings[]> {
+  const response = await fetch("/api/notification-settings", {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || "Failed to load notification settings");
+  }
+
+  return result.users || [];
+}
+
+/** Admin: update another user's notification preference */
+export async function updateUserNotificationSettingAdmin(
+  userId: string,
+  notificationType: NotificationType,
+  enabled: boolean
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch("/api/notification-settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, notificationType, enabled }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      return { success: false, error: result.error || "Failed to update setting" };
+    }
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to update setting",
+    };
+  }
 }
 
 /**

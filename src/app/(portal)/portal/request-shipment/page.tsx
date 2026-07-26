@@ -1582,6 +1582,13 @@ function StepReviewSubmit({
         throw new Error(`Failed to create order items: ${itemsError.message}`);
       }
 
+      // Notify internal staff (fire-and-forget; do not block portal success)
+      fetch("/api/email/new-order-alert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      }).catch((err) => console.error("Failed to send new order alert:", err));
+
       // 5. Show success confirmation
       setSubmitSuccess({ orderId, orderNumber });
 

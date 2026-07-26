@@ -27,6 +27,12 @@ const ADMIN_SETTINGS = [
     icon: GitBranch,
   },
   {
+    href: "/settings/notifications",
+    label: "Staff Notifications",
+    description: "Who gets order and alert emails",
+    icon: Bell,
+  },
+  {
     href: "/settings/system",
     label: "System Settings",
     description: "Inventory, billing, and notifications",
@@ -179,10 +185,10 @@ const NOTIFICATION_OPTIONS: NotificationConfig[] = [
 function NotificationsTab() {
   const [userId, setUserId] = useState<string | null>(null);
   const [settings, setSettings] = useState<Record<NotificationType, boolean>>({
-    new_order: true,
-    order_shipped: true,
-    low_stock: true,
-    inbound_arrived: true,
+    new_order: false,
+    order_shipped: false,
+    low_stock: false,
+    inbound_arrived: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<NotificationType | null>(null);
@@ -193,8 +199,16 @@ function NotificationsTab() {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
-        setUserId(user.id);
-        const userSettings = await getUserNotificationSettings(user.id);
+        // Prefer internal users.id (may differ from auth id on legacy rows)
+        const { data: staffUser } = await supabase
+          .from("users")
+          .select("id")
+          .or(`id.eq.${user.id},auth_id.eq.${user.id}`)
+          .maybeSingle();
+
+        const resolvedId = staffUser?.id || user.id;
+        setUserId(resolvedId);
+        const userSettings = await getUserNotificationSettings(resolvedId);
         setSettings(userSettings);
       }
 
@@ -275,7 +289,11 @@ function NotificationsTab() {
       </div>
 
       <p className="text-sm text-slate-400 mt-6">
-        Changes are saved automatically
+        Changes are saved automatically. Admins can also manage staff recipients under{" "}
+        <a href="/settings/notifications" className="text-indigo-600 hover:underline">
+          Settings → Staff Notifications
+        </a>
+        .
       </p>
     </div>
   );

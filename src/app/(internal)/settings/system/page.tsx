@@ -393,14 +393,16 @@ const SETTING_CATEGORIES: SettingCategory[] = [
       {
         key: "send_order_notifications",
         label: "Order Notifications",
-        description: "Send email for new order requests",
+        description:
+          "Global kill-switch for new order emails. Staff recipients are managed under Settings → Staff Notifications.",
         type: "toggle",
         defaultValue: true,
       },
       {
         key: "send_inbound_notifications",
         label: "Inbound Notifications",
-        description: "Send email when inbound shipments arrive",
+        description:
+          "Global kill-switch for inbound arrival emails. Staff recipients are managed under Settings → Staff Notifications.",
         type: "toggle",
         defaultValue: true,
       },

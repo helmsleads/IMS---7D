@@ -383,56 +383,9 @@ export async function createOutboundOrder(
     },
   });
 
-  // Send internal alert for new pending orders
+  // Send internal alert for new pending orders (server-side SES via API)
   if (status === "pending" && order.client_id) {
-    // Fetch client and product details for the alert
-    const { data: clientData } = await supabase
-      .from("clients")
-      .select("company_name, contact_name, email")
-      .eq("id", order.client_id)
-      .single();
-
-    const { data: itemsData } = await supabase
-      .from("outbound_items")
-      .select(`
-        qty_requested,
-        product:products (name, sku)
-      `)
-      .eq("order_id", outboundOrder.id);
-
-    if (clientData && itemsData) {
-      const alertItems = itemsData.map((item) => {
-        const product = Array.isArray(item.product) ? item.product[0] : item.product;
-        return {
-          productName: product?.name || "Unknown",
-          sku: product?.sku || "",
-          qtyRequested: item.qty_requested,
-        };
-      });
-
-      // Parse address from ship_to_address (format: "address, city, state zip")
-      const addressParts = (order.ship_to_address || "").split(",").map(s => s.trim());
-
-      sendInternalAlert("new_order", {
-        order: {
-          id: outboundOrder.id,
-          orderNumber,
-          createdAt: outboundOrder.created_at,
-          shipToAddress: addressParts[0] || "",
-          shipToCity: addressParts[1] || "",
-          shipToState: addressParts[2]?.split(" ")[0] || "",
-          shipToPostalCode: addressParts[2]?.split(" ")[1] || "",
-          isRush: false,
-          notes: order.notes,
-        },
-        client: {
-          companyName: clientData.company_name,
-          contactName: clientData.contact_name,
-          email: clientData.email,
-        },
-        items: alertItems,
-      }).catch((err) => console.error("Failed to send new order alert:", err));
-    }
+    fireAndForgetEmail("/api/email/new-order-alert", outboundOrder.id);
   }
 
   return outboundOrder;
