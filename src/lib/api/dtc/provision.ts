@@ -10,6 +10,7 @@ import {
   findActivePortalAccountByEmail,
   type DtcClientRecord,
 } from "@/lib/api/dtc/clients";
+import type { ClientUserRole } from "@/types/database";
 
 export type SignupSource = "dtc" | "7d_invitation";
 
@@ -25,6 +26,11 @@ export interface ProvisionDtcClientInput {
    * Used for DTC demo approvals after the submit-time company uniqueness check.
    */
   require_new_client?: boolean;
+  /**
+   * Portal membership role on the new/linked warehouse client.
+   * Defaults to owner (brand admin for the client).
+   */
+  portal_role?: ClientUserRole;
 }
 
 export interface ProvisionDtcClientResult {
@@ -65,6 +71,7 @@ export async function provisionDtcClientAndPortalUser(
   const brandAffiliation = (input.brand_affiliation ?? companyName)?.trim() || null;
   const signupSource: SignupSource = input.signup_source ?? "dtc";
   const contactName = input.contact_name?.trim() || companyName;
+  const portalRole: ClientUserRole = input.portal_role ?? "owner";
 
   if (!email) {
     const err = new Error("email is required");
@@ -146,7 +153,7 @@ export async function provisionDtcClientAndPortalUser(
         await supabase.from("client_users").insert({
           client_id: client.id,
           user_id: existingPortal.portal_user.id,
-          role: "owner",
+          role: portalRole,
           is_primary: true,
           invited_at: new Date().toISOString(),
           accepted_at: new Date().toISOString(),
@@ -172,7 +179,7 @@ export async function provisionDtcClientAndPortalUser(
     email,
     full_name: [first_name, last_name].filter(Boolean).join(" ") || companyName,
     user_type: "portal",
-    role: "owner",
+    role: portalRole,
     client_id: client.id,
   });
 

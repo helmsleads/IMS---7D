@@ -71,6 +71,13 @@ export async function POST(request: NextRequest) {
       brand_affiliation: body?.brand_affiliation ?? body?.company_name ?? null,
       signup_source: body?.signup_source === "7d_invitation" ? "7d_invitation" : "dtc",
       require_new_client: Boolean(body?.require_new_client),
+      portal_role:
+        body?.portal_role === "admin" ||
+        body?.portal_role === "member" ||
+        body?.portal_role === "viewer" ||
+        body?.portal_role === "owner"
+          ? body.portal_role
+          : undefined,
     });
 
     return NextResponse.json(
