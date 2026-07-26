@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
       contact_name: body?.contact_name ?? body?.name ?? null,
       brand_affiliation: body?.brand_affiliation ?? body?.company_name ?? null,
       signup_source: body?.signup_source === "7d_invitation" ? "7d_invitation" : "dtc",
+      require_new_client: Boolean(body?.require_new_client),
     });
 
     return NextResponse.json(

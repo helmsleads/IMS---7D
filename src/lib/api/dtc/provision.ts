@@ -20,6 +20,11 @@ export interface ProvisionDtcClientInput {
   /** Funnel reference — which brand the user said they belong to */
   brand_affiliation?: string | null;
   signup_source?: SignupSource;
+  /**
+   * When true, refuse to reuse an existing warehouse client by company/email.
+   * Used for DTC demo approvals after the submit-time company uniqueness check.
+   */
+  require_new_client?: boolean;
 }
 
 export interface ProvisionDtcClientResult {
@@ -78,6 +83,18 @@ export async function provisionDtcClientAndPortalUser(
     (await findActiveClientByCompanyName(companyName)) ??
     (await findActiveClientByEmail(email));
   let createdClient = false;
+
+  if (client && input.require_new_client) {
+    const byCompany = await findActiveClientByCompanyName(companyName);
+    const err = new Error(
+      byCompany
+        ? `A 7D client named "${companyName}" already exists. Demo requests for existing companies must be rejected.`
+        : `A 7D client already exists for email "${email}".`,
+    );
+    (err as Error & { status?: number; code?: string }).status = 409;
+    (err as Error & { code?: string }).code = "client_exists";
+    throw err;
+  }
 
   if (!client) {
     const { data, error } = await supabase
