@@ -34,6 +34,7 @@ import {
   Unplug,
   BookOpen,
   CalendarCheck,
+  MapPin,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import { getSystemSettings, setSystemSetting } from "@/lib/api/settings";
@@ -56,6 +57,12 @@ import {
   deleteAllBrandAliases,
   BrandAliasRow,
 } from "@/lib/api/brand-aliases";
+import { useAuth } from "@/lib/auth-context";
+import {
+  DEFAULT_ALCOHOL_RESTRICTED_US_STATES,
+} from "@/lib/dtc/alcohol-restricted-states";
+import UsStatesSelectMap from "@/components/settings/UsStatesSelectMap";
+import { US_STATE_NAMES } from "@/lib/dtc/us-state-paths";
 
 interface SettingCategory {
   id: string;
@@ -751,6 +758,9 @@ export default function SystemSettingsPage() {
 
       {/* FedEx Shipping Section */}
       <FedExShippingSection />
+
+      {/* Alcohol DTC restricted states (admin) */}
+      <AlcoholRestrictedStatesSection />
 
       {/* QuickBooks Online Section */}
       <QuickBooksSection />
@@ -1924,6 +1934,244 @@ const FEDEX_INITIAL: FedExFormState = {
   shipper_country: "US",
   shipper_phone: "",
 };
+
+function AlcoholRestrictedStatesSection() {
+  const { staffUser, loading: authLoading } = useAuth();
+  const isAdmin = staffUser?.role === "admin";
+  const [states, setStates] = useState<string[]>([...DEFAULT_ALCOHOL_RESTRICTED_US_STATES]);
+  const [savedStates, setSavedStates] = useState<string[]>([
+    ...DEFAULT_ALCOHOL_RESTRICTED_US_STATES,
+  ]);
+  const [source, setSource] = useState<"system_settings" | "default">("default");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ type: "success" | "error"; message: string } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
+    void loadStates();
+  }, [authLoading, isAdmin]);
+
+  const loadStates = async () => {
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/settings/alcohol-restricted-states");
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to load restricted states");
+      }
+      const next = Array.isArray(data.restricted_states)
+        ? data.restricted_states.map((s: string) => String(s).toUpperCase())
+        : [...DEFAULT_ALCOHOL_RESTRICTED_US_STATES];
+      setStates(next);
+      setSavedStates(next);
+      setSource(data.source === "system_settings" ? "system_settings" : "default");
+    } catch (err) {
+      console.error("Failed to load alcohol restricted states:", err);
+      setResult({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to load",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleState = (code: string) => {
+    if (!isAdmin) return;
+    setStates((prev) =>
+      prev.includes(code) ? prev.filter((s) => s !== code) : [...prev, code].sort(),
+    );
+  };
+
+  const hasChanges =
+    states.length !== savedStates.length ||
+    states.some((code) => !savedStates.includes(code));
+
+  const handleSave = async () => {
+    if (!isAdmin) return;
+    setSaving(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/settings/alcohol-restricted-states", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restricted_states: states }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to save");
+      }
+      const next = Array.isArray(data.restricted_states)
+        ? data.restricted_states.map((s: string) => String(s).toUpperCase())
+        : states;
+      setStates(next);
+      setSavedStates(next);
+      setSource("system_settings");
+      setResult({
+        type: "success",
+        message: "Alcohol restricted states saved. DTC checkout will use this list.",
+      });
+    } catch (err) {
+      setResult({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to save",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (authLoading || loading) {
+    return (
+      <Card padding="none" className="mb-6">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3">
+          <div className="p-2 bg-amber-100 rounded-lg">
+            <MapPin className="w-5 h-5 text-amber-700" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Alcohol DTC Restricted States
+            </h2>
+            <p className="text-sm text-gray-500">Loading...</p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <Card padding="none" className="mb-6">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3">
+          <div className="p-2 bg-amber-100 rounded-lg">
+            <MapPin className="w-5 h-5 text-amber-700" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Alcohol DTC Restricted States
+            </h2>
+            <p className="text-sm text-gray-500">
+              Admin access required to view and edit this setting.
+            </p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card padding="none" className="mb-6">
+      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-amber-100 rounded-lg">
+            <MapPin className="w-5 h-5 text-amber-700" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Alcohol DTC Restricted States
+            </h2>
+            <p className="text-sm text-gray-500">
+              US states where alcohol cannot be shipped via DTC. Used by the DTC portal
+              checkout.
+              {source === "default" ? " (showing defaults until first save)" : ""}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving || !hasChanges}
+          className={`
+            flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all
+            ${
+              hasChanges
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+            }
+          `}
+        >
+          {saving ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              Save
+            </>
+          )}
+        </button>
+      </div>
+
+      <div className="px-6 py-4 space-y-4">
+        {result ? (
+          <div
+            className={`rounded-lg px-3 py-2 text-sm ${
+              result.type === "success"
+                ? "bg-green-50 text-green-800 border border-green-200"
+                : "bg-red-50 text-red-800 border border-red-200"
+            }`}
+          >
+            {result.message}
+          </div>
+        ) : null}
+
+        <UsStatesSelectMap selected={states} onToggle={toggleState} />
+
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <p className="text-sm font-medium text-gray-800">
+              Restricted states ({states.length})
+            </p>
+            {states.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setStates([])}
+                className="text-xs font-medium text-gray-500 hover:text-red-600 transition-colors"
+              >
+                Clear all
+              </button>
+            ) : null}
+          </div>
+          {states.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {states.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => toggleState(code)}
+                  title={`Remove ${US_STATE_NAMES[code] || code}`}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
+                >
+                  <span className="font-mono">{code}</span>
+                  <span className="text-red-400">×</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">
+              No states selected — alcohol DTC is allowed everywhere in the US matrix.
+            </p>
+          )}
+        </div>
+
+        <p className="text-xs text-gray-500">
+          Red states on the map are restricted (alcohol not shippable via DTC). Click a
+          state to toggle, then Save.
+        </p>
+      </div>
+    </Card>
+  );
+}
 
 function FedExShippingSection() {
   const [form, setForm] = useState<FedExFormState>(FEDEX_INITIAL);
