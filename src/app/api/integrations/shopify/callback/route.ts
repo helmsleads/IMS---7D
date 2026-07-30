@@ -15,6 +15,20 @@ import type { IntegrationSettings } from '@/types/database'
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET!
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL!
 
+function redirectOAuthError(
+  reason: string,
+  dtcReturnUrl: string | null,
+  oauthSource: string | null,
+) {
+  if (oauthSource === 'dtc' && dtcReturnUrl) {
+    const sep = dtcReturnUrl.includes('?') ? '&' : '?'
+    return NextResponse.redirect(
+      `${dtcReturnUrl}${sep}shopify=error&reason=${encodeURIComponent(reason)}`,
+    )
+  }
+  return NextResponse.redirect(`${APP_URL}/portal/integrations?error=${encodeURIComponent(reason)}`)
+}
+
 /**
  * Handles the OAuth callback from Shopify
  * GET /api/integrations/shopify/callback?code=xxx&shop=xxx&state=xxx&hmac=xxx
@@ -26,10 +40,26 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state')
   const hmac = searchParams.get('hmac')
 
+  // Peek DTC return URL early so pre-parse failures can still send the user back to DTC.
+  let earlyDtcReturnUrl: string | null = null
+  let earlyOAuthSource: string | null = null
+  if (state?.includes(':')) {
+    try {
+      const stateData = state.split(':')[1]
+      const decoded = JSON.parse(atob(stateData))
+      earlyOAuthSource = decoded.source ?? null
+      if (typeof decoded.returnUrl === 'string' && decoded.returnUrl.startsWith('http')) {
+        earlyDtcReturnUrl = decoded.returnUrl
+      }
+    } catch {
+      /* ignore — fall through to portal redirect */
+    }
+  }
+
   // Validate required params
   if (!code || !shop || !state || !hmac) {
     console.error('Missing OAuth params:', { code: !!code, shop: !!shop, state: !!state, hmac: !!hmac })
-    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=missing_params`)
+    return redirectOAuthError('missing_params', earlyDtcReturnUrl, earlyOAuthSource)
   }
 
   // Verify HMAC signature
@@ -49,7 +79,7 @@ export async function GET(request: NextRequest) {
 
   if (hmac !== expectedHmac) {
     console.error('Invalid HMAC signature')
-    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=invalid_hmac`)
+    return redirectOAuthError('invalid_hmac', earlyDtcReturnUrl, earlyOAuthSource)
   }
 
   const shopDomain = normalizeShopifyShopDomain(shop)
@@ -60,8 +90,8 @@ export async function GET(request: NextRequest) {
 
   // Parse client ID / return URL from state
   let clientId: string
-  let oauthSource: string | null = null
-  let dtcReturnUrl: string | null = null
+  let oauthSource: string | null = earlyOAuthSource
+  let dtcReturnUrl: string | null = earlyDtcReturnUrl
   try {
     const decoded = JSON.parse(atob(stateData))
     clientId = decoded.clientId
@@ -73,7 +103,7 @@ export async function GET(request: NextRequest) {
     if (!clientId) throw new Error('No clientId in state')
   } catch (e) {
     console.error('Failed to parse state:', e)
-    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=invalid_state`)
+    return redirectOAuthError('invalid_state', earlyDtcReturnUrl, earlyOAuthSource)
   }
 
   if (oauthSource === 'dtc') {
@@ -91,10 +121,7 @@ export async function GET(request: NextRequest) {
       new Date(oauthState.expires_at).getTime() < Date.now()
     ) {
       console.error('Invalid DTC Shopify OAuth state/nonce')
-      const failUrl = dtcReturnUrl
-        ? `${dtcReturnUrl}${dtcReturnUrl.includes('?') ? '&' : '?'}shopify=error&reason=invalid_state`
-        : `${APP_URL}/portal/integrations?error=invalid_state`
-      return NextResponse.redirect(failUrl)
+      return redirectOAuthError('invalid_state', dtcReturnUrl, oauthSource)
     }
 
     if (!dtcReturnUrl && oauthState.return_url) {
@@ -104,7 +131,7 @@ export async function GET(request: NextRequest) {
     await supabaseForState.from('dtc_shopify_oauth_states').delete().eq('id', oauthState.id)
   } else if (!nonceCookie || nonceCookie !== stateNonce) {
     console.error('Invalid state/nonce')
-    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=invalid_state`)
+    return redirectOAuthError('invalid_state', dtcReturnUrl, oauthSource)
   }
 
   // Exchange code for expiring offline access token (+ refresh token)
@@ -113,7 +140,7 @@ export async function GET(request: NextRequest) {
     tokenData = await exchangeAuthorizationCode(shopDomain, code)
   } catch (e) {
     console.error('Token exchange error:', e)
-    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=token_exchange_failed`)
+    return redirectOAuthError('token_exchange_failed', dtcReturnUrl, oauthSource)
   }
 
   // Get shop info
@@ -198,7 +225,7 @@ export async function GET(request: NextRequest) {
 
   if (dbError) {
     console.error('Failed to save integration:', dbError)
-    return NextResponse.redirect(`${APP_URL}/portal/integrations?error=save_failed`)
+    return redirectOAuthError('save_failed', dtcReturnUrl, oauthSource)
   }
 
   const imsWarehouseId = await ensureIntegrationWarehouseLocation(supabase, integration.id)

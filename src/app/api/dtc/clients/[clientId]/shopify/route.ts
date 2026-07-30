@@ -102,24 +102,8 @@ export async function DELETE(
       });
     }
 
-    if (integration.access_token && integration.shop_domain) {
-      try {
-        const accessToken = await getShopifyAccessToken(integration);
-        await deregisterShopifyWebhooks(integration.shop_domain, accessToken);
-        if (integration.location_created_by_us && integration.shopify_location_id) {
-          await deactivateShopifyLocation(
-            integration.shop_domain,
-            accessToken,
-            integration.shopify_location_id,
-          ).catch((err) =>
-            console.warn("Failed to deactivate Shopify location (best effort):", err),
-          );
-        }
-      } catch (cleanupErr) {
-        console.warn("Shopify cleanup skipped (token/decrypt):", cleanupErr);
-      }
-    }
-
+    // Mark disconnected first so status APIs flip immediately (cleanup can be slow
+    // and was causing DTC timeouts → remirror → "still connected").
     const { error: updateError } = await supabase
       .from("client_integrations")
       .update({
@@ -136,6 +120,24 @@ export async function DELETE(
 
     if (updateError) {
       throw new Error(updateError.message);
+    }
+
+    if (integration.access_token && integration.shop_domain) {
+      try {
+        const accessToken = await getShopifyAccessToken(integration);
+        await deregisterShopifyWebhooks(integration.shop_domain, accessToken);
+        if (integration.location_created_by_us && integration.shopify_location_id) {
+          await deactivateShopifyLocation(
+            integration.shop_domain,
+            accessToken,
+            integration.shopify_location_id,
+          ).catch((err) =>
+            console.warn("Failed to deactivate Shopify location (best effort):", err),
+          );
+        }
+      } catch (cleanupErr) {
+        console.warn("Shopify cleanup skipped (token/decrypt):", cleanupErr);
+      }
     }
 
     return NextResponse.json({
