@@ -200,6 +200,7 @@ export default function ResetPasswordPage() {
         const inviteFlow =
           setupKind === "invite" ||
           setupKind === "recovery" ||
+          setupKind === "required" ||
           params.get("type") === "recovery" ||
           params.get("type") === "invite";
         await succeed(session.user.id, inviteFlow);

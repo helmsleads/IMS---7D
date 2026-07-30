@@ -65,6 +65,7 @@ import {
   updateUserProfile,
   ClientUserWithDetails,
 } from "@/lib/api/client-users";
+import { setClientDtcEnabled } from "@/lib/api/cross-login";
 import { ClientAddress, ClientUserRole } from "@/types/database";
 import {
   getClientProductValues,
@@ -149,10 +150,28 @@ export default function ClientDetailPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [updatingWorkflowOverride, setUpdatingWorkflowOverride] = useState(false);
+  const [updatingDtc, setUpdatingDtc] = useState(false);
 
   // QuickBooks sync
   const [qbConnected, setQbConnected] = useState(false);
   const [qbSyncing, setQbSyncing] = useState(false);
+
+  const handleToggleDtcEnabled = async () => {
+    if (!client) return;
+    setUpdatingDtc(true);
+    try {
+      const updated = await setClientDtcEnabled(client.id, !client.dtc_enabled);
+      setClient({
+        ...client,
+        dtc_enabled: updated.dtc_enabled,
+      });
+    } catch (error) {
+      console.error("Failed to update DTC access:", error);
+      alert(error instanceof Error ? error.message : "Failed to update DTC access");
+    } finally {
+      setUpdatingDtc(false);
+    }
+  };
 
   const handleSyncToQB = async () => {
     if (!client) return;
@@ -1032,6 +1051,59 @@ export default function ClientDetailPage() {
                   </p>
                 </div>
               )}
+            </Card>
+
+            {/* DTC Commerce */}
+            <Card>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <ExternalLink className="w-5 h-5 text-violet-600" />
+                  DTC Commerce
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleToggleDtcEnabled}
+                  disabled={updatingDtc}
+                  className={`
+                    relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
+                    transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2
+                    ${client.dtc_enabled ? "bg-violet-600" : "bg-gray-200"}
+                    ${updatingDtc ? "opacity-50 cursor-not-allowed" : ""}
+                  `}
+                  role="switch"
+                  aria-checked={!!client.dtc_enabled}
+                  aria-label="Approve DTC Commerce access"
+                >
+                  <span
+                    className={`
+                      pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0
+                      transition duration-200 ease-in-out
+                      ${client.dtc_enabled ? "translate-x-5" : "translate-x-0"}
+                    `}
+                  />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      client.dtc_enabled ? "bg-violet-500" : "bg-gray-400"
+                    }`}
+                  />
+                  <span
+                    className={`text-sm font-medium ${
+                      client.dtc_enabled ? "text-violet-700" : "text-gray-600"
+                    }`}
+                  >
+                    {client.dtc_enabled ? "Approved" : "Not approved"}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600">
+                  {client.dtc_enabled
+                    ? "This brand can open DTC Commerce from the client portal menu."
+                    : "Approve access so this brand sees DTC Commerce as enabled in their portal."}
+                </p>
+              </div>
             </Card>
 
             {/* Account Info */}

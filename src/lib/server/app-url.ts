@@ -100,7 +100,7 @@ export function getAppUrlForExternalLinks(): string {
   if (picked) return picked;
 
   if (!isProduction) {
-    return "http://localhost:3000";
+    return "http://localhost:3010";
   }
 
   return PRODUCTION_APP_URL;
@@ -116,7 +116,7 @@ export function getAppUrl(request?: Request): string {
   if (picked) return picked;
 
   if (!isProduction) {
-    return "http://localhost:3000";
+    return "http://localhost:3010";
   }
 
   return PRODUCTION_APP_URL;

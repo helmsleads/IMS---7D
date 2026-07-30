@@ -85,5 +85,11 @@ export async function POST(request: NextRequest) {
     .eq("user_id", user.id)
     .is("accepted_at", null);
 
+  await service
+    .from("user_profiles")
+    .update({ password_set_at: new Date().toISOString() })
+    .eq("id", user.id)
+    .is("password_set_at", null);
+
   return response;
 }

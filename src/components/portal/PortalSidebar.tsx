@@ -31,6 +31,8 @@ import {
   Eye,
   ArrowLeft,
   Boxes,
+  ExternalLink,
+  AlertTriangle,
 } from "lucide-react";
 
 interface NavLink {
@@ -123,6 +125,8 @@ export default function PortalSidebar({ companyName }: { companyName: string }) 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [dtcLoading, setDtcLoading] = useState(false);
+  const [dtcWarning, setDtcWarning] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeOrdersCount, setActiveOrdersCount] = useState(0);
   const [pendingReturnsCount, setPendingReturnsCount] = useState(0);
@@ -244,6 +248,61 @@ export default function PortalSidebar({ companyName }: { companyName: string }) 
       document.body.style.overflow = "";
     };
   }, [isOpen]);
+
+  const handleDtcClick = async () => {
+    if (dtcLoading) return;
+
+    if (!client?.dtc_enabled) {
+      const message =
+        "DTC Commerce is not enabled for your account yet. Ask your 7D admin to approve access.";
+      setDtcWarning(message);
+      window.alert(message);
+      return;
+    }
+
+    setDtcWarning("");
+    setDtcLoading(true);
+
+    // Must open synchronously on click — browsers block window.open after await
+    const popup = window.open("about:blank", "_blank");
+
+    try {
+      const res = await fetch("/api/cross-login/generate", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to generate cross-login");
+      }
+      if (!data.redirect_url) {
+        throw new Error("No DTC redirect URL returned");
+      }
+
+      if (popup && !popup.closed) {
+        popup.location.href = data.redirect_url;
+        popup.focus();
+      } else {
+        // Popup blocked — ask user, then try again via a temporary link
+        setDtcWarning(
+          "Your browser blocked the new tab. Allow popups for this site, then try again."
+        );
+        window.alert(
+          "Your browser blocked the new tab. Allow popups for this site, then try again."
+        );
+      }
+    } catch (err) {
+      console.error("Failed to generate DTC cross-login:", err);
+      if (popup && !popup.closed) {
+        popup.close();
+      }
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to open DTC Commerce. Please try again.";
+      setDtcWarning(message);
+      window.alert(message);
+    } finally {
+      setDtcLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -560,6 +619,68 @@ export default function PortalSidebar({ companyName }: { companyName: string }) 
               </ul>
             </div>
           ))}
+          {/* DTC Commerce — always visible; warns if not enabled by admin */}
+          <div className="mt-4 pt-4 border-t border-slate-700/50">
+            {!isCollapsed && (
+              <p className="px-3 mb-1 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                Commerce
+              </p>
+            )}
+            {isCollapsed && <div className="mx-auto w-6 border-t border-slate-700 mb-2" />}
+            <ul className="space-y-0.5">
+              <li>
+                <button
+                  onClick={handleDtcClick}
+                  disabled={dtcLoading}
+                  className={`
+                    w-full flex items-center gap-3 rounded-md transition-colors group relative
+                    ${isCollapsed ? "justify-center p-3" : "justify-between px-3 py-2"}
+                    ${
+                      client?.dtc_enabled
+                        ? "bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 text-violet-300 hover:from-violet-500/20 hover:to-fuchsia-500/20 hover:text-white"
+                        : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                    }
+                    disabled:opacity-50
+                  `}
+                  title={
+                    isCollapsed
+                      ? client?.dtc_enabled
+                        ? "DTC Commerce"
+                        : "DTC Commerce (not enabled)"
+                      : undefined
+                  }
+                >
+                  <div className={`flex items-center ${isCollapsed ? "" : "gap-3"}`}>
+                    <ExternalLink className="w-5 h-5" />
+                    {!isCollapsed && <span>DTC Commerce</span>}
+                  </div>
+                  {!isCollapsed && !client?.dtc_enabled && (
+                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  )}
+                  {isCollapsed && (
+                    <span className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
+                      {client?.dtc_enabled ? "DTC Commerce" : "DTC Commerce (not enabled)"}
+                    </span>
+                  )}
+                </button>
+              </li>
+            </ul>
+            {dtcWarning && !isCollapsed && (
+              <div className="mx-2 mt-2 flex gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-200">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-400" />
+                <div className="min-w-0 flex-1">
+                  <p>{dtcWarning}</p>
+                  <button
+                    type="button"
+                    onClick={() => setDtcWarning("")}
+                    className="mt-1 text-amber-300/80 underline hover:text-amber-200"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </nav>
 
         {/* User Section */}

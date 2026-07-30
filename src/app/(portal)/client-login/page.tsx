@@ -47,6 +47,20 @@ export default function ClientLoginPage() {
         .limit(1);
 
       if (clientUserAccess && clientUserAccess.length > 0) {
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("password_set_at")
+          .eq("id", authData.user.id)
+          .maybeSingle();
+
+        // Password login succeeded — they already have a password. Mark first-login complete.
+        if (profile && !profile.password_set_at) {
+          await supabase
+            .from("user_profiles")
+            .update({ password_set_at: new Date().toISOString() })
+            .eq("id", authData.user.id);
+        }
+
         router.push(redirectTo);
         return;
       }

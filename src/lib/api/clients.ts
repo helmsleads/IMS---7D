@@ -18,6 +18,7 @@ export interface Client {
   qb_customer_id: string | null;
   account_manager_id: string | null;
   account_manager?: { id: string; name: string } | null;
+  dtc_enabled?: boolean;
 }
 
 export interface ClientWithSummary extends Client {

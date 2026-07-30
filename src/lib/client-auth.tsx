@@ -13,6 +13,7 @@ interface Client {
   state: string | null;
   zip: string | null;
   industry?: string;
+  dtc_enabled?: boolean;
 }
 
 interface ClientAccess {
@@ -159,7 +160,7 @@ export function ClientProvider({ children }: { children: React.ReactNode }) {
                   is_primary,
                   client:clients (
                     id, company_name,
-                    address_line1, address_line2, city, state, zip, industry
+                    address_line1, address_line2, city, state, zip, industry, dtc_enabled
                   )
                 `)
                 .eq("user_id", viewUserId)
@@ -228,7 +229,7 @@ export function ClientProvider({ children }: { children: React.ReactNode }) {
             is_primary,
             client:clients (
               id, company_name,
-              address_line1, address_line2, city, state, zip, industry
+              address_line1, address_line2, city, state, zip, industry, dtc_enabled
             )
           `)
           .eq("user_id", userId)
@@ -288,7 +289,7 @@ export function ClientProvider({ children }: { children: React.ReactNode }) {
         // Fall back to legacy: check auth_id on clients table
         const { data: clientData } = await supabase
           .from("clients")
-          .select("id, company_name, address_line1, address_line2, city, state, zip, industry")
+          .select("id, company_name, address_line1, address_line2, city, state, zip, industry, dtc_enabled")
           .eq("auth_id", userId)
           .single();
 
