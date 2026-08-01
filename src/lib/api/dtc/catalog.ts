@@ -6,7 +6,7 @@ export interface DtcCatalogQuery {
   sku?: string;
 }
 
-function mapProduct(row: Record<string, unknown>) {
+function mapProduct(row: Record<string, unknown>, qtyAvailable: number | null = null) {
   const basePrice = Number(row.base_price ?? 0);
 
   return {
@@ -19,7 +19,38 @@ function mapProduct(row: Record<string, unknown>) {
     active: row.active !== false,
     image_url: row.image_url ?? null,
     container_type: row.container_type ?? null,
+    qty_available: qtyAvailable,
   };
+}
+
+async function loadQtyAvailableByProductIds(
+  supabase: ReturnType<typeof createServiceClient>,
+  productIds: string[],
+): Promise<Map<string, number>> {
+  const qtyByProduct = new Map<string, number>();
+  if (productIds.length === 0) {
+    return qtyByProduct;
+  }
+
+  const { data, error } = await supabase
+    .from("inventory")
+    .select("product_id, qty_on_hand, qty_reserved")
+    .in("product_id", productIds);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  for (const row of data ?? []) {
+    const productId = String(row.product_id);
+    const available = Math.max(
+      0,
+      Number(row.qty_on_hand ?? 0) - Number(row.qty_reserved ?? 0),
+    );
+    qtyByProduct.set(productId, (qtyByProduct.get(productId) ?? 0) + available);
+  }
+
+  return qtyByProduct;
 }
 
 export async function getDtcCatalog(clientId: string, query: DtcCatalogQuery = {}) {
@@ -51,10 +82,15 @@ export async function getDtcCatalog(clientId: string, query: DtcCatalogQuery = {
     throw new Error(error.message);
   }
 
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const productIds = rows.map((row) => String(row.id));
+  const qtyByProduct = await loadQtyAvailableByProductIds(supabase, productIds);
   const total = count ?? 0;
 
   return {
-    products: (data ?? []).map((row) => mapProduct(row as Record<string, unknown>)),
+    products: rows.map((row) =>
+      mapProduct(row, qtyByProduct.get(String(row.id)) ?? 0),
+    ),
     pagination: {
       page,
       limit,
@@ -79,5 +115,10 @@ export async function getDtcProduct(clientId: string, productId: string) {
     throw new Error(error.message);
   }
 
-  return data ? mapProduct(data as Record<string, unknown>) : null;
+  if (!data) {
+    return null;
+  }
+
+  const qtyByProduct = await loadQtyAvailableByProductIds(supabase, [productId]);
+  return mapProduct(data as Record<string, unknown>, qtyByProduct.get(productId) ?? 0);
 }

@@ -35,6 +35,8 @@ export interface CreateDtcOutboundOrderInput {
   ship_to?: DtcShipTo | null;
   items: DtcOrderItemInput[];
   notes?: string | null;
+  /** Brand preferred carrier from DTC (informational until label purchase). */
+  preferred_carrier?: string | null;
 }
 
 export async function findDtcOutboundOrder(clientId: string, externalOrderId: string) {
@@ -96,6 +98,11 @@ export async function createDtcOutboundOrder(
   }
 
   const shipTo = input.ship_to ?? {};
+  const preferredCarrier = input.preferred_carrier?.trim() || null;
+  const noteParts = [input.notes?.trim()].filter(Boolean) as string[];
+  if (preferredCarrier && !noteParts.some((n) => n.toLowerCase().includes("preferred carrier"))) {
+    noteParts.push(`Preferred carrier: ${preferredCarrier}`);
+  }
   const orderNumber = formatDtcOrderNumber(
     input.external_order_number ?? "",
     input.external_order_id,
@@ -125,7 +132,7 @@ export async function createDtcOutboundOrder(
       ship_to_country: shipTo.country ?? "US",
       ship_to_phone: shipTo.phone ?? null,
       ship_to_email: shipTo.email ?? null,
-      notes: input.notes ?? null,
+      notes: noteParts.join(". ") || null,
       requested_at: new Date().toISOString(),
     })
     .select(
@@ -164,6 +171,7 @@ export async function createDtcOutboundOrder(
       source: "dtc",
       external_order_id: input.external_order_id,
       item_count: lineItems.length,
+      preferred_carrier: preferredCarrier,
     },
   });
 
