@@ -8,6 +8,17 @@ export interface DtcShipEventPayload {
   carrier?: string | null;
   shipped_date?: string | null;
   order_number?: string | null;
+  /** Brand shipment fee in cents (shipping + handling). Charged via Stripe. */
+  amount_cents?: number | null;
+  shipping_cents?: number | null;
+  handling_cents?: number | null;
+}
+
+function dollarsToCents(value: number | null | undefined): number | null {
+  if (value == null || Number.isNaN(Number(value))) {
+    return null;
+  }
+  return Math.round(Number(value) * 100);
 }
 
 function getDtcBackendConfig() {
@@ -32,7 +43,9 @@ export async function notifyDtcOrderShipped(
     | "tracking_number"
     | "carrier"
     | "shipped_date"
-  > & { external_order_id: string },
+    | "shipping_cost"
+    | "client_shipping_cost"
+  > & { external_order_id: string; handling_cost?: number | null },
 ): Promise<void> {
   if (order.external_platform !== "dtc" || !order.external_order_id) {
     return;
@@ -44,6 +57,14 @@ export async function notifyDtcOrderShipped(
     return;
   }
 
+  const shippingCents =
+    dollarsToCents(order.client_shipping_cost) ?? dollarsToCents(order.shipping_cost);
+  const handlingCents = dollarsToCents(order.handling_cost ?? null);
+  const amountCents =
+    shippingCents != null || handlingCents != null
+      ? (shippingCents ?? 0) + (handlingCents ?? 0)
+      : null;
+
   const payload: DtcShipEventPayload = {
     external_order_id: order.external_order_id,
     seven_d_outbound_order_id: order.id,
@@ -52,6 +73,9 @@ export async function notifyDtcOrderShipped(
     carrier: order.carrier,
     shipped_date: order.shipped_date,
     order_number: order.order_number,
+    amount_cents: amountCents,
+    shipping_cents: shippingCents,
+    handling_cents: handlingCents,
   };
 
   const response = await fetch(`${baseUrl}/v1/webhooks/7d/ship`, {
