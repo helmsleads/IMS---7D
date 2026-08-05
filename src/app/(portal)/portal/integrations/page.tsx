@@ -115,8 +115,8 @@ export default function IntegrationsHubPage() {
           <ComingSoonCard
             name="Amazon"
             description="Connect your Amazon Seller Central account"
-            iconBg="bg-orange-100"
-            iconColor="text-orange-600"
+            iconBg="bg-[#232F3E]"
+            iconColor="text-[#FF9900]"
             icon={<AmazonIcon />}
           />
 
@@ -124,7 +124,7 @@ export default function IntegrationsHubPage() {
           <ComingSoonCard
             name="TikTok Shop"
             description="Sync with your TikTok Shop storefront"
-            iconBg="bg-slate-900"
+            iconBg="bg-black"
             iconColor="text-white"
             icon={<TikTokIcon />}
           />
@@ -133,8 +133,8 @@ export default function IntegrationsHubPage() {
           <ComingSoonCard
             name="eBay"
             description="Connect your eBay seller account"
-            iconBg="bg-blue-100"
-            iconColor="text-blue-600"
+            iconBg="bg-white ring-1 ring-slate-200"
+            iconColor="text-slate-900"
             icon={<EbayIcon />}
           />
 
@@ -142,8 +142,8 @@ export default function IntegrationsHubPage() {
           <ComingSoonCard
             name="WooCommerce"
             description="Sync with your WooCommerce store"
-            iconBg="bg-purple-100"
-            iconColor="text-purple-600"
+            iconBg="bg-[#7F54B3]"
+            iconColor="text-white"
             icon={<WooCommerceIcon />}
           />
         </div>
@@ -172,8 +172,13 @@ function ShopifyCard({
       <div className="p-6">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-              <ShopifyIcon className="w-7 h-7 text-green-600" />
+            <div className="w-12 h-12 bg-[#f6f6f7] rounded-xl flex items-center justify-center ring-1 ring-slate-200/80 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/brand/shopify-logo.svg"
+                alt=""
+                className="w-8 h-8 object-contain"
+              />
             </div>
             <div>
               <h3 className="text-lg font-semibold text-slate-900">Shopify</h3>
@@ -944,17 +949,9 @@ function ComingSoonCard({
 
 /* ─── Platform Icons ─── */
 
-function ShopifyIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M15.337 3.415c-.182-.04-.364.062-.437.226-.073.164-1.09 2.108-1.09 2.108s-.71-.49-1.56-.347c-2.51.416-3.093 3.174-3.093 3.174l-3.51 1.072s-.255.073-.328.255c-.073.182.037.364.164.473l7.565 5.565c.073.055.164.091.255.091.055 0 .109-.018.164-.036l6.51-3.4c.2-.109.291-.364.2-.582l-4.34-8.6z" />
-    </svg>
-  )
-}
-
 function AmazonIcon() {
   return (
-    <svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
+    <svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
       <path d="M13.958 10.09c0 1.232.029 2.256-.591 3.351-.502.891-1.301 1.44-2.186 1.44-1.214 0-1.922-.924-1.922-2.292 0-2.692 2.415-3.182 4.7-3.182v.683zm3.186 7.705a.66.66 0 01-.753.077c-1.06-.876-1.248-1.282-1.829-2.117-1.749 1.784-2.987 2.317-5.253 2.317-2.683 0-4.771-1.655-4.771-4.967 0-2.587 1.401-4.348 3.394-5.209 1.727-.753 4.139-.886 5.982-1.098v-.41c0-.753.058-1.642-.384-2.292-.384-.576-1.117-.814-1.764-.814-1.199 0-2.266.615-2.527 1.89a.512.512 0 01-.441.442l-2.455-.264a.432.432 0 01-.365-.512C6.637 2.107 9.261 1 11.598 1c1.193 0 2.751.317 3.692 1.222 1.193 1.117 1.079 2.607 1.079 4.229v3.83c0 1.152.478 1.657.927 2.28.16.222.195.487-.01.652-.512.428-1.423 1.222-1.923 1.667l-.22-.086z" />
       <path d="M21.543 18.756c-2.44 1.8-5.98 2.757-9.025 2.757-4.27 0-8.114-1.578-11.022-4.204-.228-.206-.024-.487.25-.327 3.138 1.826 7.016 2.925 11.022 2.925 2.703 0 5.675-.56 8.412-1.72.413-.177.758.271.363.569z" />
     </svg>
@@ -963,7 +960,7 @@ function AmazonIcon() {
 
 function TikTokIcon() {
   return (
-    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
       <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.3 0 .59.04.86.12V9.01a6.33 6.33 0 00-.86-.06 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.55a8.18 8.18 0 004.77 1.53V6.63a4.84 4.84 0 01-1-.06v.12z" />
     </svg>
   )
@@ -971,16 +968,21 @@ function TikTokIcon() {
 
 function EbayIcon() {
   return (
-    <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none">
-      <text x="2" y="17" fontSize="12" fontWeight="bold" fontFamily="system-ui" fill="currentColor">eB</text>
+    <svg className="w-8 h-5" viewBox="0 0 64 26" aria-hidden>
+      <text x="0" y="20" fontSize="18" fontWeight="800" fontFamily="Arial Black, Arial, sans-serif">
+        <tspan fill="#E53238">e</tspan>
+        <tspan fill="#0064D2">b</tspan>
+        <tspan fill="#F5AF02">a</tspan>
+        <tspan fill="#86B817">y</tspan>
+      </text>
     </svg>
   )
 }
 
 function WooCommerceIcon() {
   return (
-    <svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M2.227 4.857A3.612 3.612 0 000 8.197v7.063c0 1.352.76 2.606 1.97 3.24l6.4 3.457c.67.342 1.45.514 2.23.514.78 0 1.56-.172 2.23-.514l6.4-3.457A3.612 3.612 0 0021.2 15.26V8.197a3.612 3.612 0 00-2.227-3.34L12.573 1.4a4.243 4.243 0 00-4.146 0L2.227 4.857zM7.2 9.5c-.8 0-1.5.7-1.5 1.5 0 2.2 1.2 4 2.7 4s2.7-1.8 2.7-4c0-.8-.7-1.5-1.5-1.5s-1.5.7-1.5 1.5c0 .4.4.8.7 1-.2.7-.5 1.3-.9 1.3s-.9-.6-.9-1.3c0-.8.7-1.5 1.5-1.5-.8 0-1.3-.2-1.3-1z" />
+    <svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M2.227 4.857A3.612 3.612 0 000 8.197v7.063c0 1.352.76 2.606 1.97 3.24l6.4 3.457c.67.342 1.45.514 2.23.514.78 0 1.56-.172 2.23-.514l6.4-3.457A3.612 3.612 0 0021.2 15.26V8.197a3.612 3.612 0 00-2.227-3.34L12.573 1.4a4.243 4.243 0 00-4.146 0L2.227 4.857zm9.846 12.33c-2.18 0-4.01-1.3-4.72-3.31l-.07-.2.07-.2c.71-2.01 2.54-3.31 4.72-3.31 1.07 0 2.06.32 2.9.9l.14.1-.58 1.38-.14-.09a3.13 3.13 0 00-2.32-.72c-1.32 0-2.46.74-2.96 1.84h6.11l.05.16c.09.3.14.61.14.93 0 2.28-1.86 4.11-4.14 4.11zm6.34-.18l-1.66-5.99h1.84l.94 3.92 1.02-3.92h1.7l-1.78 5.99h-2.06z" />
     </svg>
   )
 }

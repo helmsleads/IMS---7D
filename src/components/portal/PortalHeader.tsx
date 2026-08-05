@@ -2,6 +2,7 @@
 
 import { Menu } from "lucide-react";
 import { useMobileMenu } from "@/lib/mobile-menu-context";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export default function PortalHeader() {
   const { toggle } = useMobileMenu();
@@ -19,11 +20,8 @@ export default function PortalHeader() {
         </button>
 
         {/* Centered Logo */}
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-teal-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">7D</span>
-          </div>
-          <span className="text-lg font-bold text-slate-900">7 Degrees</span>
+        <div className="flex items-center">
+          <BrandLogo variant="horizontal" width={148} height={29} className="h-7 w-auto" />
         </div>
 
         {/* Spacer for centering */}

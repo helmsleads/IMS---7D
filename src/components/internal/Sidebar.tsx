@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useMobileMenu } from "@/lib/mobile-menu-context";
 import { signOut } from "@/lib/auth";
 import { createClient } from "@/lib/supabase";
+import { BrandLogo } from "@/components/BrandLogo";
 import {
   LayoutDashboard,
   Package,
@@ -340,9 +341,11 @@ export default function Sidebar() {
         `}
       >
         {/* Header */}
-        <div className={`p-4 flex items-center border-b border-slate-700/50 ${isCollapsed ? "justify-center" : "justify-between"}`}>
-          {!isCollapsed && (
-            <h1 className="text-xl font-bold text-white">7 Degrees Co</h1>
+        <div className={`p-4 flex items-center border-b border-slate-700/50 ${isCollapsed ? "justify-center gap-0" : "justify-between gap-2"}`}>
+          {isCollapsed ? (
+            <BrandLogo variant="icon" width={28} height={20} className="h-5 w-auto" />
+          ) : (
+            <BrandLogo variant="horizontal" width={150} height={29} className="h-7 w-auto min-w-0" />
           )}
           <button
             onClick={() => setIsOpen(false)}

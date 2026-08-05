@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export default function ClientLoginPage() {
   const router = useRouter();
@@ -90,15 +91,16 @@ export default function ClientLoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-cyan-950 to-slate-900">
       <div className="bg-white p-8 rounded-xl shadow-2xl shadow-black/20 w-full max-w-md border-t-4 border-t-cyan-500">
-        <div className="flex justify-center mb-4">
-          <div className="w-14 h-14 bg-gradient-to-br from-cyan-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-cyan-600/20">
-            <span className="text-white font-bold text-xl">7D</span>
-          </div>
+        <div className="flex justify-center mb-5">
+          <BrandLogo
+            variant="stacked"
+            width={140}
+            height={143}
+            className="h-28 w-auto"
+            priority
+          />
         </div>
-        <h1 className="text-2xl font-bold text-center text-slate-900">
-          7 Degrees Co
-        </h1>
-        <p className="text-center text-cyan-600 mt-1 font-medium">
+        <p className="text-center text-slate-500 text-sm font-medium tracking-wide uppercase">
           Client Portal
         </p>
         <form onSubmit={handleLogin} className="mt-6 space-y-4">

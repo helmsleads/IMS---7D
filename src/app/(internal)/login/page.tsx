@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -68,15 +69,18 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900">
       <div className="bg-white p-8 rounded-xl shadow-2xl shadow-black/20 w-full max-w-md">
-        <div className="flex justify-center mb-4">
-          <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-600/20">
-            <span className="text-white font-bold text-xl">7D</span>
-          </div>
+        <div className="flex justify-center mb-5">
+          <BrandLogo
+            variant="stacked"
+            width={140}
+            height={143}
+            className="h-28 w-auto"
+            priority
+          />
         </div>
-        <h1 className="text-2xl font-bold text-center text-slate-900">
-          7 Degrees Co
-        </h1>
-        <p className="text-center text-slate-400 mt-1">Team Login</p>
+        <p className="text-center text-slate-500 text-sm font-medium tracking-wide uppercase">
+          Team Login
+        </p>
         <form onSubmit={handleLogin} className="mt-6 space-y-4">
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">

@@ -16,6 +16,14 @@ export const metadata: Metadata = {
     default: "7 Degrees Inventory Management",
   },
   description: "Inventory management system for 7 Degrees Co.",
+  icons: {
+    icon: [
+      { url: "/favicon.png", sizes: "32x32", type: "image/png" },
+      { url: "/brand/app-icon.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+  themeColor: "#020617",
 };
 
 export default function RootLayout({

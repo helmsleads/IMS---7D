@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -114,11 +115,16 @@ export default function LoginPage() {
       <div className="relative w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl shadow-lg shadow-blue-500/25 mb-4">
-            <span className="text-white font-bold text-3xl">7D</span>
+          <div className="inline-flex items-center justify-center mb-5">
+            <BrandLogo
+              variant="stacked"
+              width={168}
+              height={172}
+              className="drop-shadow-lg"
+              priority
+            />
           </div>
-          <h1 className="text-3xl font-bold text-white">7 Degrees Co</h1>
-          <p className="text-slate-400 mt-2">Inventory Management System</p>
+          <p className="text-slate-400 mt-1">Inventory Management System</p>
         </div>
 
         {/* Login Card */}

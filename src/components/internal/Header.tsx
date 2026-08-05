@@ -4,6 +4,7 @@ import { ReactNode, useState, useRef, useEffect } from "react";
 import { Menu, MoreVertical, Search, Command } from "lucide-react";
 import { useMobileMenu } from "@/lib/mobile-menu-context";
 import { useKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
+import { BrandLogo } from "@/components/BrandLogo";
 
 interface HeaderProps {
   title: string;
@@ -46,7 +47,7 @@ export default function Header({
         </button>
 
         {/* Centered Logo */}
-        <span className="text-lg font-bold text-slate-900">7 Degrees</span>
+        <BrandLogo variant="horizontal" width={148} height={29} className="h-7 w-auto" />
 
         {/* Search + Actions */}
         <div className="flex items-center">
