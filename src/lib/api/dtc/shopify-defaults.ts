@@ -1,6 +1,9 @@
-/** Default settings matching 7D portal Shopify integration. */
+/** Default settings for DTC-connected Shopify (shared 7D client_integrations).
+ * auto_import_orders=false: do not create 7D outbound until DTC verifies age/ID and pushes.
+ */
 export const DEFAULT_SHOPIFY_INTEGRATION_SETTINGS = {
-  auto_import_orders: true,
+  auto_import_orders: false,
+  dtc_verify_before_fulfill: true,
   auto_sync_inventory: false,
   auto_sync_prices: false,
   sync_inventory_interval_minutes: 60,

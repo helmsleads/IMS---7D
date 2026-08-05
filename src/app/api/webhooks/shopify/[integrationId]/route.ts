@@ -6,10 +6,14 @@ import {
   syncShopifyOrderStatusFromPayload,
 } from '@/lib/api/shopify/order-sync'
 import type { IntegrationSettings } from '@/types/database'
+import {
+  forwardShopifyOrderToDtc,
+  shouldForwardShopifyOrderToDtc,
+} from '@/lib/api/dtc/shopify-forward'
 
 function isAutoImportEnabled(integration: Record<string, unknown>): boolean {
   const settings = (integration.settings ?? {}) as IntegrationSettings
-  // Default true when unset (matches DB default JSON)
+  // Default true when unset (matches DB default JSON for classic 7D portal)
   return settings.auto_import_orders !== false
 }
 import { checkWebhookRateLimit } from '@/lib/rate-limit'
@@ -210,6 +214,29 @@ async function handleOrderCreate(
   payload: Record<string, unknown>,
   integration: Record<string, unknown>
 ): Promise<void> {
+  // DTC Alcohol path: government ID in DTC before any 7D fulfill.
+  if (shouldForwardShopifyOrderToDtc(integration)) {
+    const financial = String(payload.financial_status || "").toLowerCase();
+    if (financial && financial !== "paid" && financial !== "partially_paid") {
+      console.log(
+        `DTC forward skipped for unpaid Shopify order ${payload.name} (${financial})`,
+      );
+      return;
+    }
+    const result = await forwardShopifyOrderToDtc(payload, {
+      id: String(integration.id),
+      client_id: String(integration.client_id),
+      shop_domain: (integration.shop_domain as string | null) ?? null,
+    });
+    if (!result.ok) {
+      throw new Error(
+        `Failed to forward Shopify order to DTC: ${result.body || result.status || "unknown"}`,
+      );
+    }
+    console.log(`Forwarded Shopify order ${payload.name} to DTC for ID verification`);
+    return;
+  }
+
   if (!isAutoImportEnabled(integration)) {
     console.log(`Auto-import disabled for integration, skipping order ${payload.name}`)
     return
