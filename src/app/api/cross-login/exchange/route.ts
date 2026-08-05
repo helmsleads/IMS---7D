@@ -48,25 +48,74 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceClient();
 
-    const { data: profile, error: profileError } = await supabase
+    // Prefer explicit link; fall back to seven_d_user_id / matching email (common for staging).
+    let profile: { id: string; email: string | null } | null = null;
+
+    const { data: byDtcId, error: byDtcIdError } = await supabase
       .from("user_profiles")
       .select("id, email")
       .eq("dtc_user_id", dtcUser.id)
       .maybeSingle();
 
-    if (profileError) {
-      console.error("cross-login/exchange: profile lookup failed", profileError);
+    if (byDtcIdError) {
+      console.error("cross-login/exchange: profile lookup by dtc_user_id failed", byDtcIdError);
       return NextResponse.json(
         { error: "Failed to look up linked user" },
         { status: 500 },
       );
     }
+    profile = byDtcId;
+
+    if (!profile?.email && dtcUser.seven_d_user_id) {
+      const { data: bySevenDId, error: bySevenDError } = await supabase
+        .from("user_profiles")
+        .select("id, email")
+        .eq("id", dtcUser.seven_d_user_id)
+        .maybeSingle();
+      if (bySevenDError) {
+        console.error(
+          "cross-login/exchange: profile lookup by seven_d_user_id failed",
+          bySevenDError,
+        );
+      } else {
+        profile = bySevenDId;
+      }
+    }
+
+    if (!profile?.email && dtcUser.email) {
+      const email = String(dtcUser.email).trim().toLowerCase();
+      const { data: byEmail, error: byEmailError } = await supabase
+        .from("user_profiles")
+        .select("id, email")
+        .ilike("email", email)
+        .maybeSingle();
+      if (byEmailError) {
+        console.error("cross-login/exchange: profile lookup by email failed", byEmailError);
+      } else {
+        profile = byEmail;
+      }
+    }
 
     if (!profile?.email) {
       return NextResponse.json(
-        { error: "No linked 7D account found for this DTC user" },
+        {
+          error:
+            "No linked 7D account found for this DTC user. Open 7D first and use DTC Commerce once to link accounts, or ensure the same email exists as a 7D portal user.",
+        },
         { status: 403 },
       );
+    }
+
+    // Persist link for next DTC → 7D hop
+    if (dtcUser.id) {
+      const { error: linkError } = await supabase
+        .from("user_profiles")
+        .update({ dtc_user_id: dtcUser.id })
+        .eq("id", profile.id)
+        .is("dtc_user_id", null);
+      if (linkError) {
+        console.warn("cross-login/exchange: could not auto-link dtc_user_id", linkError);
+      }
     }
 
     const appOrigin = getAppUrl(request);
