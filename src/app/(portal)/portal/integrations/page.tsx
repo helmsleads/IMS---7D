@@ -385,16 +385,30 @@ function ShopifyConnectForm({
             type="text"
             value={shopDomain}
             onChange={(e) => setShopDomain(e.target.value)}
-            placeholder={isTest ? 'your-dev-store' : 'your-store-name'}
+            placeholder={isTest ? 'xc1uiz-gy' : 'your-store-name'}
             className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
             disabled={isConnecting}
           />
           <span className="text-sm text-slate-500">.myshopify.com</span>
         </div>
         <p className="text-xs text-slate-400 mt-1">
-          {isTest
-            ? 'Install the test Shopify app on your development store, then connect here.'
-            : 'Enter your live store name without the .myshopify.com part'}
+          {isTest ? (
+            <>
+              Test Shopify store:{' '}
+              <a
+                href="https://xc1uiz-gy.myshopify.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-green-700 hover:underline"
+              >
+                https://xc1uiz-gy.myshopify.com/
+              </a>
+              . Enter <code className="text-[11px]">xc1uiz-gy</code> above, install the test
+              Shopify app on that store, then connect.
+            </>
+          ) : (
+            'Enter your live store name without the .myshopify.com part'
+          )}
         </p>
       </div>
 
