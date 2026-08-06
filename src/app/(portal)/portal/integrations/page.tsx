@@ -9,19 +9,12 @@ import { useClient } from '@/lib/client-auth'
 import { getClientIntegrations, updateIntegrationSettings } from '@/lib/api/integrations'
 import type { ClientIntegration, IntegrationSyncLog } from '@/types/database'
 
-/**
- * Always show live + test Shopify cards in the client portal.
- * Production can hide the test card with NEXT_PUBLIC_SHOPIFY_SHOW_TEST_CONNECT=false.
- */
-const SHOW_TEST_SHOPIFY_CARD =
-  process.env.NEXT_PUBLIC_SHOPIFY_SHOW_TEST_CONNECT !== 'false'
-
 export default function IntegrationsHubPage() {
   const { client } = useClient()
   const searchParams = useSearchParams()
   const [integrations, setIntegrations] = useState<ClientIntegration[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [testAppConfigured, setTestAppConfigured] = useState(SHOW_TEST_SHOPIFY_CARD)
+  const [testAppConfigured, setTestAppConfigured] = useState(true)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // Check for success/error messages from OAuth callback
@@ -45,14 +38,12 @@ export default function IntegrationsHubPage() {
   }, [searchParams])
 
   useEffect(() => {
-    if (!SHOW_TEST_SHOPIFY_CARD) return
     let cancelled = false
     void fetch('/api/integrations/shopify/test-connect', { credentials: 'include' })
       .then(async (res) => {
         if (!res.ok) return
         const data = (await res.json()) as { enabled?: boolean }
         if (cancelled) return
-        // Only downgrade when the API explicitly says credentials are missing.
         if (typeof data.enabled === 'boolean') {
           setTestAppConfigured(data.enabled)
         }
@@ -134,61 +125,72 @@ export default function IntegrationsHubPage() {
       {isLoading ? (
         <div className="text-center py-16 text-slate-500">Loading integrations...</div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <ShopifyCard
-            variant="live"
-            integration={liveShopifyIntegration}
-            clientId={client?.id}
-            onRefresh={handleRefresh}
-            onConnectError={(text) => setMessage({ type: 'error', text })}
-          />
+        <div className="space-y-8">
+          <section>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
+              Shopify connections
+            </h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <ShopifyCard
+                variant="live"
+                integration={liveShopifyIntegration}
+                clientId={client?.id}
+                onRefresh={handleRefresh}
+                onConnectError={(text) => setMessage({ type: 'error', text })}
+              />
+              <ShopifyCard
+                variant="test"
+                integration={testShopifyIntegration}
+                clientId={client?.id}
+                testAppConfigured={testAppConfigured}
+                onRefresh={handleRefresh}
+                onConnectError={(text) => setMessage({ type: 'error', text })}
+              />
+            </div>
+          </section>
 
-          {SHOW_TEST_SHOPIFY_CARD ? (
-            <ShopifyCard
-              variant="test"
-              integration={testShopifyIntegration}
-              clientId={client?.id}
-              testAppConfigured={testAppConfigured}
-              onRefresh={handleRefresh}
-              onConnectError={(text) => setMessage({ type: 'error', text })}
-            />
-          ) : null}
+          <section>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
+              Coming soon
+            </h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Amazon Coming Soon */}
+              <ComingSoonCard
+                name="Amazon"
+                description="Connect your Amazon Seller Central account"
+                iconBg="bg-[#232F3E]"
+                iconColor="text-[#FF9900]"
+                icon={<AmazonIcon />}
+              />
 
-          {/* Amazon Coming Soon */}
-          <ComingSoonCard
-            name="Amazon"
-            description="Connect your Amazon Seller Central account"
-            iconBg="bg-[#232F3E]"
-            iconColor="text-[#FF9900]"
-            icon={<AmazonIcon />}
-          />
+              {/* TikTok Shop Coming Soon */}
+              <ComingSoonCard
+                name="TikTok Shop"
+                description="Sync with your TikTok Shop storefront"
+                iconBg="bg-black"
+                iconColor="text-white"
+                icon={<TikTokIcon />}
+              />
 
-          {/* TikTok Shop Coming Soon */}
-          <ComingSoonCard
-            name="TikTok Shop"
-            description="Sync with your TikTok Shop storefront"
-            iconBg="bg-black"
-            iconColor="text-white"
-            icon={<TikTokIcon />}
-          />
+              {/* eBay Coming Soon */}
+              <ComingSoonCard
+                name="eBay"
+                description="Connect your eBay seller account"
+                iconBg="bg-white ring-1 ring-slate-200"
+                iconColor="text-slate-900"
+                icon={<EbayIcon />}
+              />
 
-          {/* eBay Coming Soon */}
-          <ComingSoonCard
-            name="eBay"
-            description="Connect your eBay seller account"
-            iconBg="bg-white ring-1 ring-slate-200"
-            iconColor="text-slate-900"
-            icon={<EbayIcon />}
-          />
-
-          {/* WooCommerce Coming Soon */}
-          <ComingSoonCard
-            name="WooCommerce"
-            description="Sync with your WooCommerce store"
-            iconBg="bg-[#7F54B3]"
-            iconColor="text-white"
-            icon={<WooCommerceIcon />}
-          />
+              {/* WooCommerce Coming Soon */}
+              <ComingSoonCard
+                name="WooCommerce"
+                description="Sync with your WooCommerce store"
+                iconBg="bg-[#7F54B3]"
+                iconColor="text-white"
+                icon={<WooCommerceIcon />}
+              />
+            </div>
+          </section>
         </div>
       )}
     </div>
