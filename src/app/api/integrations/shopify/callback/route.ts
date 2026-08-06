@@ -18,6 +18,7 @@ import {
   type ShopifyAppMode,
 } from '@/lib/api/shopify/app-credentials'
 import { DEFAULT_SHOPIFY_INTEGRATION_SETTINGS } from '@/lib/api/dtc/shopify-defaults'
+import { buildShopifyWebhookUrl } from '@/lib/api/shopify/webhook-url'
 import type { IntegrationSettings } from '@/types/database'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL!
@@ -353,8 +354,7 @@ async function registerShopifyWebhooks(
   shop: string,
   accessToken: string,
 ): Promise<void> {
-  const APP_URL = process.env.NEXT_PUBLIC_APP_URL!
-  const webhookUrl = `${APP_URL}/api/webhooks/shopify/${integrationId}`
+  const webhookUrl = buildShopifyWebhookUrl(integrationId)
 
   const webhookTopics = [
     'orders/create',
