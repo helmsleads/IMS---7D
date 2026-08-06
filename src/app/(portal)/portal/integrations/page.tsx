@@ -14,7 +14,10 @@ export default function IntegrationsHubPage() {
   const searchParams = useSearchParams()
   const [integrations, setIntegrations] = useState<ClientIntegration[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [showTestShopifyCard, setShowTestShopifyCard] = useState(false)
+  // Staging / local: show immediately from hostname so the card is not gated on API deploy lag.
+  const [showTestShopifyCard, setShowTestShopifyCard] = useState(() =>
+    shouldShowTestShopifyCardInBrowser()
+  )
   const [testAppConfigured, setTestAppConfigured] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -39,6 +42,11 @@ export default function IntegrationsHubPage() {
   }, [searchParams])
 
   useEffect(() => {
+    // Always prefer hostname for staging (ims-*-vercel.app / localhost).
+    if (shouldShowTestShopifyCardInBrowser()) {
+      setShowTestShopifyCard(true)
+    }
+
     let cancelled = false
     void fetch('/api/integrations/shopify/test-connect', { credentials: 'include' })
       .then(async (res) => {
@@ -49,10 +57,12 @@ export default function IntegrationsHubPage() {
         }
         if (cancelled) return
         setTestAppConfigured(data.enabled === true)
-        setShowTestShopifyCard(data.show_test_card === true || data.enabled === true)
+        if (data.show_test_card === true || data.enabled === true) {
+          setShowTestShopifyCard(true)
+        }
       })
       .catch(() => {
-        /* optional capability probe */
+        /* optional capability probe — hostname fallback already applied */
       })
     return () => {
       cancelled = true
@@ -195,6 +205,19 @@ function isTestShopifyIntegration(integration: ClientIntegration): boolean {
     settings?.shopify_app === 'test' ||
     settings?.connection_mode === 'test_app' ||
     settings?.connection_mode === 'test_token'
+  )
+}
+
+/** Client-side: staging Vercel + local always show the test Shopify card. */
+function shouldShowTestShopifyCardInBrowser(): boolean {
+  if (typeof window === 'undefined') return false
+  const host = window.location.hostname.toLowerCase()
+  if (host === 'app.7degreesco.com') return false
+  return (
+    host.includes('vercel.app') ||
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.includes('staging')
   )
 }
 
