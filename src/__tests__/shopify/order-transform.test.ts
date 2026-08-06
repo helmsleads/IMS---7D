@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { buildShopifyOrderNumber } from '@/lib/api/shopify/order-sync'
 
 /**
  * Tests for Shopify order transformation logic
@@ -98,24 +99,26 @@ function createMockShopifyOrder(overrides: Partial<ShopifyOrder> = {}): ShopifyO
 }
 
 describe('Order Number Transformation', () => {
-  function transformOrderNumber(shopifyName: string): string {
-    return `SH-${shopifyName.replace('#', '').replace(/\s/g, '')}`
-  }
-
-  it('should transform standard order number', () => {
-    expect(transformOrderNumber('#1001')).toBe('SH-1001')
+  it('should transform standard order number with shop slug', () => {
+    expect(buildShopifyOrderNumber('#1001', 'xc1uiz-gy.myshopify.com')).toBe(
+      'SH-xc1uiz-gy-1001'
+    )
   })
 
   it('should handle order number without hash', () => {
-    expect(transformOrderNumber('1002')).toBe('SH-1002')
+    expect(buildShopifyOrderNumber('1002', 'xc1uiz-gy.myshopify.com')).toBe(
+      'SH-xc1uiz-gy-1002'
+    )
   })
 
   it('should handle order number with spaces', () => {
-    expect(transformOrderNumber('# 1003')).toBe('SH-1003')
+    expect(buildShopifyOrderNumber('# 1003', 'xc1uiz-gy.myshopify.com')).toBe(
+      'SH-xc1uiz-gy-1003'
+    )
   })
 
-  it('should handle draft order format', () => {
-    expect(transformOrderNumber('#D1')).toBe('SH-D1')
+  it('should fall back without shop domain', () => {
+    expect(buildShopifyOrderNumber('#D1', null)).toBe('SH-D1')
   })
 })
 

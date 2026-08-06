@@ -251,6 +251,25 @@ export async function syncShopifyOrderStatusFromPayload(
 }
 
 /**
+ * Global unique outbound order_number — must not collide across shops
+ * (every store restarts at #1001).
+ */
+export function buildShopifyOrderNumber(
+  orderName: string,
+  shopDomain?: string | null
+): string {
+  const namePart = String(orderName || '')
+    .replace(/#/g, '')
+    .replace(/\s/g, '')
+  const shop = String(shopDomain || '')
+    .toLowerCase()
+    .replace(/\.myshopify\.com$/i, '')
+    .replace(/[^a-z0-9-]/g, '')
+    .slice(0, 40)
+  return shop ? `SH-${shop}-${namePart}` : `SH-${namePart}`
+}
+
+/**
  * Process and import a Shopify order into IMS
  */
 export async function processShopifyOrder(
@@ -262,8 +281,10 @@ export async function processShopifyOrder(
   const order = shopifyOrder as unknown as ShopifyOrder
   const integrationData = integration as unknown as ClientIntegration
 
-  // Create order number from Shopify order name
-  const orderNumber = `SH-${order.name.replace('#', '').replace(/\s/g, '')}`
+  const orderNumber = buildShopifyOrderNumber(
+    order.name,
+    integrationData.shop_domain
+  )
 
   // Check if order already exists by external ID
   const { data: existing } = await supabase

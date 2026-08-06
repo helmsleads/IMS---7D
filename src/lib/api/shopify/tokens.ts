@@ -190,9 +190,28 @@ export async function getShopifyAccessToken(
       return decryptedAccess
     }
 
-    const tokenData = await refreshExpiringToken(shopDomain, decryptedRefresh, appMode)
-    await persistTokenFields(integration.id, tokenData)
-    return tokenData.access_token
+    try {
+      const tokenData = await refreshExpiringToken(shopDomain, decryptedRefresh, appMode)
+      await persistTokenFields(integration.id, tokenData)
+      return tokenData.access_token
+    } catch (error) {
+      // Refresh can fail if app credentials were rotated/deleted in Partners.
+      // Keep serving the current access token until it hard-fails Admin API calls.
+      const stillUsable =
+        integration.token_expires_at &&
+        new Date(integration.token_expires_at).getTime() > Date.now()
+      if (stillUsable) {
+        console.warn(
+          `Shopify token refresh failed for ${shopDomain}; using current access token until expiry:`,
+          error instanceof Error ? error.message : error,
+        )
+        return decryptedAccess
+      }
+      throw new Error(
+        `Shopify access token for ${shopDomain} expired and refresh failed (${error instanceof Error ? error.message : "unknown"}). Reconnect Shopify in Portal and verify SHOPIFY_TEST_CLIENT_ID / SHOPIFY_CLIENT_ID match the Partners app that installed the store.`,
+        { cause: error },
+      )
+    }
   }
 
   const settings = integration.settings as { connection_mode?: string } | null
