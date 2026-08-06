@@ -517,7 +517,13 @@ function ShopifyConnectedStatus({
       if (!clientId || integration.client_id !== clientId) {
         throw new Error('Invalid client session')
       }
-      await updateIntegrationSettings(integration.id, { [key]: value }, clientId)
+      // Portal auto-import into 7D must not leave DTC verify-first on
+      // (that flag routes webhooks away from outbound_orders).
+      const patch =
+        key === 'auto_import_orders' && value
+          ? { auto_import_orders: true, dtc_verify_before_fulfill: false }
+          : { [key]: value }
+      await updateIntegrationSettings(integration.id, patch, clientId)
     } catch (error) {
       if (key === 'auto_import_orders') setAutoImportOrders(prev)
       else if (key === 'auto_sync_inventory') setAutoSyncInventory(prev)
@@ -857,7 +863,9 @@ function ShopifyConnectedStatus({
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-slate-700">Auto-import new orders</p>
-            <p className="text-xs text-slate-400">Automatically import orders when they arrive</p>
+            <p className="text-xs text-slate-400">
+              Import paid Shopify orders into 7D (age/ID is handled by apps on the Shopify store)
+            </p>
           </div>
           <Toggle
             checked={autoImportOrders}

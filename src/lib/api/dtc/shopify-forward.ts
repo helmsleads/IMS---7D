@@ -7,14 +7,10 @@ export function shouldForwardShopifyOrderToDtc(
   integration: Record<string, unknown>,
 ): boolean {
   const settings = (integration.settings ?? {}) as Record<string, unknown>;
-  if (settings.dtc_verify_before_fulfill === true) {
-    return true;
-  }
-  // DTC connect defaults set auto_import_orders=false.
-  if (settings.auto_import_orders === false) {
-    return true;
-  }
-  return false;
+  // Only the explicit DTC verify-first flag routes webhooks to DTC.
+  // auto_import_orders=false must mean "skip import", not "send to DTC" —
+  // otherwise portal clients with auto-import off never see orders in 7D.
+  return settings.dtc_verify_before_fulfill === true;
 }
 
 export async function forwardShopifyOrderToDtc(payload: Record<string, unknown>, integration: {

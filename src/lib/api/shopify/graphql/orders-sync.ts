@@ -280,13 +280,17 @@ function mapOrderNode(node: GqlOrderNode): ShopifyOrder {
  */
 export function buildOrdersSyncSearchQuery(since?: Date): string {
   if (since && !Number.isNaN(since.getTime())) {
+    // Include paid/fulfilled test orders in the lookback window.
     return `updated_at:>='${since.toISOString()}'`
   }
-  return 'fulfillment_status:unfulfilled AND status:open'
+  // Without a since window, still include open orders (any fulfillment state).
+  return 'status:open'
 }
 
 /**
  * Pull orders via Admin GraphQL (replaces REST GET /orders.json).
+ * Manual sync always passes a `since` window so fulfilled/paid test
+ * orders are included (not only open+unfulfilled).
  */
 export async function fetchOrdersForSync(
   client: ShopifyClient,

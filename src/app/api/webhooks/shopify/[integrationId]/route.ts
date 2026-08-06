@@ -300,6 +300,29 @@ async function handleOrderUpdated(
     .single()
 
   if (!order) {
+    // Paid/updated after create: DTC path may have skipped unpaid create.
+    if (shouldForwardShopifyOrderToDtc(integration)) {
+      const financial = String(payload.financial_status || "").toLowerCase();
+      if (financial && financial !== "paid" && financial !== "partially_paid") {
+        console.log(
+          `DTC forward skipped for unpaid Shopify order update ${payload.name} (${financial})`,
+        );
+        return;
+      }
+      const result = await forwardShopifyOrderToDtc(payload, {
+        id: String(integration.id),
+        client_id: String(integration.client_id),
+        shop_domain: (integration.shop_domain as string | null) ?? null,
+      });
+      if (!result.ok) {
+        throw new Error(
+          `Failed to forward Shopify order to DTC: ${result.body || result.status || "unknown"}`,
+        );
+      }
+      console.log(`Forwarded Shopify order ${payload.name} to DTC on update`);
+      return;
+    }
+
     if (isAutoImportEnabled(integration)) {
       console.log(`Order ${payload.id} not in IMS — importing from orders/updated`)
       await processShopifyOrder(payload, integration)
