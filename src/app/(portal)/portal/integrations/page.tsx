@@ -10,23 +10,11 @@ import { getClientIntegrations, updateIntegrationSettings } from '@/lib/api/inte
 import type { ClientIntegration, IntegrationSyncLog } from '@/types/database'
 
 /**
- * Build-time flag (NEXT_PUBLIC_* is inlined at compile). Staging Vercel always shows
- * the test Shopify card — do not gate on a runtime API probe.
+ * Always show live + test Shopify cards in the client portal.
+ * Production can hide the test card with NEXT_PUBLIC_SHOPIFY_SHOW_TEST_CONNECT=false.
  */
-const SHOW_TEST_SHOPIFY_CARD = (() => {
-  if (process.env.NEXT_PUBLIC_SHOPIFY_SHOW_TEST_CONNECT === 'true') return true
-  if (process.env.NEXT_PUBLIC_SHOPIFY_SHOW_TEST_CONNECT === 'false') return false
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').toLowerCase()
-  if (appUrl.includes('app.7degreesco.com')) return false
-  if (
-    appUrl.includes('vercel.app') ||
-    appUrl.includes('localhost') ||
-    appUrl.includes('127.0.0.1')
-  ) {
-    return true
-  }
-  return process.env.NODE_ENV === 'development'
-})()
+const SHOW_TEST_SHOPIFY_CARD =
+  process.env.NEXT_PUBLIC_SHOPIFY_SHOW_TEST_CONNECT !== 'false'
 
 export default function IntegrationsHubPage() {
   const { client } = useClient()
