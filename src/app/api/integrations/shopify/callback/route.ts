@@ -297,14 +297,18 @@ export async function GET(request: NextRequest) {
 
   const imsWarehouseId = await ensureIntegrationWarehouseLocation(supabase, integration.id)
   const existingSettings = (integration.settings ?? {}) as IntegrationSettings
-  const dtcDefaults = oauthSource === 'dtc' ? DEFAULT_SHOPIFY_INTEGRATION_SETTINGS : null
+  const isDtcFlow = oauthSource === 'dtc'
+  // 7D portal (live or test Shopify app): always auto-import into outbound.
+  // DTC OAuth keeps verify-first defaults so alcohol ID gate stays in DTC.
+  const dtcDefaults = isDtcFlow ? DEFAULT_SHOPIFY_INTEGRATION_SETTINGS : null
 
   await supabase
     .from('client_integrations')
     .update({
       settings: {
-        auto_import_orders:
-          dtcDefaults?.auto_import_orders ?? existingSettings.auto_import_orders ?? true,
+        auto_import_orders: isDtcFlow
+          ? (dtcDefaults?.auto_import_orders ?? false)
+          : true,
         auto_sync_inventory:
           dtcDefaults?.auto_sync_inventory ?? existingSettings.auto_sync_inventory ?? false,
         auto_sync_prices:
@@ -324,8 +328,9 @@ export async function GET(request: NextRequest) {
           dtcDefaults?.fulfillment_notify_customer ??
           existingSettings.fulfillment_notify_customer ??
           true,
-        dtc_verify_before_fulfill:
-          dtcDefaults?.dtc_verify_before_fulfill ?? existingSettings.dtc_verify_before_fulfill,
+        dtc_verify_before_fulfill: isDtcFlow
+          ? (dtcDefaults?.dtc_verify_before_fulfill ?? true)
+          : false,
         shopify_app: appMode,
         connection_mode: connectionModeForApp(appMode),
       },
