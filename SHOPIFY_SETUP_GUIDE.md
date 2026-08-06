@@ -128,6 +128,20 @@ Select **"Development store"**
 
 Wait 30-60 seconds for the store to be created.
 
+### 2.5 Connect with the test Shopify app (recommended)
+
+Do **not** install the live production app on development stores. Create a second Partners / Dev Dashboard app for testing and set:
+
+```env
+SHOPIFY_TEST_CLIENT_ID=...
+SHOPIFY_TEST_CLIENT_SECRET=...
+```
+
+Point that test app’s redirect URL at the same callback:
+`{NEXT_PUBLIC_APP_URL}/api/integrations/shopify/callback`
+
+Then in 7D or DTC Integrations choose **Test app**, enter `your-store.myshopify.com`, and complete OAuth. Tokens are stored with `settings.shopify_app: "test"` so refresh / webhooks use the test app secret.
+
 ### ✅ Verification
 
 You should see your new store in the list:
@@ -339,9 +353,14 @@ RESEND_API_KEY=your_existing_key
 
 # ===== NEW: Shopify Integration =====
 
-# From Step 3.6 - Your Shopify App credentials
+# From Step 3.6 - Your Shopify App credentials (live / production app)
 SHOPIFY_CLIENT_ID=your_client_id_here
 SHOPIFY_CLIENT_SECRET=your_client_secret_here
+
+# Separate Partners / Dev Dashboard app for development stores (optional but recommended)
+# SHOPIFY_TEST_CLIENT_ID=your_test_app_client_id
+# SHOPIFY_TEST_CLIENT_SECRET=your_test_app_client_secret
+# SHOPIFY_TEST_SCOPES=   # optional; defaults to SHOPIFY_SCOPES
 
 # The permissions your app requests
 SHOPIFY_SCOPES=read_orders,write_orders,read_products,read_inventory,write_inventory,read_fulfillments,write_fulfillments,read_locations

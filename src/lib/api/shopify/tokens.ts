@@ -1,6 +1,9 @@
 /**
  * Shopify OAuth token management — expiring offline tokens with refresh.
  *
+ * Uses the live or test Shopify app credentials based on the integration's
+ * `settings.shopify_app` / `settings.connection_mode`.
+ *
  * @see https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens/offline-access-tokens
  */
 
@@ -8,11 +11,16 @@ import { createServiceClient } from '@/lib/supabase-service'
 import { decryptToken, encryptToken, isEncryptionConfigured } from '@/lib/encryption'
 import { createShopifyClient, type ShopifyClient } from './client'
 import { normalizeShopifyShopDomain } from './shop-domain'
+import {
+  getShopifyAppCredentials,
+  resolveShopifyAppModeFromSettings,
+  type ShopifyAppMode,
+} from './app-credentials'
 import type { ClientIntegration } from '@/types/database'
 
 export type ShopifyIntegrationRecord = Pick<
   ClientIntegration,
-  'id' | 'shop_domain' | 'access_token' | 'refresh_token' | 'token_expires_at'
+  'id' | 'shop_domain' | 'access_token' | 'refresh_token' | 'token_expires_at' | 'scope' | 'settings'
 >
 
 export interface ShopifyOAuthTokenData {
@@ -24,15 +32,6 @@ export interface ShopifyOAuthTokenData {
 }
 
 const TOKEN_REFRESH_BUFFER_MS = 60_000
-
-function getShopifyCredentials() {
-  const clientId = process.env.SHOPIFY_CLIENT_ID
-  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET
-  if (!clientId || !clientSecret) {
-    throw new Error('SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET must be configured')
-  }
-  return { clientId, clientSecret }
-}
 
 function maybeEncrypt(value: string): string {
   return isEncryptionConfigured() ? encryptToken(value) : value
@@ -59,9 +58,10 @@ export function buildStoredTokenFields(tokenData: ShopifyOAuthTokenData): {
 
 async function requestAccessToken(
   shopDomain: string,
-  body: Record<string, string>
+  body: Record<string, string>,
+  appMode: ShopifyAppMode = 'live'
 ): Promise<ShopifyOAuthTokenData> {
-  const { clientId, clientSecret } = getShopifyCredentials()
+  const { clientId, clientSecret } = getShopifyAppCredentials(appMode)
   const params = new URLSearchParams({
     client_id: clientId,
     client_secret: clientSecret,
@@ -91,36 +91,51 @@ async function requestAccessToken(
 /** Exchange OAuth authorization code for expiring offline tokens. */
 export async function exchangeAuthorizationCode(
   shopDomain: string,
-  code: string
+  code: string,
+  appMode: ShopifyAppMode = 'live'
 ): Promise<ShopifyOAuthTokenData> {
-  return requestAccessToken(shopDomain, {
-    code,
-    expiring: '1',
-  })
+  return requestAccessToken(
+    shopDomain,
+    {
+      code,
+      expiring: '1',
+    },
+    appMode
+  )
 }
 
 async function refreshExpiringToken(
   shopDomain: string,
-  refreshToken: string
+  refreshToken: string,
+  appMode: ShopifyAppMode
 ): Promise<ShopifyOAuthTokenData> {
-  return requestAccessToken(shopDomain, {
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken,
-  })
+  return requestAccessToken(
+    shopDomain,
+    {
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    },
+    appMode
+  )
 }
 
 /** One-time migration from legacy non-expiring offline token to expiring tokens. */
 async function migrateNonExpiringToken(
   shopDomain: string,
-  accessToken: string
+  accessToken: string,
+  appMode: ShopifyAppMode
 ): Promise<ShopifyOAuthTokenData> {
-  return requestAccessToken(shopDomain, {
-    grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
-    subject_token: accessToken,
-    subject_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token',
-    requested_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token',
-    expiring: '1',
-  })
+  return requestAccessToken(
+    shopDomain,
+    {
+      grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+      subject_token: accessToken,
+      subject_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token',
+      requested_token_type: 'urn:shopify:params:oauth:token-type:offline-access-token',
+      expiring: '1',
+    },
+    appMode
+  )
 }
 
 async function persistTokenFields(
@@ -162,6 +177,9 @@ export async function getShopifyAccessToken(
   }
 
   const shopDomain = integration.shop_domain
+  const appMode = resolveShopifyAppModeFromSettings(
+    integration.settings as { connection_mode?: string; shopify_app?: string } | null
+  )
   const decryptedAccess = decryptToken(integration.access_token)
   const decryptedRefresh = integration.refresh_token
     ? decryptToken(integration.refresh_token)
@@ -172,15 +190,39 @@ export async function getShopifyAccessToken(
       return decryptedAccess
     }
 
-    const tokenData = await refreshExpiringToken(shopDomain, decryptedRefresh)
+    const tokenData = await refreshExpiringToken(shopDomain, decryptedRefresh, appMode)
     await persistTokenFields(integration.id, tokenData)
     return tokenData.access_token
   }
 
-  // Legacy non-expiring token — migrate once to expiring offline tokens.
-  const tokenData = await migrateNonExpiringToken(shopDomain, decryptedAccess)
-  await persistTokenFields(integration.id, tokenData)
-  return tokenData.access_token
+  const settings = integration.settings as { connection_mode?: string } | null
+  const isStaticTestToken =
+    settings?.connection_mode === 'test_token' ||
+    integration.scope === 'custom_app_admin_api'
+
+  // Legacy custom-app Admin API tokens never refresh — use as-is.
+  if (isStaticTestToken) {
+    return decryptedAccess
+  }
+
+  // Legacy non-expiring OAuth tokens: try one-time migration, fall back to static use.
+  if (!integration.token_expires_at) {
+    try {
+      const tokenData = await migrateNonExpiringToken(shopDomain, decryptedAccess, appMode)
+      await persistTokenFields(integration.id, tokenData)
+      return tokenData.access_token
+    } catch (error) {
+      console.warn(
+        `Shopify token migration skipped for ${shopDomain}; using static token:`,
+        error instanceof Error ? error.message : error,
+      )
+      return decryptedAccess
+    }
+  }
+
+  throw new Error(
+    `Shopify access token for ${shopDomain} is expired and no refresh token is available`,
+  )
 }
 
 export async function createShopifyClientForIntegration(

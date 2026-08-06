@@ -95,8 +95,11 @@ Shopify integrations are configured per-client with these settings:
 ```
 APP_URL=                   # Production: https://app.7degreesco.com (invite/reset links, OAuth)
 NEXT_PUBLIC_APP_URL=       # Same as APP_URL for client-side links
-SHOPIFY_CLIENT_ID=         # Shopify app client ID
-SHOPIFY_CLIENT_SECRET=     # Shopify app client secret (also used for webhook HMAC)
+SHOPIFY_CLIENT_ID=         # Live Shopify app client ID
+SHOPIFY_CLIENT_SECRET=     # Live Shopify app client secret (also used for webhook HMAC)
+# SHOPIFY_TEST_CLIENT_ID=  # Separate app for development / test stores
+# SHOPIFY_TEST_CLIENT_SECRET=
+# SHOPIFY_TEST_SCOPES=     # Optional; defaults to SHOPIFY_SCOPES
 CRON_SECRET=               # Authorization token for cron endpoints
 DTC_API_KEY=               # Shared bearer secret for DTC backend (catalog + outbound orders)
 DTC_BACKEND_URL=           # DTC backend URL for ship-event webhooks (e.g. http://localhost:3000)

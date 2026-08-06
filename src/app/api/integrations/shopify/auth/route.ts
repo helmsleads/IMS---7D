@@ -2,14 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createServerClient } from '@supabase/ssr'
 import { checkOAuthRateLimit, getClientIp } from '@/lib/rate-limit'
+import {
+  getShopifyAppCredentials,
+  isShopifyTestAppConfigured,
+  parseShopifyAppMode,
+} from '@/lib/api/shopify/app-credentials'
 
-const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID!
-const SHOPIFY_SCOPES = process.env.SHOPIFY_SCOPES!
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL!
 
 /**
  * Initiates the Shopify OAuth flow
- * GET /api/integrations/shopify/auth?shop=mystore&state=base64encodedstate
+ * GET /api/integrations/shopify/auth?shop=mystore&state=base64encodedstate&app=live|test
  *
  * Requires authenticated user who belongs to the client
  * Rate limited: 10 requests per minute per IP (distributed via Upstash Redis)
@@ -37,6 +40,7 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state')
   /** Portal uses fetch first so errors show in-app instead of a blank JSON page */
   const preflight = searchParams.get('preflight') === '1'
+  const appMode = parseShopifyAppMode(searchParams.get('app') || 'live')
 
   if (!shop) {
     return NextResponse.json({ error: 'Missing shop parameter' }, { status: 400 })
@@ -44,6 +48,30 @@ export async function GET(request: NextRequest) {
 
   if (!state) {
     return NextResponse.json({ error: 'Missing state parameter' }, { status: 400 })
+  }
+
+  if (appMode === 'test' && !isShopifyTestAppConfigured()) {
+    return NextResponse.json(
+      {
+        error:
+          'Test Shopify app is not configured. Set SHOPIFY_TEST_CLIENT_ID and SHOPIFY_TEST_CLIENT_SECRET.',
+      },
+      { status: 503 }
+    )
+  }
+
+  let credentials
+  try {
+    credentials = getShopifyAppCredentials(appMode)
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Shopify OAuth is not configured' },
+      { status: 503 }
+    )
+  }
+
+  if (!APP_URL) {
+    return NextResponse.json({ error: 'NEXT_PUBLIC_APP_URL is not configured' }, { status: 503 })
   }
 
   // Parse and verify clientId from state
@@ -115,12 +143,20 @@ export async function GET(request: NextRequest) {
   // Generate nonce for CSRF protection
   const nonce = crypto.randomBytes(16).toString('hex')
 
-  // Build OAuth URL
+  // Embed app mode in state so the callback verifies HMAC / exchanges tokens with the same app
+  const stateWithApp = btoa(
+    JSON.stringify({
+      ...JSON.parse(atob(state)),
+      app: appMode,
+    })
+  )
+
+  // Build OAuth URL for the selected Shopify app
   const authUrl = new URL(`https://${shopDomain}/admin/oauth/authorize`)
-  authUrl.searchParams.set('client_id', SHOPIFY_CLIENT_ID)
-  authUrl.searchParams.set('scope', SHOPIFY_SCOPES)
+  authUrl.searchParams.set('client_id', credentials.clientId)
+  authUrl.searchParams.set('scope', credentials.scopes)
   authUrl.searchParams.set('redirect_uri', `${APP_URL}/api/integrations/shopify/callback`)
-  authUrl.searchParams.set('state', `${nonce}:${state}`)
+  authUrl.searchParams.set('state', `${nonce}:${stateWithApp}`)
   authUrl.searchParams.append('grant_options[]', 'offline')
 
   const nonceCookie = {
@@ -132,7 +168,10 @@ export async function GET(request: NextRequest) {
   }
 
   if (preflight) {
-    const response = NextResponse.json({ redirectUrl: authUrl.toString() })
+    const response = NextResponse.json({
+      redirectUrl: authUrl.toString(),
+      app: appMode,
+    })
     response.cookies.set('shopify_oauth_nonce', nonce, nonceCookie)
     return response
   }

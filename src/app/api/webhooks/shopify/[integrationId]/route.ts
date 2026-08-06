@@ -18,16 +18,18 @@ function isAutoImportEnabled(integration: Record<string, unknown>): boolean {
 }
 import { checkWebhookRateLimit } from '@/lib/rate-limit'
 import { logSyncResult } from '@/lib/api/shopify/sync-logger'
-
-// Shopify signs webhooks with the OAuth Client Secret
-const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET!
+import {
+  getShopifyAppCredentials,
+  listShopifyWebhookSecrets,
+  resolveShopifyAppModeFromSettings,
+} from '@/lib/api/shopify/app-credentials'
 
 /**
  * Handles incoming Shopify webhooks
  * POST /api/webhooks/shopify/[integrationId]
  *
  * Rate limited: 100 requests per minute per integration (distributed via Upstash Redis)
- * HMAC signature verification required using SHOPIFY_CLIENT_SECRET
+ * HMAC verified with the live or test app client secret for this integration
  */
 export async function POST(
   request: NextRequest,
@@ -55,24 +57,12 @@ export async function POST(
   // Get raw body for HMAC verification
   const body = await request.text()
 
-  // Verify HMAC signature using Shopify Client Secret
-  // Shopify signs all webhook payloads with the OAuth client secret
-  if (!hmac || !SHOPIFY_CLIENT_SECRET) {
-    console.error('Missing HMAC header or SHOPIFY_CLIENT_SECRET not configured')
+  if (!hmac) {
+    console.error('Missing HMAC header')
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
-  const expectedHmac = crypto
-    .createHmac('sha256', SHOPIFY_CLIENT_SECRET)
-    .update(body, 'utf8')
-    .digest('base64')
-
-  if (hmac !== expectedHmac) {
-    console.error('Invalid webhook signature')
-    return new NextResponse('Invalid signature', { status: 401 })
-  }
-
-  // Get integration from database (after signature verified)
+  // Load integration first so we can verify with the correct app secret
   const supabase = createServiceClient()
   const { data: integration, error: integrationError } = await supabase
     .from('client_integrations')
@@ -83,6 +73,50 @@ export async function POST(
   if (integrationError || !integration) {
     console.error('Integration not found:', integrationId)
     return new NextResponse('Integration not found', { status: 404 })
+  }
+
+  const appMode = resolveShopifyAppModeFromSettings(
+    (integration.settings ?? {}) as { connection_mode?: string; shopify_app?: string }
+  )
+  const secretsToTry = new Set<string>()
+  try {
+    secretsToTry.add(getShopifyAppCredentials(appMode).clientSecret)
+  } catch {
+    /* fall through to all configured secrets */
+  }
+  for (const secret of listShopifyWebhookSecrets()) {
+    secretsToTry.add(secret)
+  }
+
+  if (secretsToTry.size === 0) {
+    console.error('No Shopify client secrets configured for webhook verification')
+    return new NextResponse('Unauthorized', { status: 401 })
+  }
+
+  let signatureValid = false
+  for (const secret of secretsToTry) {
+    const expectedHmac = crypto
+      .createHmac('sha256', secret)
+      .update(body, 'utf8')
+      .digest('base64')
+    try {
+      const a = Buffer.from(hmac)
+      const b = Buffer.from(expectedHmac)
+      if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+        signatureValid = true
+        break
+      }
+    } catch {
+      if (hmac === expectedHmac) {
+        signatureValid = true
+        break
+      }
+    }
+  }
+
+  if (!signatureValid) {
+    console.error('Invalid webhook signature')
+    return new NextResponse('Invalid signature', { status: 401 })
   }
 
   if (integration.status === 'disconnected') {

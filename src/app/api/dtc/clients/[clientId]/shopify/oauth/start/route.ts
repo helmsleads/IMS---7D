@@ -2,19 +2,23 @@ import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getActiveClient } from "@/lib/api/dtc/clients";
 import { DEFAULT_SHOPIFY_INTEGRATION_SETTINGS } from "@/lib/api/dtc/shopify-defaults";
+import {
+  getShopifyAppCredentials,
+  isShopifyTestAppConfigured,
+  parseShopifyAppMode,
+} from "@/lib/api/shopify/app-credentials";
 import { normalizeShopifyShopDomain } from "@/lib/api/shopify/shop-domain";
 import { verifyDtcApiRequest } from "@/lib/server/dtc-auth";
 import { createServiceClient } from "@/lib/supabase-service";
 
-const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID!;
-const SHOPIFY_SCOPES = process.env.SHOPIFY_SCOPES!;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL!;
 
 /**
  * POST /api/dtc/clients/[clientId]/shopify/oauth/start
- * Body: { shop, return_url? }
+ * Body: { shop, return_url?, app?: "live" | "test" }
  *
  * Starts Shopify OAuth for a DTC-provisioned client (no portal browser session).
+ * `app: "test"` uses SHOPIFY_TEST_CLIENT_ID / SECRET (development store app).
  * Reuses the shared Shopify callback; nonce is stored in dtc_shopify_oauth_states.
  */
 export async function POST(
@@ -26,9 +30,9 @@ export async function POST(
     return authError;
   }
 
-  if (!SHOPIFY_CLIENT_ID || !SHOPIFY_SCOPES || !APP_URL) {
+  if (!APP_URL) {
     return NextResponse.json(
-      { error: "Shopify OAuth is not configured on 7D (SHOPIFY_CLIENT_ID / SCOPES / APP_URL)." },
+      { error: "Shopify OAuth is not configured on 7D (NEXT_PUBLIC_APP_URL)." },
       { status: 503 },
     );
   }
@@ -44,6 +48,32 @@ export async function POST(
     const shopRaw = String(body?.shop ?? "").trim();
     if (!shopRaw) {
       return NextResponse.json({ error: "shop is required" }, { status: 400 });
+    }
+
+    const appMode = parseShopifyAppMode(body?.app ?? "live");
+    if (appMode === "test" && !isShopifyTestAppConfigured()) {
+      return NextResponse.json(
+        {
+          error:
+            "Test Shopify app is not configured on 7D. Set SHOPIFY_TEST_CLIENT_ID and SHOPIFY_TEST_CLIENT_SECRET.",
+        },
+        { status: 503 },
+      );
+    }
+
+    let credentials;
+    try {
+      credentials = getShopifyAppCredentials(appMode);
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Shopify OAuth is not configured on 7D.",
+        },
+        { status: 503 },
+      );
     }
 
     const shopDomain = normalizeShopifyShopDomain(shopRaw);
@@ -77,12 +107,13 @@ export async function POST(
         clientId,
         source: "dtc",
         returnUrl,
+        app: appMode,
       }),
     ).toString("base64");
 
     const authUrl = new URL(`https://${shopDomain}/admin/oauth/authorize`);
-    authUrl.searchParams.set("client_id", SHOPIFY_CLIENT_ID);
-    authUrl.searchParams.set("scope", SHOPIFY_SCOPES);
+    authUrl.searchParams.set("client_id", credentials.clientId);
+    authUrl.searchParams.set("scope", credentials.scopes);
     authUrl.searchParams.set("redirect_uri", `${APP_URL}/api/integrations/shopify/callback`);
     authUrl.searchParams.set("state", `${nonce}:${statePayload}`);
     authUrl.searchParams.append("grant_options[]", "offline");
@@ -91,6 +122,7 @@ export async function POST(
       oauth_url: authUrl.toString(),
       shop_domain: shopDomain,
       client_id: clientId,
+      app: appMode,
       settings_defaults: DEFAULT_SHOPIFY_INTEGRATION_SETTINGS,
     });
   } catch (error) {
