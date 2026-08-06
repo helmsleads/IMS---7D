@@ -9,16 +9,31 @@ import { useClient } from '@/lib/client-auth'
 import { getClientIntegrations, updateIntegrationSettings } from '@/lib/api/integrations'
 import type { ClientIntegration, IntegrationSyncLog } from '@/types/database'
 
+/**
+ * Build-time flag (NEXT_PUBLIC_* is inlined at compile). Staging Vercel always shows
+ * the test Shopify card — do not gate on a runtime API probe.
+ */
+const SHOW_TEST_SHOPIFY_CARD = (() => {
+  if (process.env.NEXT_PUBLIC_SHOPIFY_SHOW_TEST_CONNECT === 'true') return true
+  if (process.env.NEXT_PUBLIC_SHOPIFY_SHOW_TEST_CONNECT === 'false') return false
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').toLowerCase()
+  if (appUrl.includes('app.7degreesco.com')) return false
+  if (
+    appUrl.includes('vercel.app') ||
+    appUrl.includes('localhost') ||
+    appUrl.includes('127.0.0.1')
+  ) {
+    return true
+  }
+  return process.env.NODE_ENV === 'development'
+})()
+
 export default function IntegrationsHubPage() {
   const { client } = useClient()
   const searchParams = useSearchParams()
   const [integrations, setIntegrations] = useState<ClientIntegration[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  // Staging / local: show immediately from hostname so the card is not gated on API deploy lag.
-  const [showTestShopifyCard, setShowTestShopifyCard] = useState(() =>
-    shouldShowTestShopifyCardInBrowser()
-  )
-  const [testAppConfigured, setTestAppConfigured] = useState(false)
+  const [testAppConfigured, setTestAppConfigured] = useState(SHOW_TEST_SHOPIFY_CARD)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // Check for success/error messages from OAuth callback
@@ -42,27 +57,20 @@ export default function IntegrationsHubPage() {
   }, [searchParams])
 
   useEffect(() => {
-    // Always prefer hostname for staging (ims-*-vercel.app / localhost).
-    if (shouldShowTestShopifyCardInBrowser()) {
-      setShowTestShopifyCard(true)
-    }
-
+    if (!SHOW_TEST_SHOPIFY_CARD) return
     let cancelled = false
     void fetch('/api/integrations/shopify/test-connect', { credentials: 'include' })
       .then(async (res) => {
         if (!res.ok) return
-        const data = (await res.json()) as {
-          enabled?: boolean
-          show_test_card?: boolean
-        }
+        const data = (await res.json()) as { enabled?: boolean }
         if (cancelled) return
-        setTestAppConfigured(data.enabled === true)
-        if (data.show_test_card === true || data.enabled === true) {
-          setShowTestShopifyCard(true)
+        // Only downgrade when the API explicitly says credentials are missing.
+        if (typeof data.enabled === 'boolean') {
+          setTestAppConfigured(data.enabled)
         }
       })
       .catch(() => {
-        /* optional capability probe — hostname fallback already applied */
+        /* keep optimistic default */
       })
     return () => {
       cancelled = true
@@ -147,7 +155,7 @@ export default function IntegrationsHubPage() {
             onConnectError={(text) => setMessage({ type: 'error', text })}
           />
 
-          {showTestShopifyCard ? (
+          {SHOW_TEST_SHOPIFY_CARD ? (
             <ShopifyCard
               variant="test"
               integration={testShopifyIntegration}
@@ -205,19 +213,6 @@ function isTestShopifyIntegration(integration: ClientIntegration): boolean {
     settings?.shopify_app === 'test' ||
     settings?.connection_mode === 'test_app' ||
     settings?.connection_mode === 'test_token'
-  )
-}
-
-/** Client-side: staging Vercel + local always show the test Shopify card. */
-function shouldShowTestShopifyCardInBrowser(): boolean {
-  if (typeof window === 'undefined') return false
-  const host = window.location.hostname.toLowerCase()
-  if (host === 'app.7degreesco.com') return false
-  return (
-    host.includes('vercel.app') ||
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host.includes('staging')
   )
 }
 
