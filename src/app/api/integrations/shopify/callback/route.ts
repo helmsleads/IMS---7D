@@ -10,9 +10,16 @@ import { ensureShopifyLocation } from '@/lib/api/shopify/location-management'
 import { SHOPIFY_ADMIN_API_VERSION } from '@/lib/api/shopify/constants'
 import { normalizeShopifyShopDomain } from '@/lib/api/shopify/shop-domain'
 import { ensureIntegrationWarehouseLocation } from '@/lib/api/shopify/shopify-order-payload'
+import {
+  connectionModeForApp,
+  getShopifyAppCredentials,
+  listShopifyWebhookSecrets,
+  parseShopifyAppMode,
+  type ShopifyAppMode,
+} from '@/lib/api/shopify/app-credentials'
+import { DEFAULT_SHOPIFY_INTEGRATION_SETTINGS } from '@/lib/api/dtc/shopify-defaults'
 import type { IntegrationSettings } from '@/types/database'
 
-const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET!
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL!
 
 function redirectOAuthError(
@@ -29,9 +36,66 @@ function redirectOAuthError(
   return NextResponse.redirect(`${APP_URL}/portal/integrations?error=${encodeURIComponent(reason)}`)
 }
 
+function verifyOAuthHmac(
+  sortedParams: string,
+  hmac: string,
+  preferredMode: ShopifyAppMode,
+): { ok: boolean; appMode: ShopifyAppMode } {
+  const secretsToTry: Array<{ mode: ShopifyAppMode; secret: string }> = []
+
+  try {
+    const preferred = getShopifyAppCredentials(preferredMode)
+    secretsToTry.push({ mode: preferred.mode, secret: preferred.clientSecret })
+  } catch {
+    /* fall through */
+  }
+
+  const otherMode: ShopifyAppMode = preferredMode === 'test' ? 'live' : 'test'
+  try {
+    const other = getShopifyAppCredentials(otherMode)
+    if (!secretsToTry.some((s) => s.secret === other.clientSecret)) {
+      secretsToTry.push({ mode: other.mode, secret: other.clientSecret })
+    }
+  } catch {
+    /* optional */
+  }
+
+  // Last resort: any configured secret
+  for (const secret of listShopifyWebhookSecrets()) {
+    if (!secretsToTry.some((s) => s.secret === secret)) {
+      secretsToTry.push({
+        mode: secretsToTry[0]?.mode ?? preferredMode,
+        secret,
+      })
+    }
+  }
+
+  for (const entry of secretsToTry) {
+    const expectedHmac = crypto
+      .createHmac('sha256', entry.secret)
+      .update(sortedParams)
+      .digest('hex')
+    try {
+      const a = Buffer.from(hmac, 'utf8')
+      const b = Buffer.from(expectedHmac, 'utf8')
+      if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+        return { ok: true, appMode: entry.mode }
+      }
+    } catch {
+      if (hmac === expectedHmac) {
+        return { ok: true, appMode: entry.mode }
+      }
+    }
+  }
+
+  return { ok: false, appMode: preferredMode }
+}
+
 /**
  * Handles the OAuth callback from Shopify
  * GET /api/integrations/shopify/callback?code=xxx&shop=xxx&state=xxx&hmac=xxx
+ *
+ * Supports live (SHOPIFY_CLIENT_*) and test (SHOPIFY_TEST_CLIENT_*) apps.
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
@@ -40,14 +104,16 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state')
   const hmac = searchParams.get('hmac')
 
-  // Peek DTC return URL early so pre-parse failures can still send the user back to DTC.
+  // Peek DTC return URL / app mode early so pre-parse failures can still send the user back.
   let earlyDtcReturnUrl: string | null = null
   let earlyOAuthSource: string | null = null
+  let earlyAppMode: ShopifyAppMode = 'live'
   if (state?.includes(':')) {
     try {
       const stateData = state.split(':')[1]
       const decoded = JSON.parse(atob(stateData))
       earlyOAuthSource = decoded.source ?? null
+      earlyAppMode = parseShopifyAppMode(decoded.app)
       if (typeof decoded.returnUrl === 'string' && decoded.returnUrl.startsWith('http')) {
         earlyDtcReturnUrl = decoded.returnUrl
       }
@@ -62,33 +128,29 @@ export async function GET(request: NextRequest) {
     return redirectOAuthError('missing_params', earlyDtcReturnUrl, earlyOAuthSource)
   }
 
-  // Verify HMAC signature
+  // Verify HMAC — try preferred app secret, then the other (live vs test)
   const params = new URLSearchParams(searchParams)
   params.delete('hmac')
 
-  // Sort params alphabetically
   const sortedParams = Array.from(params.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
     .join('&')
 
-  const expectedHmac = crypto
-    .createHmac('sha256', SHOPIFY_CLIENT_SECRET)
-    .update(sortedParams)
-    .digest('hex')
-
-  if (hmac !== expectedHmac) {
-    console.error('Invalid HMAC signature')
+  const hmacResult = verifyOAuthHmac(sortedParams, hmac, earlyAppMode)
+  if (!hmacResult.ok) {
+    console.error('Invalid HMAC signature (checked live + test app secrets)')
     return redirectOAuthError('invalid_hmac', earlyDtcReturnUrl, earlyOAuthSource)
   }
 
+  let appMode = hmacResult.appMode
   const shopDomain = normalizeShopifyShopDomain(shop)
 
   // Verify nonce from state (portal cookie OR DTC-initiated DB state)
   const nonceCookie = request.cookies.get('shopify_oauth_nonce')?.value
   const [stateNonce, stateData] = state.split(':')
 
-  // Parse client ID / return URL from state
+  // Parse client ID / return URL / app from state
   let clientId: string
   let oauthSource: string | null = earlyOAuthSource
   let dtcReturnUrl: string | null = earlyDtcReturnUrl
@@ -96,6 +158,9 @@ export async function GET(request: NextRequest) {
     const decoded = JSON.parse(atob(stateData))
     clientId = decoded.clientId
     oauthSource = decoded.source ?? null
+    if (decoded.app) {
+      appMode = parseShopifyAppMode(decoded.app)
+    }
     dtcReturnUrl =
       typeof decoded.returnUrl === 'string' && decoded.returnUrl.startsWith('http')
         ? decoded.returnUrl
@@ -104,6 +169,11 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     console.error('Failed to parse state:', e)
     return redirectOAuthError('invalid_state', earlyDtcReturnUrl, earlyOAuthSource)
+  }
+
+  // Prefer the secret that actually verified the HMAC
+  if (hmacResult.appMode) {
+    appMode = hmacResult.appMode
   }
 
   if (oauthSource === 'dtc') {
@@ -134,10 +204,10 @@ export async function GET(request: NextRequest) {
     return redirectOAuthError('invalid_state', dtcReturnUrl, oauthSource)
   }
 
-  // Exchange code for expiring offline access token (+ refresh token)
+  // Exchange code using the same app (live or test) that signed the callback
   let tokenData: Awaited<ReturnType<typeof exchangeAuthorizationCode>>
   try {
-    tokenData = await exchangeAuthorizationCode(shopDomain, code)
+    tokenData = await exchangeAuthorizationCode(shopDomain, code, appMode)
   } catch (e) {
     console.error('Token exchange error:', e)
     return redirectOAuthError('token_exchange_failed', dtcReturnUrl, oauthSource)
@@ -146,9 +216,12 @@ export async function GET(request: NextRequest) {
   // Get shop info
   let shopName = shopDomain
   try {
-    const shopResponse = await fetch(`https://${shopDomain}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/shop.json`, {
-      headers: { 'X-Shopify-Access-Token': tokenData.access_token },
-    })
+    const shopResponse = await fetch(
+      `https://${shopDomain}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/shop.json`,
+      {
+        headers: { 'X-Shopify-Access-Token': tokenData.access_token },
+      },
+    )
     if (shopResponse.ok) {
       const shopInfo = await shopResponse.json()
       shopName = shopInfo.shop?.name || shopDomain
@@ -166,34 +239,28 @@ export async function GET(request: NextRequest) {
     const locationResult = await ensureShopifyLocation(
       shopDomain,
       tokenData.access_token,
-      locationName
+      locationName,
     )
     locationId = locationResult.locationId
     locationName = locationResult.locationName
     locationCreatedByUs = locationResult.createdByUs
     console.log(
-      `Location ${locationCreatedByUs ? 'created' : 'found'}: "${locationName}" (ID: ${locationId})`
+      `Location ${locationCreatedByUs ? 'created' : 'found'}: "${locationName}" (ID: ${locationId})`,
     )
   } catch (error) {
     console.error('Failed to create/find location:', error)
-    // Continue without location - can be set up later via settings
-    // This allows the integration to work even if location creation fails
   }
 
-  // Generate webhook secret
   const webhookSecret = crypto.randomBytes(32).toString('hex')
-
   const storedTokens = buildStoredTokenFields(tokenData)
   let encryptedWebhookSecret = webhookSecret
 
   if (isEncryptionConfigured()) {
     encryptedWebhookSecret = encryptToken(webhookSecret)
-    console.log('Tokens encrypted before storage')
   } else {
     console.warn('TOKEN_ENCRYPTION_KEY not configured - storing tokens in plaintext')
   }
 
-  // Save integration to database
   const supabase = createServiceClient()
 
   const { data: integration, error: dbError } = await supabase
@@ -211,14 +278,13 @@ export async function GET(request: NextRequest) {
         webhook_secret: encryptedWebhookSecret,
         status: 'active',
         updated_at: new Date().toISOString(),
-        // Multi-location support
         shopify_location_id: locationId,
         shopify_location_name: locationName,
         location_created_by_us: locationCreatedByUs,
       },
       {
         onConflict: 'client_id,platform,shop_domain',
-      }
+      },
     )
     .select()
     .single()
@@ -230,35 +296,48 @@ export async function GET(request: NextRequest) {
 
   const imsWarehouseId = await ensureIntegrationWarehouseLocation(supabase, integration.id)
   const existingSettings = (integration.settings ?? {}) as IntegrationSettings
+  const dtcDefaults = oauthSource === 'dtc' ? DEFAULT_SHOPIFY_INTEGRATION_SETTINGS : null
 
   await supabase
     .from('client_integrations')
     .update({
       settings: {
-        auto_import_orders: existingSettings.auto_import_orders ?? true,
-        auto_sync_inventory: existingSettings.auto_sync_inventory ?? false,
-        auto_sync_prices: existingSettings.auto_sync_prices ?? false,
+        auto_import_orders:
+          dtcDefaults?.auto_import_orders ?? existingSettings.auto_import_orders ?? true,
+        auto_sync_inventory:
+          dtcDefaults?.auto_sync_inventory ?? existingSettings.auto_sync_inventory ?? false,
+        auto_sync_prices:
+          dtcDefaults?.auto_sync_prices ?? existingSettings.auto_sync_prices ?? false,
         sync_inventory_interval_minutes:
-          existingSettings.sync_inventory_interval_minutes ?? 60,
-        inventory_buffer: existingSettings.inventory_buffer ?? 0,
+          dtcDefaults?.sync_inventory_interval_minutes ??
+          existingSettings.sync_inventory_interval_minutes ??
+          60,
+        inventory_buffer:
+          dtcDefaults?.inventory_buffer ?? existingSettings.inventory_buffer ?? 0,
         default_location_id:
-          imsWarehouseId ?? existingSettings.default_location_id ?? null,
+          imsWarehouseId ??
+          dtcDefaults?.default_location_id ??
+          existingSettings.default_location_id ??
+          null,
         fulfillment_notify_customer:
-          existingSettings.fulfillment_notify_customer ?? true,
+          dtcDefaults?.fulfillment_notify_customer ??
+          existingSettings.fulfillment_notify_customer ??
+          true,
+        dtc_verify_before_fulfill:
+          dtcDefaults?.dtc_verify_before_fulfill ?? existingSettings.dtc_verify_before_fulfill,
+        shopify_app: appMode,
+        connection_mode: connectionModeForApp(appMode),
       },
     })
     .eq('id', integration.id)
 
-  // Register webhooks with Shopify
   await registerShopifyWebhooks(integration.id, shopDomain, tokenData.access_token)
 
-  // Update webhooks_registered flag
   await supabase
     .from('client_integrations')
     .update({ webhooks_registered: true })
     .eq('id', integration.id)
 
-  // Clear nonce cookie and redirect to success (DTC portal or 7D portal)
   const successRedirect =
     oauthSource === 'dtc' && dtcReturnUrl
       ? `${dtcReturnUrl}${dtcReturnUrl.includes('?') ? '&' : '?'}shopify=connected`
@@ -272,7 +351,7 @@ export async function GET(request: NextRequest) {
 async function registerShopifyWebhooks(
   integrationId: string,
   shop: string,
-  accessToken: string
+  accessToken: string,
 ): Promise<void> {
   const APP_URL = process.env.NEXT_PUBLIC_APP_URL!
   const webhookUrl = `${APP_URL}/api/webhooks/shopify/${integrationId}`
@@ -287,20 +366,23 @@ async function registerShopifyWebhooks(
 
   for (const topic of webhookTopics) {
     try {
-      const response = await fetch(`https://${shop}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/webhooks.json`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Access-Token': accessToken,
-        },
-        body: JSON.stringify({
-          webhook: {
-            topic,
-            address: webhookUrl,
-            format: 'json',
+      const response = await fetch(
+        `https://${shop}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/webhooks.json`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Shopify-Access-Token': accessToken,
           },
-        }),
-      })
+          body: JSON.stringify({
+            webhook: {
+              topic,
+              address: webhookUrl,
+              format: 'json',
+            },
+          }),
+        },
+      )
 
       if (!response.ok) {
         const errorText = await response.text()
