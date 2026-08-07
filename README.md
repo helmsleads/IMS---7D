@@ -25,6 +25,22 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Portal shipment tracking
+
+On **Portal → Orders → order detail**, after an order ships with a tracking number, clients see:
+
+- Live status text (FedEx Track when carrier is FedEx)
+- Scan history
+- Map of latest scan location (or ship-to until scans exist)
+
+Optional Google Maps Embed (otherwise OpenStreetMap):
+
+```bash
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_maps_embed_key
+```
+
+API: `GET /api/portal/orders/[orderId]/tracking` (portal session required).
+
 ## Architecture
 
 ```

@@ -27,6 +27,7 @@ import FetchError from "@/components/ui/FetchError";
 import { handleApiError } from "@/lib/utils/error-handler";
 import { downloadBOL, printBOL, BOLData } from "@/lib/generate-bol";
 import { getSystemSetting } from "@/lib/api/settings";
+import { ShipmentTrackingPanel } from "@/components/portal/ShipmentTrackingPanel";
 
 interface OrderItem {
   id: string;
@@ -790,6 +791,8 @@ export default function OrderDetailPage() {
                 </div>
               )}
             </div>
+
+            <ShipmentTrackingPanel orderId={order.id} />
           </div>
         );
       })()}
