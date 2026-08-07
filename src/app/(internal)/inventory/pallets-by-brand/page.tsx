@@ -409,7 +409,7 @@ export default function PalletsByBrandPage() {
 
             <Card
               title="Pallets by brand"
-              subtitle="Pallets = sellable cases ÷ ~60. Qty is from inventory on hand (samples / merch show units but 0 pallets)."
+              subtitle="Pallets = cases on hand ÷ product cases-per-pallet (default 60). Shrinks as stock ships out; samples/merch = 0 pallets."
             >
               {loading ? (
                 <div className="flex justify-center py-16">

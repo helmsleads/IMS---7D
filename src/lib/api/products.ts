@@ -17,6 +17,8 @@ export interface Product {
   image_url: string | null;
   container_type: string | null;
   units_per_case: number | null;
+  /** Cases that typically fit on one warehouse pallet (default 60). */
+  cases_per_pallet: number | null;
   size: string | null;
   weight_lbs: number | null;
   freight_class: string | null;

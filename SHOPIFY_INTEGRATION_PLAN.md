@@ -36,6 +36,7 @@ When making changes, update these sections as needed:
 | Date | Change | Reason | Files Affected |
 |------|--------|--------|----------------|
 | 2026-07-14 | Partner deck + fee PDF absorbed; alc/non-alc product types; multi-carrier via 7D | DTC owns checkout/verify; brand merchandising; Helmsman MoR fees | `DTC_backend/docs/*`, migration 023, productType.js |
+| 2026-08-06 | Utah-only alcohol ban; NY seller-of-record; Platform $399 public catalog; MoR refunds matrix | Align DTC + 7D restricted states; Sam MoR / refunds specs | `20260807_alcohol_restricted_utah_only.sql`, DTC migrations 038–040 |
 | 2026-07-14 | DTC portal Shopify connect + auto 7D provision + shipment billing prefs | Brands connect Shopify in DTC (not manual 7D OTP); reuse 7D OAuth/defaults | `7d/src/app/api/dtc/clients/**`, `DTC_backend/**`, `DTC_frontend/**`, docs |
 | 2024-02-02 | Initial plan created | Planning phase | N/A |
 | 2026-02-02 | Full implementation completed | Code implementation | All Shopify files |

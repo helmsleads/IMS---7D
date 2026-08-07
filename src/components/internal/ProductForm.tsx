@@ -33,6 +33,9 @@ export default function ProductForm({
   const [clientId, setClientId] = useState(product?.client_id || "");
   const [containerType, setContainerType] = useState<string>((product as any)?.container_type || "bottle");
   const [unitsPerCase, setUnitsPerCase] = useState<number>((product as any)?.units_per_case || 1);
+  const [casesPerPallet, setCasesPerPallet] = useState<number>(
+    (product as any)?.cases_per_pallet || 60
+  );
   const [size, setSize] = useState(product?.size || "");
   const [weightLbs, setWeightLbs] = useState<number | string>((product as any)?.weight_lbs || "");
   const [freightClass, setFreightClass] = useState((product as any)?.freight_class || "");
@@ -213,6 +216,7 @@ export default function ProductForm({
       client_id: clientId || null,
       container_type: containerType,
       units_per_case: unitsPerCase,
+      cases_per_pallet: casesPerPallet,
       size: showSizeField ? (size || null) : null,
       weight_lbs: weightLbs ? parseFloat(String(weightLbs)) : null,
       freight_class: freightClass || null,
@@ -324,22 +328,22 @@ export default function ProductForm({
           disabled={!categoryId || subcategoryOptions.length === 0}
         />
       </div>
+      <Select
+        label="Container Type"
+        name="container_type"
+        options={containerTypeOptions}
+        value={containerType}
+        onChange={(e) => {
+          const ct = e.target.value;
+          setContainerType(ct);
+          // Auto-set units per case based on container type
+          if (ct === "bottle" || ct === "empty_bottle") setUnitsPerCase(6);
+          else if (ct === "can") setUnitsPerCase(24);
+          else if (ct === "keg") setUnitsPerCase(1);
+          else if (ct === "merchandise" || ct === "raw_materials" || ct === "sample" || ct === "other") setUnitsPerCase(1);
+        }}
+      />
       <div className="grid grid-cols-2 gap-4">
-        <Select
-          label="Container Type"
-          name="container_type"
-          options={containerTypeOptions}
-          value={containerType}
-          onChange={(e) => {
-            const ct = e.target.value;
-            setContainerType(ct);
-            // Auto-set units per case based on container type
-            if (ct === "bottle" || ct === "empty_bottle") setUnitsPerCase(6);
-            else if (ct === "can") setUnitsPerCase(24);
-            else if (ct === "keg") setUnitsPerCase(1);
-            else if (ct === "merchandise" || ct === "raw_materials" || ct === "sample" || ct === "other") setUnitsPerCase(1);
-          }}
-        />
         <Input
           label="Units Per Case"
           name="units_per_case"
@@ -347,6 +351,15 @@ export default function ProductForm({
           min={1}
           value={unitsPerCase}
           onChange={(e) => setUnitsPerCase(parseInt(e.target.value) || 1)}
+        />
+        <Input
+          label="Cases Per Pallet"
+          name="cases_per_pallet"
+          type="number"
+          min={1}
+          value={casesPerPallet}
+          onChange={(e) => setCasesPerPallet(parseInt(e.target.value) || 60)}
+          hint="Storage estimate (e.g. 90 for Casa Malka)"
         />
       </div>
 

@@ -2079,8 +2079,9 @@ function AlcoholRestrictedStatesSection() {
               Alcohol DTC Restricted States
             </h2>
             <p className="text-sm text-gray-500">
-              US states where alcohol cannot be shipped via DTC. Used by the DTC portal
-              checkout.
+              US states where alcohol cannot be shipped via DTC (currently Utah only —
+              hard ban). All other states are allowed; sales are booked as NY home-state
+              seller-of-record. Used by DTC checkout.
               {source === "default" ? " (showing defaults until first save)" : ""}
             </p>
           </div>

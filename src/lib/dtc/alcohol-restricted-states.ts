@@ -6,17 +6,12 @@
 export const DTC_SETTINGS_CATEGORY = "dtc";
 export const ALCOHOL_RESTRICTED_STATES_KEY = "alcohol_restricted_states";
 
-/** Default when no system setting exists yet. */
-export const DEFAULT_ALCOHOL_RESTRICTED_US_STATES = [
-  "AL",
-  "AR",
-  "DE",
-  "HI",
-  "MS",
-  "RI",
-  "SD",
-  "UT",
-] as const;
+/**
+ * Default when no system setting exists yet.
+ * Sam (Aug 2026): only Utah is a hard ban; all other US states (incl. NY) are allowed.
+ * Sales are booked as home-state (NY) seller-of-record nationwide.
+ */
+export const DEFAULT_ALCOHOL_RESTRICTED_US_STATES = ["UT"] as const;
 
 export const US_STATE_CODES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",

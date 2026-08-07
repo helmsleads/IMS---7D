@@ -270,7 +270,7 @@ export async function getBrandPalletDetails(params: {
 
 /**
  * Live estimate from inventory when no snapshot exists yet
- * (same formula as take_storage_snapshot: cases / 60).
+ * (same formula as take_storage_snapshot: cases / cases_per_pallet).
  */
 export async function getLivePalletsByBrand(params?: {
   clientId?: string;
@@ -287,6 +287,7 @@ export async function getLivePalletsByBrand(params?: {
         client_id,
         container_type,
         units_per_case,
+        cases_per_pallet,
         client:clients ( id, company_name )
       )
     `
@@ -311,6 +312,7 @@ export async function getLivePalletsByBrand(params?: {
       client_id: string | null;
       container_type: string | null;
       units_per_case: number | null;
+      cases_per_pallet: number | null;
       client: { id: string; company_name: string } | { id: string; company_name: string }[] | null;
     }>(row.product);
     if (!product?.client_id) continue;
@@ -321,10 +323,11 @@ export async function getLivePalletsByBrand(params?: {
     const isKeg = containerType === "keg";
     const isNonPallet = NON_PALLET_CONTAINER_TYPES.has(containerType);
     const unitsPerCase = Math.max(Number(product.units_per_case) || 1, 1);
+    const casesPerPallet = Math.max(Number(product.cases_per_pallet) || 60, 1);
     const pallets =
       isKeg || isNonPallet
         ? 0
-        : Math.max(1, Math.ceil(qty / unitsPerCase / 60));
+        : Math.round((qty / unitsPerCase / casesPerPallet) * 10000) / 10000;
     const barrels = isKeg ? qty : 0;
 
     const existing = byClient.get(product.client_id) || {
