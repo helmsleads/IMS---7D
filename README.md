@@ -120,7 +120,14 @@ When a DTC-synced outbound order ships, 7D POSTs to `DTC_BACKEND_URL/v1/webhooks
 
 DTC-synced orders use `DTC-` prefixed `order_number` and appear with a **DTC** badge on the outbound page. They can be deleted from outbound while status is pending through shipped (inventory is restored when items were shipped).
 
-**Alcohol / MoR (shared with DTC):** ship-to blocked in **Utah only** (`alcohol_restricted_states` system setting). Tax seller-of-record for MoR sales is **NY** (configured in DTC). See `DTC_backend/docs/order-money-flow.md`.
+**Alcohol / MoR (shared with DTC, Aug 2026):**
+
+- Ship-to blocked in **Utah only** (`alcohol_restricted_states` system setting; default `["UT"]`)
+- Tax seller-of-record for MoR sales is **NY** (DTC `tax_settings`)
+- Consumer checkout (brand storefront / DTC storefront) shows **retail + shipping + tax** only; shipping UI is service level (Ground/Air/Express), not carrier
+- Jeff-facing pilot brand: **Paladar** (not Avuá)
+
+See `DTC_backend/docs/order-money-flow.md`.
 
 **Auth:** `Authorization: Bearer <DTC_API_KEY>` (same value as `SEVEN_D_API_KEY` in DTC backend)
 
