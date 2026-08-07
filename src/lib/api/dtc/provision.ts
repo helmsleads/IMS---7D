@@ -31,6 +31,11 @@ export interface ProvisionDtcClientInput {
    * Defaults to owner (brand admin for the client).
    */
   portal_role?: ClientUserRole;
+  /**
+   * When false, create/reuse the warehouse client only — do not invite a portal user.
+   * Used when an admin creates a 7D brand before approving a DTC demo request.
+   */
+  invite_portal_user?: boolean;
 }
 
 export interface ProvisionDtcClientResult {
@@ -42,6 +47,7 @@ export interface ProvisionDtcClientResult {
     invite_link?: string;
     email_warning?: string;
     already_had_portal_access?: boolean;
+    skipped?: boolean;
   };
   signup_source: SignupSource;
   brand_affiliation: string | null;
@@ -72,6 +78,7 @@ export async function provisionDtcClientAndPortalUser(
   const signupSource: SignupSource = input.signup_source ?? "dtc";
   const contactName = input.contact_name?.trim() || companyName;
   const portalRole: ClientUserRole = input.portal_role ?? "owner";
+  const invitePortalUser = input.invite_portal_user !== false;
 
   if (!email) {
     const err = new Error("email is required");
@@ -137,6 +144,19 @@ export async function provisionDtcClientAndPortalUser(
       .eq("id", client.id);
   } catch {
     /* optional columns */
+  }
+
+  if (!invitePortalUser) {
+    return {
+      client,
+      created_client: createdClient,
+      portal_invite: {
+        sent: false,
+        skipped: true,
+      },
+      signup_source: signupSource,
+      brand_affiliation: brandAffiliation,
+    };
   }
 
   const existingPortal = await findActivePortalAccountByEmail(email);
