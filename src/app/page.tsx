@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase";
 import { Eye, EyeOff, ExternalLink, Loader2 } from "lucide-react";
 import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
 import { BrandLogo } from "@/components/BrandLogo";
+import { StagingLoginBanner } from "@/components/StagingLoginBanner";
 import {
   SHOPIFY_PORTAL_CONNECT_PATH,
   breakOutToPortalLogin,
@@ -189,6 +190,7 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl p-8">
+          <StagingLoginBanner />
           <h2 className="text-xl font-semibold text-gray-900 mb-6 text-center">
             Sign in to your account
           </h2>

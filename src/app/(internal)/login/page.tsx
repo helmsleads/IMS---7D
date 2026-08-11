@@ -7,6 +7,7 @@ import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
 import { BrandLogo } from "@/components/BrandLogo";
+import { StagingLoginBanner } from "@/components/StagingLoginBanner";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -121,6 +122,9 @@ export default function LoginPage() {
         <p className="text-center text-slate-500 text-sm font-medium tracking-wide uppercase">
           Team Login
         </p>
+        <div className="mt-4">
+          <StagingLoginBanner />
+        </div>
         <form onSubmit={handleLogin} className="mt-6 space-y-4">
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
