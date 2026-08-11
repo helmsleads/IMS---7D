@@ -706,10 +706,13 @@ export default function PortalSidebar({ companyName }: { companyName: string }) 
                 <button
                   onClick={handleLogout}
                   disabled={loggingOut}
-                  className="p-2 text-slate-400 hover:text-white transition-colors disabled:opacity-50"
-                  title="Logout"
+                  className="flex items-center gap-1.5 px-2 py-1.5 text-slate-400 hover:text-white hover:bg-white/5 rounded-md transition-colors disabled:opacity-50"
+                  title="Log out"
                 >
-                  <LogOut className="w-5 h-5" />
+                  <LogOut className="w-4 h-4" />
+                  <span className="text-xs font-medium">
+                    {loggingOut ? "…" : "Log out"}
+                  </span>
                 </button>
               </>
             )}
@@ -719,11 +722,11 @@ export default function PortalSidebar({ companyName }: { companyName: string }) 
               onClick={handleLogout}
               disabled={loggingOut}
               className="w-full mt-2 p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-md transition-colors group relative disabled:opacity-50"
-              title="Logout"
+              title="Log out"
             >
               <LogOut className="w-5 h-5 mx-auto" />
               <span className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-sm rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
-                Logout
+                Log out
               </span>
             </button>
           )}

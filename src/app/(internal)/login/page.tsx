@@ -39,26 +39,66 @@ export default function LoginPage() {
         return;
       }
 
-      // Verify user is staff (exists in users table and is active)
-      const { data: staffUser, error: staffError } = await supabase
+      // Prefer staff/admin when present
+      const { data: staffUser } = await supabase
         .from("users")
         .select("id, active")
         .eq("id", authData.user.id)
-        .single();
+        .maybeSingle();
 
-      if (staffError || !staffUser) {
-        await supabase.auth.signOut();
-        setError("Access denied. This login is for staff members only.");
+      if (staffUser?.active) {
+        router.push(redirectTo);
         return;
       }
 
-      if (!staffUser.active) {
+      if (staffUser && !staffUser.active) {
         await supabase.auth.signOut();
-        setError("Your account has been deactivated. Please contact an administrator.");
+        setError(
+          "Your account has been deactivated. Please contact an administrator."
+        );
         return;
       }
 
-      router.push(redirectTo);
+      // Not staff — fall through to client portal users
+      const { data: clientUserAccess } = await supabase
+        .from("client_users")
+        .select("id")
+        .eq("user_id", authData.user.id)
+        .limit(1);
+
+      if (clientUserAccess && clientUserAccess.length > 0) {
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("password_set_at")
+          .eq("id", authData.user.id)
+          .maybeSingle();
+
+        if (profile && !profile.password_set_at) {
+          await supabase
+            .from("user_profiles")
+            .update({ password_set_at: new Date().toISOString() })
+            .eq("id", authData.user.id);
+        }
+
+        router.push("/portal/dashboard");
+        return;
+      }
+
+      const { data: legacyClient } = await supabase
+        .from("clients")
+        .select("id")
+        .eq("auth_id", authData.user.id)
+        .maybeSingle();
+
+      if (legacyClient) {
+        router.push("/portal/dashboard");
+        return;
+      }
+
+      await supabase.auth.signOut();
+      setError(
+        "Access denied. No staff or portal access found for this account. Please contact support."
+      );
     } catch {
       setError("An unexpected error occurred");
     } finally {
@@ -122,6 +162,9 @@ export default function LoginPage() {
           >
             Sign In
           </Button>
+          <p className="text-xs text-center text-slate-500">
+            Client accounts are routed to the portal automatically.
+          </p>
         </form>
       </div>
     </div>

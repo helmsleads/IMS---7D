@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
 import { BrandLogo } from "@/components/BrandLogo";
+import {
+  breakOutToPortalLogin,
+  shouldBreakOutOfShopifyEmbed,
+} from "@/lib/shopify-embed";
 
 export default function ClientLoginPage() {
   const router = useRouter();
@@ -21,12 +25,25 @@ export default function ClientLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // If Shopify still embeds this page, break out so cookies work.
+  useEffect(() => {
+    if (!shouldBreakOutOfShopifyEmbed()) return;
+    const path = `/client-login?redirect=${encodeURIComponent(redirectTo)}`;
+    breakOutToPortalLogin(path);
+  }, [redirectTo]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
     try {
+      if (shouldBreakOutOfShopifyEmbed()) {
+        const path = `/client-login?redirect=${encodeURIComponent(redirectTo)}`;
+        breakOutToPortalLogin(path);
+        return;
+      }
+
       const normalizedEmail = email.trim().toLowerCase();
 
       const { data: authData, error: authError } =
@@ -71,16 +88,49 @@ export default function ClientLoginPage() {
         .from("clients")
         .select("id")
         .eq("auth_id", authData.user.id)
-        .single();
+        .maybeSingle();
 
       if (legacyClient) {
         router.push(redirectTo);
         return;
       }
 
-      // No portal access found
+      // Not a portal user — send staff/admins to the internal app instead of denying
+      const { data: staffUser } = await supabase
+        .from("users")
+        .select("id, active")
+        .eq("id", authData.user.id)
+        .maybeSingle();
+
+      if (staffUser?.active) {
+        router.push("/dashboard");
+        return;
+      }
+
+      if (staffUser && !staffUser.active) {
+        await supabase.auth.signOut();
+        setError(
+          "Your staff account has been deactivated. Please contact an administrator."
+        );
+        return;
+      }
+
+      const { data: staffByEmail } = await supabase
+        .from("users")
+        .select("id, active")
+        .eq("email", normalizedEmail)
+        .maybeSingle();
+
+      if (staffByEmail?.active) {
+        router.push("/dashboard");
+        return;
+      }
+
+      // Neither portal nor staff
       await supabase.auth.signOut();
-      setError("Access denied. You don't have portal access. Please contact your administrator.");
+      setError(
+        "Access denied. No portal or staff access found for this account. Please contact support."
+      );
     } catch {
       setError("An unexpected error occurred");
     } finally {
@@ -144,6 +194,9 @@ export default function ClientLoginPage() {
           >
             Access Portal
           </Button>
+          <p className="text-xs text-center text-slate-500">
+            Staff accounts are routed to the team app automatically.
+          </p>
           <div className="text-center">
             <a href="/forgot-password" className="text-sm text-cyan-600 hover:text-cyan-700">
               Forgot password?

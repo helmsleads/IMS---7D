@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, ExternalLink, Loader2 } from "lucide-react";
 import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
 import { BrandLogo } from "@/components/BrandLogo";
+import {
+  SHOPIFY_PORTAL_CONNECT_PATH,
+  breakOutToPortalLogin,
+  shouldBreakOutOfShopifyEmbed,
+} from "@/lib/shopify-embed";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,15 +20,30 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [shopifyEmbed, setShopifyEmbed] = useState(false);
+
+  // Shopify App URL loads this page inside admin.shopify.com. Cookie auth fails
+  // there — break out to top-level client-login (Integrations redirect).
+  useEffect(() => {
+    if (!shouldBreakOutOfShopifyEmbed()) return;
+    setShopifyEmbed(true);
+    breakOutToPortalLogin(SHOPIFY_PORTAL_CONNECT_PATH);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    const supabase = createClient();
+    // Never attempt password login inside Shopify's iframe — session won't stick.
+    if (shouldBreakOutOfShopifyEmbed()) {
+      setShopifyEmbed(true);
+      breakOutToPortalLogin(SHOPIFY_PORTAL_CONNECT_PATH);
+      setLoading(false);
+      return;
+    }
 
-    // Attempt sign in
+    const supabase = createClient();
     const normalizedEmail = email.trim().toLowerCase();
 
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -49,48 +69,56 @@ export default function LoginPage() {
       return;
     }
 
-    // Check if user is a staff member (in users table)
-    const { data: staffUser, error: staffError } = await supabase
+    // Staff: users table by id (maybeSingle avoids treating "no row" as a hard error)
+    const { data: staffUser } = await supabase
       .from("users")
       .select("id, role")
       .eq("id", authData.user.id)
-      .single();
+      .maybeSingle();
 
     if (staffUser) {
-      // Staff user - redirect to internal app
       router.push("/inventory");
       return;
     }
 
-    // If there was an RLS error, user might still be staff but can't read table
-    // Try checking by email as fallback
-    if (staffError) {
-      const { data: staffByEmail } = await supabase
-        .from("users")
-        .select("id, role")
-        .eq("email", normalizedEmail)
-        .single();
+    // Fallback staff lookup by email (RLS edge cases)
+    const { data: staffByEmail } = await supabase
+      .from("users")
+      .select("id, role")
+      .eq("email", normalizedEmail)
+      .maybeSingle();
 
-      if (staffByEmail) {
-        router.push("/inventory");
-        return;
-      }
+    if (staffByEmail) {
+      router.push("/inventory");
+      return;
     }
 
-    // Check if user has portal access via client_users
+    // Portal access via client_users (same path as /client-login)
     const { data: clientUserAccess } = await supabase
       .from("client_users")
-      .select("id")
+      .select("id, client_id")
       .eq("user_id", authData.user.id)
       .limit(1);
 
     if (clientUserAccess && clientUserAccess.length > 0) {
-      // Client user - redirect to client portal
-      router.push("/portal");
+      const { data: profile } = await supabase
+        .from("user_profiles")
+        .select("password_set_at")
+        .eq("id", authData.user.id)
+        .maybeSingle();
+
+      if (profile && !profile.password_set_at) {
+        await supabase
+          .from("user_profiles")
+          .update({ password_set_at: new Date().toISOString() })
+          .eq("id", authData.user.id);
+      }
+
+      router.push("/portal/dashboard");
       return;
     }
 
-    // Fall back to legacy portal mapping via clients.auth_id
+    // Legacy portal mapping via clients.auth_id
     const { data: legacyClient } = await supabase
       .from("clients")
       .select("id")
@@ -98,22 +126,55 @@ export default function LoginPage() {
       .maybeSingle();
 
     if (legacyClient) {
-      router.push("/portal");
+      router.push("/portal/dashboard");
       return;
     }
 
-    // No matching user found in either table
-    setError("Account not found. Please contact support.");
+    await supabase.auth.signOut();
+    setError(
+      "No staff or portal access is linked to this login. Client accounts should use Client Portal sign-in."
+    );
     setLoading(false);
   };
 
+  if (shopifyEmbed) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+        <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 text-center">
+          <div className="inline-flex items-center justify-center mb-5">
+            <BrandLogo variant="stacked" width={140} height={143} className="drop-shadow-lg" priority />
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-3">
+            Continue in the 7D Portal
+          </h2>
+          <p className="text-sm text-gray-600 mb-6">
+            Shopify opens this app inside Admin, where sign-in cannot complete reliably.
+            Open the client portal in a full browser tab, then connect Shopify from{" "}
+            <span className="font-medium text-gray-800">Integrations</span>.
+          </p>
+          <a
+            href={SHOPIFY_PORTAL_CONNECT_PATH}
+            target="_top"
+            rel="noopener noreferrer"
+            className="inline-flex w-full items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold py-3 px-4 rounded-xl hover:from-blue-700 hover:to-blue-800"
+          >
+            Open Client Portal
+            <ExternalLink className="w-4 h-4" />
+          </a>
+          <p className="text-xs text-gray-500 mt-4">
+            You&apos;ll sign in at <code className="text-[11px]">/client-login</code>, then go to
+            Integrations to finish connecting your store.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-      {/* Background pattern */}
       <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiMyMDIwMjAiIGZpbGwtb3BhY2l0eT0iMC4xIj48cGF0aCBkPSJNMzYgMzRoLTJ2LTRoMnY0em0wLTZ2LTRoLTJ2NGgyek0zMCAzNGgtMnYtNGgydjR6bTAtNnYtNGgtMnY0aDJ6Ii8+PC9nPjwvZz48L3N2Zz4=')] opacity-20"></div>
 
       <div className="relative w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-5">
             <BrandLogo
@@ -127,7 +188,6 @@ export default function LoginPage() {
           <p className="text-slate-400 mt-1">Inventory Management System</p>
         </div>
 
-        {/* Login Card */}
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <h2 className="text-xl font-semibold text-gray-900 mb-6 text-center">
             Sign in to your account
@@ -135,8 +195,16 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin} className="space-y-5">
             {error && (
-              <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg text-sm">
-                {error}
+              <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg text-sm space-y-2">
+                <p>{error}</p>
+                <p>
+                  <a
+                    href="/client-login?redirect=%2Fportal%2Fdashboard"
+                    className="font-medium underline hover:text-red-700"
+                  >
+                    Sign in to the Client Portal
+                  </a>
+                </p>
               </div>
             )}
 
@@ -197,16 +265,23 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-gray-200">
+          <div className="mt-6 pt-6 border-t border-gray-200 space-y-2">
             <p className="text-sm text-gray-500 text-center">
               Staff and client accounts use the same login.
               <br />
               You&apos;ll be directed to the appropriate portal.
             </p>
+            <p className="text-sm text-center">
+              <a
+                href="/client-login?redirect=%2Fportal%2Fdashboard"
+                className="text-blue-600 hover:text-blue-700 font-medium"
+              >
+                Client portal sign-in
+              </a>
+            </p>
           </div>
         </div>
 
-        {/* Footer */}
         <p className="text-center text-slate-500 text-sm mt-8">
           &copy; {new Date().getFullYear()} 7 Degrees Co. All rights reserved.
         </p>

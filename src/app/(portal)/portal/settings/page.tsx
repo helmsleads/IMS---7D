@@ -14,8 +14,11 @@ import {
   Phone,
   Shield,
   UserPlus,
+  LogOut,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useClient } from "@/lib/client-auth";
+import { createClient } from "@/lib/supabase";
 import Card from "@/components/ui/Card";
 import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
@@ -165,10 +168,12 @@ const ROLE_OPTIONS_WITH_OWNER = [
 ];
 
 export default function PortalSettingsPage() {
+  const router = useRouter();
   const { client, currentRole, user } = useClient();
   const [activeTab, setActiveTab] = useState<TabType>("addresses");
   const [addresses, setAddresses] = useState<PortalAddress[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [editingAddress, setEditingAddress] = useState<PortalAddress | null>(null);
   const [addressForm, setAddressForm] = useState<CreateAddressData>({
@@ -574,11 +579,28 @@ export default function PortalSettingsPage() {
       {alert && <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />}
 
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Account Settings</h1>
-        <p className="text-slate-500 mt-1">
-          Manage your addresses and notification preferences
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Account Settings</h1>
+          <p className="text-slate-500 mt-1">
+            Manage your addresses and notification preferences
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={loggingOut}
+          onClick={async () => {
+            setLoggingOut(true);
+            const supabase = createClient();
+            await supabase.auth.signOut();
+            router.push("/client-login");
+          }}
+          className="shrink-0"
+        >
+          <LogOut className="w-4 h-4 mr-2" />
+          {loggingOut ? "Signing out…" : "Log out"}
+        </Button>
       </div>
 
       {/* Tab Navigation */}

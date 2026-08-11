@@ -298,6 +298,11 @@ Allowed redirection URLs:   https://localhost:3000/api/integrations/shopify/call
 
 ⚠️ We'll update these with your real domain or ngrok URL later.
 
+**Important:** Merchants should connect Shopify from the **7D Client Portal → Integrations**
+(or DTC Integrations), not by signing into IMS inside the Shopify Admin iframe.
+The App URL (`/`) detects an embedded Shopify load and breaks out to
+`/client-login?redirect=/portal/integrations` so cookie-based auth works.
+
 ### 3.8 Configure API Scopes
 
 Scroll down to **"API access scopes"** or go to **"API access"** tab.
