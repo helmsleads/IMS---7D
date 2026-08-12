@@ -292,16 +292,19 @@ Still in Configuration, scroll down to find **"URLs"** section.
 Click **"Edit"** and enter:
 
 ```
-App URL:                    https://localhost:3000
+App URL:                    https://localhost:3000/shopify/entry
 Allowed redirection URLs:   https://localhost:3000/api/integrations/shopify/callback
 ```
 
 ⚠️ We'll update these with your real domain or ngrok URL later.
 
 **Important:** Merchants should connect Shopify from the **7D Client Portal → Integrations**
-(or DTC Integrations), not by signing into IMS inside the Shopify Admin iframe.
-The App URL (`/`) detects an embedded Shopify load and breaks out to
-`/client-login?redirect=/portal/integrations` so cookie-based auth works.
+(or DTC Integrations), **not** by signing into IMS inside the Shopify Admin iframe.
+
+Point the Partner **App URL** at `/shopify/entry` (not `/`). That page never shows a password
+form — it breaks out to `/client-login?redirect=/portal/integrations` with a `target="_top"` CTA.
+The proxy also redirects any Shopify embed query (`embedded=1` / `shop` / `hmac` / `host`) to
+`/shopify/entry` so clients like Hapa cannot get stuck retrying login inside Admin.
 
 ### 3.8 Configure API Scopes
 
@@ -562,11 +565,14 @@ Go back to your Shopify Partner Dashboard:
 3. Update the URLs:
 
 ```
-App URL:                    https://abc123xyz.ngrok-free.app
+App URL:                    https://abc123xyz.ngrok-free.app/shopify/entry
 Allowed redirection URLs:   https://abc123xyz.ngrok-free.app/api/integrations/shopify/callback
 ```
 
 Click **"Save"**
+
+Production App URL should be:
+`https://app.7degreesco.com/shopify/entry`
 
 ### 5.9 Restart your Next.js server
 

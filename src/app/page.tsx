@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
-import { Eye, EyeOff, ExternalLink, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
 import { BrandLogo } from "@/components/BrandLogo";
 import { StagingLoginBanner } from "@/components/StagingLoginBanner";
+import { ShopifyEmbedBreakout } from "@/components/ShopifyEmbedBreakout";
 import {
   SHOPIFY_PORTAL_CONNECT_PATH,
   breakOutToPortalLogin,
@@ -139,36 +140,7 @@ export default function LoginPage() {
   };
 
   if (shopifyEmbed) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-        <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 text-center">
-          <div className="inline-flex items-center justify-center mb-5">
-            <BrandLogo variant="stacked" width={140} height={143} className="drop-shadow-lg" priority />
-          </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-3">
-            Continue in the 7D Portal
-          </h2>
-          <p className="text-sm text-gray-600 mb-6">
-            Shopify opens this app inside Admin, where sign-in cannot complete reliably.
-            Open the client portal in a full browser tab, then connect Shopify from{" "}
-            <span className="font-medium text-gray-800">Integrations</span>.
-          </p>
-          <a
-            href={SHOPIFY_PORTAL_CONNECT_PATH}
-            target="_top"
-            rel="noopener noreferrer"
-            className="inline-flex w-full items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold py-3 px-4 rounded-xl hover:from-blue-700 hover:to-blue-800"
-          >
-            Open Client Portal
-            <ExternalLink className="w-4 h-4" />
-          </a>
-          <p className="text-xs text-gray-500 mt-4">
-            You&apos;ll sign in at <code className="text-[11px]">/client-login</code>, then go to
-            Integrations to finish connecting your store.
-          </p>
-        </div>
-      </div>
-    );
+    return <ShopifyEmbedBreakout href={SHOPIFY_PORTAL_CONNECT_PATH} />;
   }
 
   return (

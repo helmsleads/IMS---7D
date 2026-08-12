@@ -8,6 +8,7 @@ import Button from "@/components/ui/Button";
 import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
 import { BrandLogo } from "@/components/BrandLogo";
 import { StagingLoginBanner } from "@/components/StagingLoginBanner";
+import { ShopifyEmbedBreakout } from "@/components/ShopifyEmbedBreakout";
 import {
   breakOutToPortalLogin,
   shouldBreakOutOfShopifyEmbed,
@@ -19,19 +20,21 @@ export default function ClientLoginPage() {
   const supabase = createClient();
   usePasswordSetupRedirect();
   const redirectTo = searchParams.get("redirect") || "/portal/dashboard";
+  const portalPath = `/client-login?redirect=${encodeURIComponent(redirectTo)}`;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [shopifyEmbed, setShopifyEmbed] = useState(false);
 
-  // If Shopify still embeds this page, break out so cookies work.
+  // If Shopify still embeds this page, break out so cookies work — never keep the form in-frame.
   useEffect(() => {
     if (!shouldBreakOutOfShopifyEmbed()) return;
-    const path = `/client-login?redirect=${encodeURIComponent(redirectTo)}`;
-    breakOutToPortalLogin(path);
-  }, [redirectTo]);
+    setShopifyEmbed(true);
+    breakOutToPortalLogin(portalPath);
+  }, [portalPath]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,8 +43,8 @@ export default function ClientLoginPage() {
 
     try {
       if (shouldBreakOutOfShopifyEmbed()) {
-        const path = `/client-login?redirect=${encodeURIComponent(redirectTo)}`;
-        breakOutToPortalLogin(path);
+        setShopifyEmbed(true);
+        breakOutToPortalLogin(portalPath);
         return;
       }
 
@@ -138,6 +141,17 @@ export default function ClientLoginPage() {
       setLoading(false);
     }
   };
+
+  if (shopifyEmbed) {
+    return (
+      <ShopifyEmbedBreakout
+        href={portalPath}
+        title="Continue in the 7D Portal"
+        description="Sign-in from inside Shopify Admin usually fails. Open this portal in a full browser tab, then connect Shopify from Integrations."
+        ctaLabel="Open Client Portal"
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-cyan-950 to-slate-900">

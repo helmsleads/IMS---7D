@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import Input from "@/components/ui/Input";
@@ -8,6 +8,12 @@ import Button from "@/components/ui/Button";
 import { usePasswordSetupRedirect } from "@/hooks/use-password-setup-redirect";
 import { BrandLogo } from "@/components/BrandLogo";
 import { StagingLoginBanner } from "@/components/StagingLoginBanner";
+import { ShopifyEmbedBreakout } from "@/components/ShopifyEmbedBreakout";
+import {
+  SHOPIFY_PORTAL_CONNECT_PATH,
+  breakOutToPortalLogin,
+  shouldBreakOutOfShopifyEmbed,
+} from "@/lib/shopify-embed";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -21,6 +27,13 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [shopifyEmbed, setShopifyEmbed] = useState(false);
+
+  useEffect(() => {
+    if (!shouldBreakOutOfShopifyEmbed()) return;
+    setShopifyEmbed(true);
+    breakOutToPortalLogin(SHOPIFY_PORTAL_CONNECT_PATH);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +41,12 @@ export default function LoginPage() {
     setError("");
 
     try {
+      if (shouldBreakOutOfShopifyEmbed()) {
+        setShopifyEmbed(true);
+        breakOutToPortalLogin(SHOPIFY_PORTAL_CONNECT_PATH);
+        return;
+      }
+
       const normalizedEmail = email.trim().toLowerCase();
 
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -106,6 +125,10 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (shopifyEmbed) {
+    return <ShopifyEmbedBreakout href={SHOPIFY_PORTAL_CONNECT_PATH} />;
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900">

@@ -1,8 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-server";
+import {
+  SHOPIFY_APP_ENTRY_PATH,
+  isShopifyEmbeddedSearchParams,
+} from "@/lib/shopify-embed";
 
 // Routes that don't require authentication
-const publicRoutes = ["/", "/login", "/client-login", "/forgot-password", "/reset-password", "/auth/callback", "/auth/accept-invite"];
+const publicRoutes = [
+  "/",
+  "/login",
+  "/client-login",
+  "/forgot-password",
+  "/reset-password",
+  "/auth/callback",
+  "/auth/accept-invite",
+  "/shopify/entry",
+];
 
 // Internal app routes (require staff authentication)
 const internalRoutes = [
@@ -30,6 +43,19 @@ export async function proxy(request: NextRequest) {
     pathname.includes(".") // Static files like favicon.ico
   ) {
     return NextResponse.next();
+  }
+
+  // Shopify Admin App URL loads `/` (or other pages) with embed query params.
+  // Never leave merchants on a password form inside the Admin iframe.
+  if (
+    pathname !== SHOPIFY_APP_ENTRY_PATH &&
+    isShopifyEmbeddedSearchParams(request.nextUrl.searchParams)
+  ) {
+    const entry = new URL(SHOPIFY_APP_ENTRY_PATH, request.url);
+    // Preserve shop for support/debug; drop hmac/host to avoid re-trigger loops if any.
+    const shop = request.nextUrl.searchParams.get("shop");
+    if (shop) entry.searchParams.set("shop", shop);
+    return NextResponse.redirect(entry);
   }
 
   // Allow public routes
