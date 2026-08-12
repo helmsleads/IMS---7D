@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>7D Shopify embed breakout test</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #0f172a;
+        color: #e2e8f0;
+        min-height: 100vh;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 16px;
+        color: #94a3b8;
+        font-size: 0.9rem;
+        max-width: 52rem;
+      }
+      code {
+        background: #1e293b;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.85em;
+      }
+      .frame-wrap {
+        border: 1px solid #334155;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #fff;
+        max-width: 800px;
+      }
+      iframe {
+        display: block;
+        width: 800px;
+        max-width: 100%;
+        height: 600px;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Shopify Admin iframe simulation</h1>
+    <p>
+      Pass if the iframe shows the breakout (“Open Client Portal…”) and
+      <strong>not</strong> an email/password login form. Staging URL:
+      <code>ims-7-d-jl3b.vercel.app</code>
+    </p>
+    <div class="frame-wrap">
+      <iframe
+        src="https://ims-7-d-jl3b.vercel.app/?embedded=1&shop=xc1uiz-gy.myshopify.com&host=abc&hmac=test"
+        width="800"
+        height="600"
+        title="7D Shopify embed test"
+      ></iframe>
+    </div>
+  </body>
+</html>
