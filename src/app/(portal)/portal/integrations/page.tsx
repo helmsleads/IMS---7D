@@ -588,6 +588,15 @@ function ShopifyConnectedStatus({
   }
 
   const handleSyncInventory = async () => {
+    const locationLabel =
+      integration.shopify_location_name ||
+      'the selected Shopify location'
+    const confirmed = window.confirm(
+      `This overwrites live Shopify inventory at "${locationLabel}" with 7D on-hand quantities.\n\n` +
+        'Continue?'
+    )
+    if (!confirmed) return
+
     setIsSyncingInventory(true)
     try {
       const response = await fetch(`/api/integrations/shopify/${integration.id}/sync-inventory`, {

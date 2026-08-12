@@ -460,6 +460,41 @@ export async function cancelShipment(trackingNumber: string, credentials: FedExC
 
 // ── Rates API ──────────────────────────────────────────────
 
+/**
+ * FedEx returns money as a bare number, a numeric string, or `{ amount, currency }`.
+ * Older parsing only read `.amount`, which dropped every live rate and made DTC fall back to stubs.
+ */
+export function extractFedExMoneyAmount(value: unknown): number | undefined {
+  if (value == null) {
+    return undefined
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return undefined
+    }
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  if (typeof value === 'object' && value !== null && 'amount' in value) {
+    return extractFedExMoneyAmount((value as { amount: unknown }).amount)
+  }
+  return undefined
+}
+
+function isFedExAccountRateType(rateType?: string): boolean {
+  const type = String(rateType || '').toUpperCase()
+  return type.includes('ACCOUNT') && !type.includes('LIST')
+}
+
+function isFedExListRateType(rateType?: string): boolean {
+  const type = String(rateType || '').toUpperCase()
+  return type.includes('LIST')
+}
+
 export async function getRates(
   params: {
     shipDate: string
@@ -544,13 +579,25 @@ export async function getRates(
       if (Array.isArray(ratedShipmentDetails)) {
         for (const rs of ratedShipmentDetails) {
           const rateType = rs.rateType as string | undefined
-          const totalNetCharge = rs.totalNetChargeWithDutiesAndTaxes?.amount ?? rs.totalNetCharge?.amount
-          if (typeof totalNetCharge === 'number') {
-            if (rateType === 'ACCOUNT' || rateType === 'PREFERRED_ACCOUNT') {
-              accountRate = totalNetCharge
-            } else if (rateType === 'LIST' || rateType === 'PREFERRED_LIST') {
-              listRate = totalNetCharge
-            }
+          const packageNet = Array.isArray(rs.ratedPackages)
+            ? extractFedExMoneyAmount(rs.ratedPackages[0]?.packageRateDetail?.netCharge)
+            : undefined
+          const totalNetCharge =
+            extractFedExMoneyAmount(rs.totalNetChargeWithDutiesAndTaxes) ??
+            extractFedExMoneyAmount(rs.totalNetCharge) ??
+            extractFedExMoneyAmount(rs.totalNetFedExCharge) ??
+            packageNet
+          if (totalNetCharge == null) {
+            continue
+          }
+
+          if (isFedExAccountRateType(rateType)) {
+            accountRate = totalNetCharge
+          } else if (isFedExListRateType(rateType)) {
+            listRate = totalNetCharge
+          } else if (accountRate == null) {
+            // PREFERRED / INCENTIVE / unknown — keep a usable fallback amount
+            accountRate = totalNetCharge
           }
         }
       }
