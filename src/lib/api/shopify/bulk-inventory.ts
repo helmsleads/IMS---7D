@@ -102,8 +102,7 @@ export async function batchUpdateInventory(
         } | null
       }>(INVENTORY_SET_QUANTITIES_MUTATION, {
         input: {
-          // Shopify requires the quantity *name* (available | on_hand), not a label.
-          name: 'available',
+          name: `IMS-7D ${reason}`,
           reason,
           ignoreCompareQuantity: true,
           quantities,
