@@ -204,8 +204,14 @@ export async function autoMapProductsBySku(
       continue
     }
 
+    const shopifySku = String(shopifyProduct.sku || '').trim()
+    if (!shopifySku || shopifySku.toLowerCase() === 'n/a' || shopifySku.toLowerCase() === 'na') {
+      skipped++
+      continue
+    }
+
     // Find matching IMS product by SKU
-    const imsProduct = productsBySku.get(shopifyProduct.sku?.toLowerCase())
+    const imsProduct = productsBySku.get(shopifySku.toLowerCase())
     if (!imsProduct) {
       skipped++
       continue

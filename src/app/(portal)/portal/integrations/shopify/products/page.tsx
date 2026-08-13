@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Card from '@/components/ui/Card'
 import { useClient } from '@/lib/client-auth'
 import { getClientIntegrations } from '@/lib/api/integrations'
-import { getProductMappings, createProductMapping, deleteProductMapping, ProductMapping } from '@/lib/api/product-mappings'
+import { getProductMappings, createProductMapping, deleteProductMapping, hasUsableShopifySku, ProductMapping } from '@/lib/api/product-mappings'
 import { getProducts, type ProductWithCategory } from '@/lib/api/products'
 import type { ClientIntegration } from '@/types/database'
 
@@ -73,9 +73,14 @@ export default function ProductMappingPage() {
     loadData()
   }, [client?.id])
 
-  // Get unmapped Shopify products
+  // Get unmapped Shopify products — skip listings with no SKU (shown as N/A)
   const mappedVariantIds = new Set(mappings.map((m) => m.external_variant_id))
-  const unmappedProducts = shopifyProducts.filter((p) => !mappedVariantIds.has(p.variantId))
+  const skippedNoSkuCount = shopifyProducts.filter(
+    (p) => !mappedVariantIds.has(p.variantId) && !hasUsableShopifySku(p.sku)
+  ).length
+  const unmappedProducts = shopifyProducts.filter(
+    (p) => !mappedVariantIds.has(p.variantId) && hasUsableShopifySku(p.sku)
+  )
 
   // Filter by search
   const filteredUnmapped = unmappedProducts.filter(
@@ -86,6 +91,10 @@ export default function ProductMappingPage() {
 
   const handleCreateMapping = async (shopifyProduct: ShopifyProduct, imsProductId: string) => {
     if (!integration || !client) return
+    if (!hasUsableShopifySku(shopifyProduct.sku)) {
+      alert('This Shopify product has no SKU. Add a SKU in Shopify Admin, then map it.')
+      return
+    }
 
     setIsSaving(true)
     try {
@@ -156,7 +165,7 @@ export default function ProductMappingPage() {
           </button>
           <h1 className="text-2xl font-bold text-gray-900">Product Mapping</h1>
           <p className="text-gray-600 mt-1">
-            Map your Shopify products to IMS products for order import
+            Map your Shopify products to IMS products for order import. Products without a Shopify SKU cannot be mapped.
           </p>
         </div>
         <div className="text-right text-sm text-gray-500">
@@ -216,10 +225,17 @@ export default function ProductMappingPage() {
             className="px-3 py-1.5 border rounded-lg text-sm w-64"
           />
         </div>
+        {skippedNoSkuCount > 0 && (
+          <p className="px-4 py-3 text-sm text-amber-800 bg-amber-50 border-b border-amber-100">
+            {skippedNoSkuCount} Shopify product{skippedNoSkuCount === 1 ? '' : 's'} hidden — no SKU in Shopify (shown as N/A). Add a SKU in Shopify Admin to map {skippedNoSkuCount === 1 ? 'it' : 'them'}.
+          </p>
+        )}
         {filteredUnmapped.length === 0 ? (
           <div className="p-8 text-center text-gray-500">
             {unmappedProducts.length === 0
-              ? 'All Shopify products are mapped!'
+              ? skippedNoSkuCount > 0
+                ? 'No Shopify products with a SKU left to map.'
+                : 'All Shopify products are mapped!'
               : 'No products match your search'}
           </div>
         ) : (

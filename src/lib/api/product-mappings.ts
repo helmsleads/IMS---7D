@@ -1,6 +1,14 @@
 import { createClient } from '@/lib/supabase'
 import { assertIntegrationOwnedByClient } from '@/lib/api/integrations'
 
+/** Shopify variants with no real SKU cannot be mapped (UI shows these as N/A). */
+export function hasUsableShopifySku(sku: string | null | undefined): boolean {
+  const value = String(sku || '').trim()
+  if (!value) return false
+  const normalized = value.toLowerCase()
+  return normalized !== 'n/a' && normalized !== 'na'
+}
+
 export interface ProductMapping {
   id: string
   integration_id: string
@@ -68,6 +76,12 @@ export async function createProductMapping(
 
   if (productError || !product) {
     throw new Error('Product not found or access denied')
+  }
+
+  if (!hasUsableShopifySku(mapping.external_sku)) {
+    throw new Error(
+      'This Shopify product has no SKU. Add a SKU in Shopify Admin, then map it.'
+    )
   }
 
   const { data, error } = await supabase
