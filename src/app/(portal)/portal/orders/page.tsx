@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useClient } from "@/lib/client-auth";
 import { createClient } from "@/lib/supabase";
-import { formatDate, isTestOutboundOrder } from "@/lib/utils/formatting";
+import { formatDate, isTestOutboundOrder, isNeedsMappingOutboundOrder } from "@/lib/utils/formatting";
 import { handleApiError } from "@/lib/utils/error-handler";
 import { getPreferredCarrierLabel } from "@/lib/outbound-service-options";
 import Input from "@/components/ui/Input";
@@ -29,18 +29,20 @@ interface Order {
   ship_to_state: string;
   is_rush: boolean;
   is_test: boolean;
+  needs_mapping: boolean;
   item_count: number;
   total_units: number;
   tracking_number: string | null;
   carrier: string | null;
 }
 
-type StatusFilter = "all" | "active" | "completed";
+type StatusFilter = "all" | "active" | "completed" | "test";
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All Orders" },
   { value: "active", label: "Active" },
   { value: "completed", label: "Completed" },
+  { value: "test", label: "Test" },
 ];
 
 const ACTIVE_STATUSES = ["pending", "confirmed", "processing", "packed", "shipped"];
@@ -161,6 +163,7 @@ export default function PortalOrdersPage() {
           ship_to_state: order.ship_to_state,
           is_rush: order.is_rush || false,
           is_test: isTestOutboundOrder(order.notes),
+          needs_mapping: isNeedsMappingOutboundOrder(order.notes),
           item_count: items.length,
           total_units: items.reduce((sum, item) => sum + item.qty_requested, 0),
           tracking_number: order.tracking_number || null,
@@ -191,6 +194,8 @@ export default function PortalOrdersPage() {
       matchesStatus = ACTIVE_STATUSES.includes(order.status);
     } else if (statusFilter === "completed") {
       matchesStatus = order.status === "delivered";
+    } else if (statusFilter === "test") {
+      matchesStatus = order.is_test;
     }
 
     return matchesSearch && matchesStatus;
@@ -201,12 +206,16 @@ export default function PortalOrdersPage() {
       all: orders.length,
       active: 0,
       completed: 0,
+      test: 0,
     };
     orders.forEach((order) => {
       if (ACTIVE_STATUSES.includes(order.status)) {
         counts.active += 1;
       } else if (order.status === "delivered") {
         counts.completed += 1;
+      }
+      if (order.is_test) {
+        counts.test += 1;
       }
     });
     return counts;
@@ -319,7 +328,9 @@ export default function PortalOrdersPage() {
               className={`
                 flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors
                 ${isActive
-                  ? "bg-cyan-600 text-white"
+                  ? tab.value === "test"
+                    ? "bg-amber-600 text-white"
+                    : "bg-cyan-600 text-white"
                   : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
                 }
               `}
@@ -328,7 +339,11 @@ export default function PortalOrdersPage() {
               <span
                 className={`
                   px-2 py-0.5 rounded-full text-xs
-                  ${isActive ? "bg-cyan-500 text-white" : "bg-slate-100 text-slate-600"}
+                  ${isActive
+                    ? tab.value === "test"
+                      ? "bg-amber-500 text-white"
+                      : "bg-cyan-500 text-white"
+                    : "bg-slate-100 text-slate-600"}
                 `}
               >
                 {count}
@@ -374,6 +389,11 @@ export default function PortalOrdersPage() {
                         {order.is_test && (
                           <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-xs font-medium rounded-full">
                             Test
+                          </span>
+                        )}
+                        {order.needs_mapping && (
+                          <span className="px-2 py-0.5 bg-rose-100 text-rose-800 text-xs font-medium rounded-full">
+                            Needs mapping
                           </span>
                         )}
                       </div>

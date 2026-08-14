@@ -15,6 +15,7 @@ import {
   normalizeShopifyOrderPayload,
   ensureIntegrationWarehouseLocation,
 } from './shopify-order-payload'
+import { shopifyOrderHas7DTag } from './order-tag'
 import type {
   ClientIntegration,
   ShopifyOrder,
@@ -22,6 +23,10 @@ import type {
   OutboundStatus,
   SyncTrigger,
 } from '@/types/database'
+
+export type ProcessShopifyOrderResult = 'created' | 'exists' | 'skipped'
+
+export { shopifyOrderHas7DTag, SHOPIFY_7D_ORDER_TAG } from './order-tag'
 
 export {
   mapShopifyFulfillmentToImsStatus,
@@ -270,16 +275,25 @@ export function buildShopifyOrderNumber(
 }
 
 /**
- * Process and import a Shopify order into IMS
+ * Process and import a Shopify order into IMS.
+ * Only orders tagged **7D** are imported (warehouse location is not reliable for multi-fulfillment shops).
+ * Unmapped line items still create the outbound order so 7D staff can finish product matching.
  */
 export async function processShopifyOrder(
   shopifyOrder: Record<string, unknown>,
   integration: Record<string, unknown>
-): Promise<void> {
+): Promise<ProcessShopifyOrderResult> {
   const supabase = createServiceClient()
 
   const order = shopifyOrder as unknown as ShopifyOrder
   const integrationData = integration as unknown as ClientIntegration
+
+  if (!shopifyOrderHas7DTag(order.tags)) {
+    console.log(
+      `Order ${order.name} skipped — missing 7D tag (add tag "7D" in Shopify Admin to assign to 7 Degrees)`
+    )
+    return 'skipped'
+  }
 
   const orderNumber = buildShopifyOrderNumber(
     order.name,
@@ -296,7 +310,7 @@ export async function processShopifyOrder(
 
   if (existing) {
     console.log(`Order ${order.name} already exists in IMS, skipping`)
-    return
+    return 'exists'
   }
 
   // Get product mappings for this integration
@@ -357,9 +371,12 @@ export async function processShopifyOrder(
     })
   }
 
-  // If no items could be mapped, log warning but still create order
+  // 7D-tagged orders import even with zero mapped lines — staff finish matching in 7D.
   if (lineItems.length === 0 && unmappedItems.length > 0) {
-    console.warn(`Order ${order.name} has no mapped products:`, unmappedItems)
+    console.warn(
+      `Order ${order.name} imported with unmapped products (7D tag present):`,
+      unmappedItems
+    )
   }
 
   // Build shipping info
@@ -378,10 +395,12 @@ export async function processShopifyOrder(
   if (usedTestMapping || order.test === true) {
     notes.push('[test]')
   }
+  notes.push('[7D]')
   if (order.note) {
     notes.push(`Customer note: ${order.note}`)
   }
   if (unmappedItems.length > 0) {
+    notes.push('[needs mapping]')
     notes.push(`⚠️ ${unmappedItems.length} item(s) could not be mapped: ${unmappedItems.join(', ')}`)
   }
 
@@ -486,11 +505,100 @@ export async function processShopifyOrder(
     .eq('id', integrationData.id)
 
   console.log(`Created order ${newOrder.order_number} from Shopify ${order.name}`)
+  return 'created'
 }
 
 /**
- * Manually sync orders from Shopify (pull)
+ * If an imported 7D order still has no line items, attach newly mapped products from the Shopify payload.
+ * Used when staff finish product matching after the order already landed in IMS.
  */
+export async function attachMappedShopifyLineItemsIfMissing(
+  imsOrderId: string,
+  shopifyOrder: Record<string, unknown>,
+  integrationId: string
+): Promise<{ attached: number }> {
+  const supabase = createServiceClient()
+  const order = shopifyOrder as unknown as ShopifyOrder
+
+  const { data: existingItems } = await supabase
+    .from('outbound_items')
+    .select('id')
+    .eq('order_id', imsOrderId)
+    .limit(1)
+
+  if (existingItems && existingItems.length > 0) {
+    return { attached: 0 }
+  }
+
+  const { data: mappings } = await supabase
+    .from('product_mappings')
+    .select('product_id, external_variant_id, external_sku')
+    .eq('integration_id', integrationId)
+
+  const mappingsByVariant = new Map(
+    (mappings || []).map((m) => [String(m.external_variant_id), m.product_id])
+  )
+  const mappingsBySku = new Map(
+    (mappings || [])
+      .filter((m) => m.external_sku)
+      .map((m) => [m.external_sku!.toLowerCase(), m.product_id])
+  )
+
+  const lineItems: Array<{
+    order_id: string
+    product_id: string
+    qty_requested: number
+    qty_shipped: number
+    unit_price: number
+  }> = []
+
+  for (const item of order.line_items || []) {
+    if (!item.requires_shipping || item.quantity <= 0) continue
+    const productId = resolveMappedProductId(item, mappingsByVariant, mappingsBySku)
+    if (!productId) continue
+    lineItems.push({
+      order_id: imsOrderId,
+      product_id: productId,
+      qty_requested: item.quantity,
+      qty_shipped: 0,
+      unit_price: parseFloat(item.price) || 0,
+    })
+  }
+
+  if (lineItems.length === 0) return { attached: 0 }
+
+  const { error } = await supabase.from('outbound_items').insert(lineItems)
+  if (error) {
+    console.error('Failed to attach mapped Shopify line items:', error)
+    return { attached: 0 }
+  }
+
+  const { data: current } = await supabase
+    .from('outbound_orders')
+    .select('notes')
+    .eq('id', imsOrderId)
+    .single()
+
+  if (current?.notes && /\[needs mapping\]/i.test(current.notes)) {
+    const cleaned = String(current.notes)
+      .split('\n')
+      .filter((line) => {
+        const t = line.trim()
+        if (!t) return false
+        if (/^\[needs mapping\]$/i.test(t)) return false
+        if (/item\(s\) could not be mapped/i.test(t)) return false
+        return true
+      })
+      .join('\n')
+      .trim()
+    await supabase
+      .from('outbound_orders')
+      .update({ notes: cleaned || null })
+      .eq('id', imsOrderId)
+  }
+
+  return { attached: lineItems.length }
+}
 export async function syncShopifyOrders(
   integrationId: string,
   since?: Date,
@@ -550,8 +658,13 @@ export async function syncShopifyOrders(
         .single()
 
       if (existing) {
+        const attached = await attachMappedShopifyLineItemsIfMissing(
+          existing.id,
+          payload,
+          integrationId
+        )
         const statusResult = await applyShopifyStatusToOrder(existing.id, payload)
-        if (statusResult.updated) {
+        if (statusResult.updated || attached.attached > 0) {
           results.updated++
         } else {
           results.skipped++
@@ -568,8 +681,17 @@ export async function syncShopifyOrders(
         continue
       }
 
-      await processShopifyOrder(payload, integration)
-      results.imported++
+      if (!shopifyOrderHas7DTag(order.tags)) {
+        results.skipped++
+        continue
+      }
+
+      const outcome = await processShopifyOrder(payload, integration)
+      if (outcome === 'created') {
+        results.imported++
+      } else {
+        results.skipped++
+      }
     } catch (e) {
       console.error(`Failed to sync order ${order.name}:`, e)
       results.failed++

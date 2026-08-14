@@ -864,7 +864,8 @@ function ShopifyConnectedStatus({
           <div>
             <p className="text-sm font-medium text-slate-700">Auto-import new orders</p>
             <p className="text-xs text-slate-400">
-              Import paid Shopify orders into 7D (age/ID is handled by apps on the Shopify store)
+              Import Shopify orders tagged <span className="font-semibold">7D</span> into 7 Degrees.
+              Add the tag in Shopify Admin when the order is for us (at create or later). Unmapped products still import so staff can finish matching.
             </p>
           </div>
           <Toggle

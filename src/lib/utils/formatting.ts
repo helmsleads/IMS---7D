@@ -36,6 +36,12 @@ export function isTestOutboundOrder(notes: string | null | undefined): boolean {
   return /\[test\]/i.test(notes);
 }
 
+/** Shopify 7D-tagged orders that still need product matching in 7D. */
+export function isNeedsMappingOutboundOrder(notes: string | null | undefined): boolean {
+  if (!notes) return false;
+  return /\[needs mapping\]/i.test(notes);
+}
+
 export function formatDate(
   dateString: string | null | undefined,
   format: "short" | "long" | "relative" = "short"

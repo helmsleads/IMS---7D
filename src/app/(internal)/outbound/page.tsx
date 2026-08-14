@@ -20,7 +20,7 @@ import {
   OutboundOrderWithClient,
 } from "@/lib/api/outbound";
 import { handleApiError } from "@/lib/utils/error-handler";
-import { formatDate, formatStatus, isTestOutboundOrder } from "@/lib/utils/formatting";
+import { formatDate, formatStatus, isTestOutboundOrder, isNeedsMappingOutboundOrder } from "@/lib/utils/formatting";
 import { getPreferredCarrierLabel } from "@/lib/outbound-service-options";
 import StatusBadge from "@/components/ui/StatusBadge";
 
@@ -229,6 +229,14 @@ export default function OutboundPage() {
           {isTestOutboundOrder(order.notes) && (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
               Test
+            </span>
+          )}
+          {isNeedsMappingOutboundOrder(order.notes) && (
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-rose-100 text-rose-800"
+              title="Shopify products not mapped yet — finish product matching in Integrations"
+            >
+              Needs mapping
             </span>
           )}
           {isOldPending(order) && (

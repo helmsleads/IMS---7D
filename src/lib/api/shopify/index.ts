@@ -24,9 +24,12 @@ export {
   applyShopifyStatusToOrder,
   syncShopifyOrderLineItems,
   syncShopifyOrderStatusFromPayload,
+  attachMappedShopifyLineItemsIfMissing,
   mapShopifyFulfillmentToImsStatus,
   shouldAdvanceImsStatus,
   extractShopifyTracking,
+  shopifyOrderHas7DTag,
+  SHOPIFY_7D_ORDER_TAG,
 } from './order-sync'
 export {
   deductInventoryFromShopifyFulfillment,

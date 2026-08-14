@@ -25,7 +25,7 @@ import { getContainerBadge, getUnitLabel } from "@/lib/labels";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FetchError from "@/components/ui/FetchError";
 import { handleApiError } from "@/lib/utils/error-handler";
-import { isTestOutboundOrder } from "@/lib/utils/formatting";
+import { isTestOutboundOrder, isNeedsMappingOutboundOrder } from "@/lib/utils/formatting";
 import { downloadBOL, printBOL, BOLData } from "@/lib/generate-bol";
 import { getSystemSetting } from "@/lib/api/settings";
 import { ShipmentTrackingPanel } from "@/components/portal/ShipmentTrackingPanel";
@@ -571,6 +571,11 @@ export default function OrderDetailPage() {
                   Test
                 </span>
               )}
+              {isNeedsMappingOutboundOrder(order.notes) && (
+                <span className="px-2.5 py-1 bg-rose-100 text-rose-800 text-xs font-medium rounded-full">
+                  Needs mapping
+                </span>
+              )}
             </div>
             <p className="text-slate-500">
               Requested on {formatDateTime(order.created_at)}
@@ -910,7 +915,21 @@ export default function OrderDetailPage() {
           </div>
 
           {/* Notes */}
-          {order.notes && (
+          {(() => {
+            const displayNotes = (order.notes || '')
+              .split('\n')
+              .map((line) => line.trim())
+              .filter((line) => {
+                if (!line) return false
+                if (/^\[test\]$/i.test(line)) return false
+                if (/^\[7d\]$/i.test(line)) return false
+                if (/^\[needs mapping\]$/i.test(line)) return false
+                return true
+              })
+              .join('\n')
+              .trim()
+            if (!displayNotes) return null
+            return (
             <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
               <div className="p-4 bg-slate-50 border-b border-slate-200">
                 <div className="flex items-center gap-2">
@@ -919,10 +938,11 @@ export default function OrderDetailPage() {
                 </div>
               </div>
               <div className="p-4">
-                <p className="text-slate-700 text-sm">{order.notes}</p>
+                <p className="text-slate-700 text-sm whitespace-pre-line">{displayNotes}</p>
               </div>
             </div>
-          )}
+            )
+          })()}
 
           {/* Order Info */}
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">

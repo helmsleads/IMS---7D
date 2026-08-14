@@ -4,6 +4,8 @@ import { createServiceClient } from '@/lib/supabase-service'
 import {
   processShopifyOrder,
   syncShopifyOrderStatusFromPayload,
+  attachMappedShopifyLineItemsIfMissing,
+  shopifyOrderHas7DTag,
 } from '@/lib/api/shopify/order-sync'
 import type { IntegrationSettings } from '@/types/database'
 import {
@@ -172,19 +174,31 @@ export async function POST(
   // Process webhook based on topic
   try {
     switch (topic) {
-      case 'orders/create':
-        await handleOrderCreate(payload, integration)
-        // Log successful order import
-        logSyncResult({
-          integrationId,
-          syncType: 'orders',
-          direction: 'inbound',
-          triggeredBy: 'webhook',
-          itemsProcessed: 1,
-          itemsFailed: 0,
-          metadata: { orderName: payload.name, topic },
-        })
+      case 'orders/create': {
+        const createOutcome = await handleOrderCreate(payload, integration)
+        if (createOutcome === 'created') {
+          logSyncResult({
+            integrationId,
+            syncType: 'orders',
+            direction: 'inbound',
+            triggeredBy: 'webhook',
+            itemsProcessed: 1,
+            itemsFailed: 0,
+            metadata: { orderName: payload.name, topic },
+          })
+        } else if (createOutcome === 'skipped') {
+          logSyncResult({
+            integrationId,
+            syncType: 'orders',
+            direction: 'inbound',
+            triggeredBy: 'webhook',
+            itemsProcessed: 0,
+            itemsFailed: 0,
+            metadata: { orderName: payload.name, topic, skipped: 'missing_7d_tag' },
+          })
+        }
         break
+      }
       case 'orders/updated':
         await handleOrderUpdated(payload, integration)
         break
@@ -247,7 +261,7 @@ export async function POST(
 async function handleOrderCreate(
   payload: Record<string, unknown>,
   integration: Record<string, unknown>
-): Promise<void> {
+): Promise<'created' | 'exists' | 'skipped' | 'forwarded' | 'ignored'> {
   // DTC Alcohol path: government ID in DTC before any 7D fulfill.
   if (shouldForwardShopifyOrderToDtc(integration)) {
     const financial = String(payload.financial_status || "").toLowerCase();
@@ -255,7 +269,7 @@ async function handleOrderCreate(
       console.log(
         `DTC forward skipped for unpaid Shopify order ${payload.name} (${financial})`,
       );
-      return;
+      return 'ignored'
     }
     const result = await forwardShopifyOrderToDtc(payload, {
       id: String(integration.id),
@@ -268,12 +282,12 @@ async function handleOrderCreate(
       );
     }
     console.log(`Forwarded Shopify order ${payload.name} to DTC for ID verification`);
-    return;
+    return 'forwarded'
   }
 
   if (!isAutoImportEnabled(integration)) {
     console.log(`Auto-import disabled for integration, skipping order ${payload.name}`)
-    return
+    return 'ignored'
   }
 
   // Skip test orders if not in test mode
@@ -281,9 +295,12 @@ async function handleOrderCreate(
     console.log(`Test order ${payload.name}, processing anyway for dev`)
   }
 
-  // processShopifyOrder inserts into outbound_orders with status='pending'
-  // so the order shows up in the IMS the moment Shopify fires the checkout webhook.
-  await processShopifyOrder(payload, integration)
+  // Requires Shopify tag "7D" — unmatched products are OK (staff finish mapping in 7D).
+  const outcome = await processShopifyOrder(payload, integration)
+  if (outcome === 'skipped') {
+    console.log(`Order ${payload.name} not imported (missing 7D tag)`)
+  }
+  return outcome
 }
 
 async function handleOrderUpdated(
@@ -323,14 +340,25 @@ async function handleOrderUpdated(
       return;
     }
 
+    // Tag added after create: import when 7D tag is present.
     if (isAutoImportEnabled(integration)) {
-      console.log(`Order ${payload.id} not in IMS — importing from orders/updated`)
+      if (!shopifyOrderHas7DTag(payload.tags as string | string[] | null | undefined)) {
+        console.log(`Order ${payload.id} not in IMS and missing 7D tag — not importing`)
+        return
+      }
+      console.log(`Order ${payload.id} not in IMS — importing from orders/updated (7D tag)`)
       await processShopifyOrder(payload, integration)
     } else {
       console.log(`Order ${payload.id} not found in IMS; auto-import is off`)
     }
     return
   }
+
+  await attachMappedShopifyLineItemsIfMissing(
+    order.id,
+    payload,
+    String(integration.id)
+  )
 
   const statusResult = await syncShopifyOrderStatusFromPayload(payload)
   if (statusResult.updated) {
