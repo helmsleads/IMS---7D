@@ -20,7 +20,7 @@ import {
   OutboundOrderWithClient,
 } from "@/lib/api/outbound";
 import { handleApiError } from "@/lib/utils/error-handler";
-import { formatDate, formatStatus } from "@/lib/utils/formatting";
+import { formatDate, formatStatus, isTestOutboundOrder } from "@/lib/utils/formatting";
 import { getPreferredCarrierLabel } from "@/lib/outbound-service-options";
 import StatusBadge from "@/components/ui/StatusBadge";
 
@@ -221,9 +221,14 @@ export default function OutboundPage() {
           )}
           <span className="font-medium text-gray-900">{order.order_number}</span>
           {/* Rush indicator - check both is_rush flag and notes */}
-          {(order.is_rush || isUrgent(order)) && (
+          {order.is_rush || isUrgent(order) ? (
             <span title="Rush/Urgent order" className="flex items-center">
               <Zap className="w-4 h-4 text-red-500" />
+            </span>
+          ) : null}
+          {isTestOutboundOrder(order.notes) && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
+              Test
             </span>
           )}
           {isOldPending(order) && (

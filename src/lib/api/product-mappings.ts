@@ -60,6 +60,8 @@ export async function createProductMapping(
     external_title?: string
     external_image_url?: string
     sync_inventory?: boolean
+    /** Allow mapping Shopify listings with blank / N/A SKU (Test tab). Relies on variant ID. */
+    allowMissingSku?: boolean
   },
   clientId: string
 ): Promise<ProductMapping> {
@@ -78,11 +80,22 @@ export async function createProductMapping(
     throw new Error('Product not found or access denied')
   }
 
-  if (!hasUsableShopifySku(mapping.external_sku)) {
+  const usableSku = hasUsableShopifySku(mapping.external_sku)
+  if (!usableSku && !mapping.allowMissingSku) {
     throw new Error(
-      'This Shopify product has no SKU. Add a SKU in Shopify Admin, then map it.'
+      'This Shopify product has no SKU. Add a SKU in Shopify Admin, then map it — or use the Test tab.'
     )
   }
+
+  if (!usableSku && !mapping.external_variant_id) {
+    throw new Error('Cannot map a product without a Shopify variant ID.')
+  }
+
+  // Test / N/A SKU mappings match by variant ID only; never store literal "N/A" as SKU.
+  const externalSku = usableSku ? String(mapping.external_sku).trim() : null
+  // Default inventory sync off for missing-SKU (test) mappings so Sync Inventory cannot overwrite live qty.
+  const syncInventory =
+    mapping.sync_inventory ?? (usableSku ? true : false)
 
   const { data, error } = await supabase
     .from('product_mappings')
@@ -92,10 +105,10 @@ export async function createProductMapping(
       external_product_id: mapping.external_product_id || null,
       external_variant_id: mapping.external_variant_id || null,
       external_inventory_item_id: mapping.external_inventory_item_id || null,
-      external_sku: mapping.external_sku || null,
+      external_sku: externalSku,
       external_title: mapping.external_title || null,
       external_image_url: mapping.external_image_url || null,
-      sync_inventory: mapping.sync_inventory ?? true,
+      sync_inventory: syncInventory,
     })
     .select('*, product:products(id, sku, name)')
     .single()

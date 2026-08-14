@@ -25,6 +25,7 @@ import { getContainerBadge, getUnitLabel } from "@/lib/labels";
 import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FetchError from "@/components/ui/FetchError";
 import { handleApiError } from "@/lib/utils/error-handler";
+import { isTestOutboundOrder } from "@/lib/utils/formatting";
 import { downloadBOL, printBOL, BOLData } from "@/lib/generate-bol";
 import { getSystemSetting } from "@/lib/api/settings";
 import { ShipmentTrackingPanel } from "@/components/portal/ShipmentTrackingPanel";
@@ -563,6 +564,11 @@ export default function OrderDetailPage() {
               {order.is_rush && (
                 <span className="px-2.5 py-1 bg-orange-100 text-orange-700 text-xs font-medium rounded-full">
                   Rush Order
+                </span>
+              )}
+              {isTestOutboundOrder(order.notes) && (
+                <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-xs font-medium rounded-full">
+                  Test
                 </span>
               )}
             </div>

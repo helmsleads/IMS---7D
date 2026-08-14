@@ -324,6 +324,7 @@ export async function processShopifyOrder(
   }> = []
 
   const unmappedItems: string[] = []
+  let usedTestMapping = false
 
   for (const item of order.line_items || []) {
     if (!item.requires_shipping || item.quantity <= 0) {
@@ -339,6 +340,13 @@ export async function processShopifyOrder(
     if (!mapping) {
       unmappedItems.push(`${item.sku || 'No SKU'}: ${item.name}`)
       continue
+    }
+
+    // Missing / N/A Shopify SKU mappings are treated as test (Test tab).
+    const mappingSku = mapping.external_sku as string | null | undefined
+    const skuValue = String(mappingSku || '').trim().toLowerCase()
+    if (!skuValue || skuValue === 'n/a' || skuValue === 'na') {
+      usedTestMapping = true
     }
 
     lineItems.push({
@@ -367,6 +375,9 @@ export async function processShopifyOrder(
 
   // Build notes
   const notes: string[] = []
+  if (usedTestMapping || order.test === true) {
+    notes.push('[test]')
+  }
   if (order.note) {
     notes.push(`Customer note: ${order.note}`)
   }

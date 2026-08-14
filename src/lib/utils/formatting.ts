@@ -30,6 +30,12 @@ export function formatNumber(value: number, decimals?: number): string {
   }).format(value);
 }
 
+/** Orders tagged with [test] in notes (Shopify test / no-SKU mappings). */
+export function isTestOutboundOrder(notes: string | null | undefined): boolean {
+  if (!notes) return false;
+  return /\[test\]/i.test(notes);
+}
+
 export function formatDate(
   dateString: string | null | undefined,
   format: "short" | "long" | "relative" = "short"
