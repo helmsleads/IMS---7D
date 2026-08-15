@@ -509,7 +509,7 @@ function ShopifyConnectForm({
             type="text"
             value={shopDomain}
             onChange={(e) => setShopDomain(e.target.value)}
-            placeholder={isTest ? 'xc1uiz-gy' : 'your-store-name'}
+            placeholder={isTest ? 'test-7d-store' : 'your-store-name'}
             className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
             disabled={isConnecting}
           />
@@ -525,12 +525,12 @@ function ShopifyConnectForm({
             <>
               Test Shopify store:{' '}
               <a
-                href="https://xc1uiz-gy.myshopify.com/"
+                href="https://test-7d-store.myshopify.com"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium text-green-700 hover:underline"
               >
-                https://xc1uiz-gy.myshopify.com/
+                https://test-7d-store.myshopify.com
               </a>
               . Use Partners OAuth only with a Dev Dashboard / Partners app — not an
               Admin Develop apps custom app.
