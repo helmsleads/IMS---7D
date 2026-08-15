@@ -887,6 +887,7 @@ export default function OutboundOrderDetailPage() {
     if (!order) return;
     const items: Record<string, { checked: boolean; quantity: number; damageType: string; description: string }> = {};
     for (const item of order.items) {
+      if (!item.product_id) continue; // unmatched Shopify lines have no IMS product
       items[item.product_id] = {
         checked: false,
         quantity: 1,
@@ -1058,6 +1059,7 @@ export default function OutboundOrderDetailPage() {
       // Group items by product name (brand), then suggest boxes per group
       const groups = new Map<string, { qty: number; containerType: string }>();
       for (const item of order.items) {
+        if (!item.product_id) continue;
         const meta = productMeta.get(item.product_id);
         const name = meta?.productName || item.product?.name || "Unknown";
         // Extract brand prefix (first 2 words or up to first number)
@@ -2178,15 +2180,15 @@ export default function OutboundOrderDetailPage() {
                               <span className="text-gray-500 text-xs ml-1">{getUnitLabel(item.product?.container_type)}</span>
                               {(item.product?.units_per_case ?? 1) > 1 && (
                                 <span className="block text-[11px] font-normal text-slate-500 mt-0.5">
-                                  {item.product.units_per_case}/case ·{" "}
+                                  {item.product?.units_per_case}/case ·{" "}
                                   {toBillableHandlingUnits(
                                     item.qty_requested,
-                                    item.product.units_per_case
+                                    item.product?.units_per_case
                                   )}{" "}
                                   billable case
                                   {toBillableHandlingUnits(
                                     item.qty_requested,
-                                    item.product.units_per_case
+                                    item.product?.units_per_case
                                   ) === 1
                                     ? ""
                                     : "s"}
@@ -3898,6 +3900,7 @@ export default function OutboundOrderDetailPage() {
           <div className="max-h-[400px] overflow-y-auto space-y-3">
             {order?.items.map((item) => {
               const productId = item.product_id;
+              if (!productId) return null;
               const damageItem = damageItems[productId];
               if (!damageItem) return null;
               const maxQty = item.qty_shipped > 0 ? item.qty_shipped : item.qty_requested;

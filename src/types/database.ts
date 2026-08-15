@@ -953,10 +953,18 @@ export interface QBEntityMap {
 export interface OutboundItem {
   id: string
   order_id: string
-  product_id: string
+  product_id: string | null
   qty_requested: number
   qty_shipped: number
   unit_price: number
+  /** Shopify/external SKU when unmatched (or for display) */
+  external_sku?: string | null
+  /** Shopify/external title when unmatched */
+  external_title?: string | null
+  /** No IMS product mapping — real qty is 0; use virtual_qty for display */
+  is_unmatched?: boolean
+  /** Display-only qty from Shopify when is_unmatched */
+  virtual_qty?: number
 }
 
 // Inventory Automation Types
