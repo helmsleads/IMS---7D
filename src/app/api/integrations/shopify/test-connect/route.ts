@@ -14,11 +14,12 @@ function clientIdPrefix(envName: string): string | null {
  * GET /api/integrations/shopify/test-connect
  * Capability probe for the portal Integrations UI.
  *
- * Test stores connect via OAuth using SHOPIFY_TEST_CLIENT_ID / SECRET
- * (`/api/integrations/shopify/auth?app=test`).
+ * Test stores: install the test app on the shop from Shopify Dev Dashboard,
+ * then claim in portal (`claim-install`). Live stores use Partners OAuth
+ * (`/api/integrations/shopify/auth?app=live`).
  *
  * `live_client_id_prefix` / `test_client_id_prefix` are non-secret fingerprints
- * so you can confirm Vercel env matches Partners (e.g. test must be 9c24cd2d…).
+ * so you can confirm Vercel env matches Dev Dashboard (e.g. test must be 9c24cd2d…).
  */
 export async function GET() {
   const livePrefix = clientIdPrefix("SHOPIFY_CLIENT_ID");

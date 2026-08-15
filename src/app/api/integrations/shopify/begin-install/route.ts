@@ -6,18 +6,36 @@ import {
   isShopifyTestAppConfigured,
   parseShopifyAppMode,
   type ShopifyAppMode,
+  type ShopifyAppCredentials,
 } from "@/lib/api/shopify/app-credentials";
 import { normalizeShopifyShopDomain } from "@/lib/api/shopify/shop-domain";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL!;
 
+function hmacMatches(secret: string, sortedParams: string, hmac: string): boolean {
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(sortedParams)
+    .digest("hex");
+  try {
+    const a = Buffer.from(hmac, "utf8");
+    const b = Buffer.from(expected, "utf8");
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch {
+    return hmac === expected;
+  }
+}
+
 /**
  * GET /api/integrations/shopify/begin-install?shop=...&app=live|test
  *
- * Legacy install flow: Shopify opens the App URL with ?shop=&hmac= after the
- * distribution install link. The app must then send the merchant to
- * /admin/oauth/authorize (Install / Approve). Portal Connect already does that;
- * this route does it for Shopify-initiated installs (no portal login yet).
+ * Shopify App URL / distribution install: merchant installs from the store,
+ * Shopify opens the App URL with ?shop=&hmac=, then we send them to
+ * /admin/oauth/authorize. After approve, callback stashes tokens for
+ * portal claim-install (no shop URL / install link paste in 7D).
+ *
+ * When `app` is omitted, detect live vs test from which client secret
+ * verifies the App URL hmac (test Dev Dashboard apps hit the same App URL).
  */
 export async function GET(request: NextRequest) {
   const clientIp = getClientIp(request);
@@ -31,9 +49,8 @@ export async function GET(request: NextRequest) {
 
   const searchParams = request.nextUrl.searchParams;
   const shopRaw = searchParams.get("shop");
-  const appMode: ShopifyAppMode = parseShopifyAppMode(
-    searchParams.get("app") || "live",
-  );
+  const appParam = searchParams.get("app");
+  let appMode: ShopifyAppMode = parseShopifyAppMode(appParam || "live");
 
   if (!shopRaw) {
     return NextResponse.redirect(
@@ -41,22 +58,6 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (appMode === "test" && !isShopifyTestAppConfigured()) {
-    return NextResponse.redirect(
-      `${APP_URL}/client-login?redirect=${encodeURIComponent("/portal/integrations")}&error=test_app_not_configured`,
-    );
-  }
-
-  let credentials;
-  try {
-    credentials = getShopifyAppCredentials(appMode);
-  } catch {
-    return NextResponse.redirect(
-      `${APP_URL}/client-login?redirect=${encodeURIComponent("/portal/integrations")}&error=oauth_not_configured`,
-    );
-  }
-
-  // Optional: verify App URL hmac (exclude our own `app` query — not part of Shopify signature)
   const hmac = searchParams.get("hmac");
   if (hmac) {
     const params = new URLSearchParams(searchParams);
@@ -67,46 +68,48 @@ export async function GET(request: NextRequest) {
       .map(([k, v]) => `${k}=${v}`)
       .join("&");
 
-    const secrets = [credentials.clientSecret];
-    try {
-      if (appMode === "live") {
-        const testCreds = getShopifyAppCredentials("test");
-        if (testCreds.clientSecret !== credentials.clientSecret) {
-          secrets.push(testCreds.clientSecret);
-        }
-      }
-    } catch {
-      /* test app optional */
-    }
+    const modesToTry: ShopifyAppMode[] = appParam
+      ? [parseShopifyAppMode(appParam)]
+      : isShopifyTestAppConfigured()
+        ? ["test", "live"]
+        : ["live"];
 
-    let hmacOk = false;
-    for (const secret of secrets) {
-      const expected = crypto
-        .createHmac("sha256", secret)
-        .update(sorted)
-        .digest("hex");
+    let matched: ShopifyAppMode | null = null;
+    for (const mode of modesToTry) {
       try {
-        const a = Buffer.from(hmac, "utf8");
-        const b = Buffer.from(expected, "utf8");
-        if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
-          hmacOk = true;
+        const creds = getShopifyAppCredentials(mode);
+        if (hmacMatches(creds.clientSecret, sorted, hmac)) {
+          matched = mode;
           break;
         }
       } catch {
-        if (hmac === expected) {
-          hmacOk = true;
-          break;
-        }
+        /* mode not configured */
       }
     }
 
-    // Do not block install on hmac mismatch — client_id is public and authorize
-    // is the real gate. Bad hmac used to bounce merchants to client-login.
-    if (!hmacOk) {
+    if (matched) {
+      appMode = matched;
+    } else {
       console.warn(
-        "begin-install: App URL hmac mismatch; continuing to OAuth authorize",
+        "begin-install: App URL hmac mismatch; continuing with app=",
+        appMode,
       );
     }
+  }
+
+  if (appMode === "test" && !isShopifyTestAppConfigured()) {
+    return NextResponse.redirect(
+      `${APP_URL}/client-login?redirect=${encodeURIComponent("/portal/integrations")}&error=test_app_not_configured`,
+    );
+  }
+
+  let credentials: ShopifyAppCredentials;
+  try {
+    credentials = getShopifyAppCredentials(appMode);
+  } catch {
+    return NextResponse.redirect(
+      `${APP_URL}/client-login?redirect=${encodeURIComponent("/portal/integrations")}&error=oauth_not_configured`,
+    );
   }
 
   let shopDomain = normalizeShopifyShopDomain(shopRaw);

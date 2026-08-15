@@ -196,6 +196,7 @@ export default function IntegrationsHubPage() {
                   testAppConfigured={testAppConfigured}
                   onRefresh={handleRefresh}
                   onConnectError={(text) => setMessage({ type: 'error', text })}
+                  onConnectSuccess={(text) => setMessage({ type: 'success', text })}
                 />
               )}
             </div>
@@ -268,6 +269,7 @@ function ShopifyCard({
   testAppConfigured = true,
   onRefresh,
   onConnectError,
+  onConnectSuccess,
 }: {
   variant: 'live' | 'test'
   integration: ClientIntegration | undefined
@@ -275,6 +277,7 @@ function ShopifyCard({
   testAppConfigured?: boolean
   onRefresh: (opts?: { silent?: boolean }) => void | Promise<void>
   onConnectError: (message: string) => void
+  onConnectSuccess?: (message: string) => void
 }) {
   const isConnected = integration?.status === 'active'
   const isTest = variant === 'test'
@@ -309,8 +312,8 @@ function ShopifyCard({
               </div>
               <p className="text-sm text-slate-500 mt-0.5">
                 {isTest
-                  ? 'Connect a development store using the dedicated test Shopify app'
-                  : 'Connect your production Shopify store to sync orders and inventory'}
+                  ? 'Install the test app on your development store in Shopify, then finish connecting here'
+                  : 'Connect your production Shopify store with Partners OAuth'}
               </p>
             </div>
           </div>
@@ -333,11 +336,17 @@ function ShopifyCard({
               clientId={clientId}
               onRefresh={onRefresh}
             />
-          ) : (
-            <ShopifyConnectForm
+          ) : isTest ? (
+            <ShopifyTestInstallConnect
               clientId={clientId}
-              appMode={variant}
               testAppConfigured={testAppConfigured}
+              onConnectError={onConnectError}
+              onConnectSuccess={onConnectSuccess}
+              onConnected={() => void onRefresh()}
+            />
+          ) : (
+            <ShopifyLiveOAuthConnect
+              clientId={clientId}
               onConnectError={onConnectError}
             />
           )}
@@ -347,32 +356,21 @@ function ShopifyCard({
   )
 }
 
-/* ─── Shopify Connect Form ─── */
+/* ─── Live: Partners OAuth ─── */
 
-function ShopifyConnectForm({
+function ShopifyLiveOAuthConnect({
   clientId,
-  appMode,
-  testAppConfigured = true,
   onConnectError,
 }: {
   clientId: string | undefined
-  appMode: 'live' | 'test'
-  testAppConfigured?: boolean
   onConnectError: (message: string) => void
 }) {
   const [shopDomain, setShopDomain] = useState('')
   const [isConnecting, setIsConnecting] = useState(false)
   const [showForm, setShowForm] = useState(false)
-  const isTest = appMode === 'test'
 
   const handleConnect = async () => {
     if (!shopDomain || !clientId) return
-    if (isTest && !testAppConfigured) {
-      onConnectError(
-        'Test Shopify app is not configured. Set SHOPIFY_TEST_CLIENT_ID and SHOPIFY_TEST_CLIENT_SECRET on 7D staging.'
-      )
-      return
-    }
 
     setIsConnecting(true)
 
@@ -383,12 +381,12 @@ function ShopifyConnectForm({
       .replace(/\//g, '')
       .trim()
 
-    const state = btoa(JSON.stringify({ clientId, timestamp: Date.now(), app: appMode }))
+    const state = btoa(JSON.stringify({ clientId, timestamp: Date.now(), app: 'live' }))
     const params = new URLSearchParams({
       shop: cleanDomain,
       state,
       preflight: '1',
-      app: appMode,
+      app: 'live',
     })
 
     try {
@@ -416,22 +414,12 @@ function ShopifyConnectForm({
 
   if (!showForm) {
     return (
-      <div className="space-y-3">
-        {isTest && !testAppConfigured ? (
-          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Set <code className="text-[11px]">SHOPIFY_TEST_CLIENT_ID</code> and{' '}
-            <code className="text-[11px]">SHOPIFY_TEST_CLIENT_SECRET</code> on this 7D
-            staging deployment, then restart / redeploy to enable OAuth.
-          </p>
-        ) : null}
-        <button
-          onClick={() => setShowForm(true)}
-          disabled={isTest && !testAppConfigured}
-          className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-lg hover:from-green-600 hover:to-green-700 shadow-sm hover:shadow transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isTest ? 'Connect test store' : 'Connect live store'}
-        </button>
-      </div>
+      <button
+        onClick={() => setShowForm(true)}
+        className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-lg hover:from-green-600 hover:to-green-700 shadow-sm hover:shadow transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
+      >
+        Connect live store
+      </button>
     )
   }
 
@@ -446,40 +434,24 @@ function ShopifyConnectForm({
             type="text"
             value={shopDomain}
             onChange={(e) => setShopDomain(e.target.value)}
-            placeholder={isTest ? 'test-7d-store' : 'your-store-name'}
+            placeholder="your-store-name"
             className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
             disabled={isConnecting}
           />
           <span className="text-sm text-slate-500">.myshopify.com</span>
         </div>
         <p className="text-xs text-slate-400 mt-1">
-          {isTest ? (
-            <>
-              Test Shopify store:{' '}
-              <a
-                href="https://test-7d-store.myshopify.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-green-700 hover:underline"
-              >
-                https://test-7d-store.myshopify.com
-              </a>
-              . Enter <code className="text-[11px]">test-7d-store</code> above, install the
-              test Shopify app on that store, then connect.
-            </>
-          ) : (
-            'Enter your live store name without the .myshopify.com part'
-          )}
+          Enter your live store name without the .myshopify.com part. Uses Partners OAuth.
         </p>
       </div>
 
       <div className="flex gap-2">
         <button
           onClick={handleConnect}
-          disabled={!shopDomain || isConnecting || (isTest && !testAppConfigured)}
+          disabled={!shopDomain || isConnecting}
           className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-lg hover:from-green-600 hover:to-green-700 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
         >
-          {isConnecting ? 'Connecting...' : isTest ? 'Connect test store' : 'Connect'}
+          {isConnecting ? 'Connecting...' : 'Connect'}
         </button>
         <button
           onClick={() => {
@@ -492,6 +464,107 @@ function ShopifyConnectForm({
           Cancel
         </button>
       </div>
+    </div>
+  )
+}
+
+/* ─── Test: install app on store, then claim (no paste link / store OAuth from portal) ─── */
+
+function ShopifyTestInstallConnect({
+  clientId,
+  testAppConfigured = true,
+  onConnectError,
+  onConnectSuccess,
+  onConnected,
+}: {
+  clientId: string | undefined
+  testAppConfigured?: boolean
+  onConnectError: (message: string) => void
+  onConnectSuccess?: (message: string) => void
+  onConnected: () => void
+}) {
+  const [isClaiming, setIsClaiming] = useState(false)
+
+  const handleFinishConnect = async () => {
+    if (!clientId) return
+    if (!testAppConfigured) {
+      onConnectError(
+        'Test Shopify app is not configured. Set SHOPIFY_TEST_CLIENT_ID and SHOPIFY_TEST_CLIENT_SECRET on 7D staging.'
+      )
+      return
+    }
+
+    setIsClaiming(true)
+    try {
+      const res = await fetch('/api/integrations/shopify/claim-install', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId }),
+      })
+      const data = (await res.json()) as { error?: string; shopName?: string }
+      if (!res.ok) {
+        onConnectError(
+          data.error ||
+            'No pending install found. Install the test app on your Shopify store first, approve access, then click Finish connecting.'
+        )
+        setIsClaiming(false)
+        return
+      }
+      onConnectSuccess?.(
+        `Shopify connected${data.shopName ? `: ${data.shopName}` : ''}`,
+      )
+      onConnected()
+      setIsClaiming(false)
+    } catch {
+      onConnectError('Could not finish connecting. Please try again.')
+      setIsClaiming(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {!testAppConfigured ? (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Set <code className="text-[11px]">SHOPIFY_TEST_CLIENT_ID</code> and{' '}
+          <code className="text-[11px]">SHOPIFY_TEST_CLIENT_SECRET</code> on this 7D
+          staging deployment, then restart / redeploy.
+        </p>
+      ) : null}
+
+      <ol className="text-sm text-slate-600 space-y-2 list-decimal list-inside">
+        <li>
+          In Shopify Dev Dashboard, open the test app and{' '}
+          <span className="font-medium text-slate-800">Install</span> it on{' '}
+          <a
+            href="https://test-7d-store.myshopify.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-green-700 hover:underline"
+          >
+            test-7d-store
+          </a>{' '}
+          (or your other development store).
+        </li>
+        <li>Approve the permissions when Shopify asks.</li>
+        <li>
+          You will be sent back here automatically — or click{' '}
+          <span className="font-medium text-slate-800">Finish connecting</span> below.
+        </li>
+      </ol>
+
+      <p className="text-xs text-slate-400">
+        No store URL or install link to paste. Connection uses the install you already
+        completed in Shopify.
+      </p>
+
+      <button
+        onClick={handleFinishConnect}
+        disabled={!clientId || isClaiming || !testAppConfigured}
+        className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-lg hover:from-green-600 hover:to-green-700 shadow-sm hover:shadow transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {isClaiming ? 'Connecting...' : 'Finish connecting'}
+      </button>
     </div>
   )
 }

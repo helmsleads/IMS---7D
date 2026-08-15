@@ -63,9 +63,7 @@ export async function proxy(request: NextRequest) {
       request.nextUrl.searchParams.forEach((value, key) => {
         begin.searchParams.set(key, value);
       });
-      if (!begin.searchParams.get("app")) {
-        begin.searchParams.set("app", "live");
-      }
+      // Do not force app=live — begin-install detects test vs live from hmac.
       return NextResponse.redirect(begin);
     }
   }

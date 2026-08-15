@@ -43,7 +43,8 @@ export default function LoginPage() {
       const v = params.get(key);
       if (v) q.set(key, v);
     }
-    q.set("app", app);
+    // Only pass app when explicitly set; otherwise begin-install detects from hmac.
+    if (params.get("app")) q.set("app", app);
     window.location.replace(`/api/integrations/shopify/begin-install?${q.toString()}`);
   }, []);
 
