@@ -18,7 +18,7 @@ import {
   type ShopifyAppMode,
 } from '@/lib/api/shopify/app-credentials'
 import { DEFAULT_SHOPIFY_INTEGRATION_SETTINGS } from '@/lib/api/dtc/shopify-defaults'
-import { buildShopifyWebhookUrl } from '@/lib/api/shopify/webhook-url'
+import { registerShopifyWebhooks } from '@/lib/api/shopify/register-webhooks'
 import type { IntegrationSettings } from '@/types/database'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL!
@@ -349,51 +349,4 @@ export async function GET(request: NextRequest) {
   response.cookies.delete('shopify_oauth_nonce')
 
   return response
-}
-
-async function registerShopifyWebhooks(
-  integrationId: string,
-  shop: string,
-  accessToken: string,
-): Promise<void> {
-  const webhookUrl = buildShopifyWebhookUrl(integrationId)
-
-  const webhookTopics = [
-    'orders/create',
-    'orders/updated',
-    'orders/fulfilled',
-    'orders/cancelled',
-    'inventory_levels/update',
-  ]
-
-  for (const topic of webhookTopics) {
-    try {
-      const response = await fetch(
-        `https://${shop}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/webhooks.json`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Shopify-Access-Token': accessToken,
-          },
-          body: JSON.stringify({
-            webhook: {
-              topic,
-              address: webhookUrl,
-              format: 'json',
-            },
-          }),
-        },
-      )
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`Failed to register webhook ${topic}:`, errorText)
-      } else {
-        console.log(`Registered webhook: ${topic}`)
-      }
-    } catch (error) {
-      console.error(`Error registering webhook ${topic}:`, error)
-    }
-  }
 }

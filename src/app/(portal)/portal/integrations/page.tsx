@@ -213,8 +213,9 @@ export default function IntegrationsHubPage() {
 
 function isTestShopifyIntegration(integration: ClientIntegration): boolean {
   const settings = integration.settings
+  if (settings?.shopify_app === 'live') return false
+  if (settings?.shopify_app === 'test') return true
   return (
-    settings?.shopify_app === 'test' ||
     settings?.connection_mode === 'test_app' ||
     settings?.connection_mode === 'test_token'
   )
@@ -300,6 +301,7 @@ function ShopifyCard({
               appMode={variant}
               testAppConfigured={testAppConfigured}
               onConnectError={onConnectError}
+              onConnected={() => void onRefresh()}
             />
           )}
         </div>
@@ -315,23 +317,32 @@ function ShopifyConnectForm({
   appMode,
   testAppConfigured = true,
   onConnectError,
+  onConnected,
 }: {
   clientId: string | undefined
   appMode: 'live' | 'test'
   testAppConfigured?: boolean
   onConnectError: (message: string) => void
+  onConnected: () => void
 }) {
   const [shopDomain, setShopDomain] = useState('')
+  const [accessToken, setAccessToken] = useState('')
+  const [connectMethod, setConnectMethod] = useState<'oauth' | 'custom_app'>('oauth')
   const [isConnecting, setIsConnecting] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const isTest = appMode === 'test'
+  const useCustomApp = connectMethod === 'custom_app'
 
   const handleConnect = async () => {
     if (!shopDomain || !clientId) return
-    if (isTest && !testAppConfigured) {
+    if (!useCustomApp && isTest && !testAppConfigured) {
       onConnectError(
         'Test Shopify app is not configured. Set SHOPIFY_TEST_CLIENT_ID and SHOPIFY_TEST_CLIENT_SECRET on 7D staging.'
       )
+      return
+    }
+    if (useCustomApp && !accessToken.trim()) {
+      onConnectError('Paste the Admin API access token from your Shopify custom app.')
       return
     }
 
@@ -344,15 +355,41 @@ function ShopifyConnectForm({
       .replace(/\//g, '')
       .trim()
 
-    const state = btoa(JSON.stringify({ clientId, timestamp: Date.now(), app: appMode }))
-    const params = new URLSearchParams({
-      shop: cleanDomain,
-      state,
-      preflight: '1',
-      app: appMode,
-    })
-
     try {
+      if (useCustomApp) {
+        const res = await fetch('/api/integrations/shopify/custom-app', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clientId,
+            shop: cleanDomain,
+            accessToken: accessToken.trim(),
+            app: appMode,
+          }),
+        })
+        const data = (await res.json()) as { error?: string }
+        if (!res.ok) {
+          onConnectError(data.error || `Could not connect (${res.status})`)
+          setIsConnecting(false)
+          return
+        }
+        setShowForm(false)
+        setShopDomain('')
+        setAccessToken('')
+        onConnected()
+        setIsConnecting(false)
+        return
+      }
+
+      const state = btoa(JSON.stringify({ clientId, timestamp: Date.now(), app: appMode }))
+      const params = new URLSearchParams({
+        shop: cleanDomain,
+        state,
+        preflight: '1',
+        app: appMode,
+      })
+
       const res = await fetch(`/api/integrations/shopify/auth?${params}`, {
         credentials: 'include',
       })
@@ -382,13 +419,13 @@ function ShopifyConnectForm({
           <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             Set <code className="text-[11px]">SHOPIFY_TEST_CLIENT_ID</code> and{' '}
             <code className="text-[11px]">SHOPIFY_TEST_CLIENT_SECRET</code> on this 7D
-            staging deployment, then restart / redeploy to enable OAuth.
+            staging deployment, then restart / redeploy to enable OAuth. You can still
+            connect with an Admin custom-app access token.
           </p>
         ) : null}
         <button
           onClick={() => setShowForm(true)}
-          disabled={isTest && !testAppConfigured}
-          className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-lg hover:from-green-600 hover:to-green-700 shadow-sm hover:shadow transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-lg hover:from-green-600 hover:to-green-700 shadow-sm hover:shadow transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
         >
           {isTest ? 'Connect test store' : 'Connect live store'}
         </button>
@@ -398,6 +435,33 @@ function ShopifyConnectForm({
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setConnectMethod('oauth')}
+          disabled={isConnecting}
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+            !useCustomApp
+              ? 'border-green-600 bg-green-50 text-green-800'
+              : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          Partners OAuth
+        </button>
+        <button
+          type="button"
+          onClick={() => setConnectMethod('custom_app')}
+          disabled={isConnecting}
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+            useCustomApp
+              ? 'border-green-600 bg-green-50 text-green-800'
+              : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          Admin custom app token
+        </button>
+      </div>
+
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">
           Shopify Store URL
@@ -414,7 +478,12 @@ function ShopifyConnectForm({
           <span className="text-sm text-slate-500">.myshopify.com</span>
         </div>
         <p className="text-xs text-slate-400 mt-1">
-          {isTest ? (
+          {useCustomApp ? (
+            <>
+              Enter the store subdomain, then paste the Admin API access token from
+              Shopify Admin → Settings → Apps → Develop apps → your app → API credentials.
+            </>
+          ) : isTest ? (
             <>
               Test Shopify store:{' '}
               <a
@@ -425,27 +494,58 @@ function ShopifyConnectForm({
               >
                 https://xc1uiz-gy.myshopify.com/
               </a>
-              . Enter <code className="text-[11px]">xc1uiz-gy</code> above, install the test
-              Shopify app on that store, then connect.
+              . Use Partners OAuth only with a Dev Dashboard / Partners app — not an
+              Admin Develop apps custom app.
             </>
           ) : (
-            'Enter your live store name without the .myshopify.com part'
+            'Enter your live store name without the .myshopify.com part. Partners OAuth requires a Partners app.'
           )}
         </p>
       </div>
 
+      {useCustomApp ? (
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Admin API access token
+          </label>
+          <input
+            type="password"
+            value={accessToken}
+            onChange={(e) => setAccessToken(e.target.value)}
+            placeholder="shpat_…"
+            autoComplete="off"
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm font-mono"
+            disabled={isConnecting}
+          />
+        </div>
+      ) : null}
+
       <div className="flex gap-2">
         <button
           onClick={handleConnect}
-          disabled={!shopDomain || isConnecting || (isTest && !testAppConfigured)}
+          disabled={
+            !shopDomain ||
+            isConnecting ||
+            (useCustomApp
+              ? !accessToken.trim()
+              : isTest && !testAppConfigured)
+          }
           className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-lg hover:from-green-600 hover:to-green-700 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
         >
-          {isConnecting ? 'Connecting...' : isTest ? 'Connect test store' : 'Connect'}
+          {isConnecting
+            ? 'Connecting...'
+            : useCustomApp
+              ? 'Connect with token'
+              : isTest
+                ? 'Connect test store'
+                : 'Connect'}
         </button>
         <button
           onClick={() => {
             setShowForm(false)
             setShopDomain('')
+            setAccessToken('')
+            setConnectMethod('oauth')
           }}
           className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
           disabled={isConnecting}

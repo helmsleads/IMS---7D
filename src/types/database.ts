@@ -1315,8 +1315,8 @@ export interface IntegrationSettings {
   default_location_id: string | null
   fulfillment_notify_customer: boolean
   shopify_location_id?: string
-  /** oauth = live Partners app; test_app = SHOPIFY_TEST_* app; test_token = legacy static token */
-  connection_mode?: 'oauth' | 'test_app' | 'test_token'
+  /** oauth = live Partners; test_app = SHOPIFY_TEST_*; test_token/custom_app = Admin API token */
+  connection_mode?: 'oauth' | 'test_app' | 'test_token' | 'custom_app'
   /** Which Shopify Partners / Dev Dashboard app issued the tokens */
   shopify_app?: 'live' | 'test'
   dtc_verify_before_fulfill?: boolean

@@ -217,6 +217,7 @@ export async function getShopifyAccessToken(
   const settings = integration.settings as { connection_mode?: string } | null
   const isStaticTestToken =
     settings?.connection_mode === 'test_token' ||
+    settings?.connection_mode === 'custom_app' ||
     integration.scope === 'custom_app_admin_api'
 
   // Legacy custom-app Admin API tokens never refresh — use as-is.

@@ -4,12 +4,16 @@
  *
  * Product rule: never show a password login form inside Shopify Admin.
  * Break out to a top-level portal tab, then connect Shopify from Integrations.
+ *
+ * Important: top-level App URL hits with `shop` / `hmac` (install / open app)
+ * must NOT auto-redirect to client-login — that aborts Shopify install before
+ * the app appears under Installed.
  */
 
 export const SHOPIFY_PORTAL_CONNECT_PATH =
   "/client-login?redirect=%2Fportal%2Fintegrations";
 
-/** Dedicated App URL entry — no password form. Point Partner App URL here. */
+/** Dedicated App URL entry — no password form. Point Partner App URL here if desired. */
 export const SHOPIFY_APP_ENTRY_PATH = "/shopify/entry";
 
 export function isInIframe(): boolean {
@@ -26,7 +30,7 @@ export function isInIframe(): boolean {
 export function isShopifyEmbeddedRequest(search?: string): boolean {
   if (typeof window === "undefined" && search == null) return false;
   const params = new URLSearchParams(
-    search ?? (typeof window !== "undefined" ? window.location.search : "")
+    search ?? (typeof window !== "undefined" ? window.location.search : ""),
   );
   return (
     params.get("embedded") === "1" ||
@@ -38,7 +42,9 @@ export function isShopifyEmbeddedRequest(search?: string): boolean {
 
 /** Server-side: detect Shopify Admin embed query params on a request URL. */
 export function isShopifyEmbeddedSearchParams(
-  searchParams: URLSearchParams | { get(name: string): string | null; has(name: string): boolean }
+  searchParams:
+    | URLSearchParams
+    | { get(name: string): string | null; has(name: string): boolean },
 ): boolean {
   const shop = searchParams.get("shop") || "";
   return (
@@ -49,8 +55,20 @@ export function isShopifyEmbeddedSearchParams(
   );
 }
 
+/**
+ * Auto-navigate away from Shopify Admin only when we are actually embedded.
+ * Do not treat bare shop/hmac on a top-level window as embed — install uses that.
+ */
 export function shouldBreakOutOfShopifyEmbed(search?: string): boolean {
-  return isInIframe() || isShopifyEmbeddedRequest(search);
+  if (typeof window !== "undefined" && isInIframe()) {
+    return true;
+  }
+
+  const params = new URLSearchParams(
+    search ??
+      (typeof window !== "undefined" ? window.location.search : ""),
+  );
+  return params.get("embedded") === "1";
 }
 
 function toAbsoluteUrl(path: string): string {
@@ -68,7 +86,7 @@ function toAbsoluteUrl(path: string): string {
  * - "ssr" — no window
  */
 export function breakOutToPortalLogin(
-  path = SHOPIFY_PORTAL_CONNECT_PATH
+  path = SHOPIFY_PORTAL_CONNECT_PATH,
 ): "top" | "blocked" | "direct" | "ssr" {
   if (typeof window === "undefined") return "ssr";
   const url = toAbsoluteUrl(path);

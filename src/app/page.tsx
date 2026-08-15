@@ -11,6 +11,7 @@ import { ShopifyEmbedBreakout } from "@/components/ShopifyEmbedBreakout";
 import {
   SHOPIFY_PORTAL_CONNECT_PATH,
   breakOutToPortalLogin,
+  isShopifyEmbeddedRequest,
   shouldBreakOutOfShopifyEmbed,
 } from "@/lib/shopify-embed";
 
@@ -23,13 +24,19 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [shopifyEmbed, setShopifyEmbed] = useState(false);
+  const [shopifyAutoBreakOut, setShopifyAutoBreakOut] = useState(false);
 
-  // Shopify App URL loads this page inside admin.shopify.com. Cookie auth fails
-  // there — break out to top-level client-login (Integrations redirect).
+  // Shopify App URL: auto-break out only inside Admin iframe / embedded=1.
+  // Top-level install opens App URL with shop/hmac — show CTA, do not redirect.
   useEffect(() => {
-    if (!shouldBreakOutOfShopifyEmbed()) return;
+    const embedded = shouldBreakOutOfShopifyEmbed();
+    const fromShopify = isShopifyEmbeddedRequest();
+    if (!embedded && !fromShopify) return;
     setShopifyEmbed(true);
-    breakOutToPortalLogin(SHOPIFY_PORTAL_CONNECT_PATH);
+    setShopifyAutoBreakOut(embedded);
+    if (embedded) {
+      breakOutToPortalLogin(SHOPIFY_PORTAL_CONNECT_PATH);
+    }
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -40,6 +47,7 @@ export default function LoginPage() {
     // Never attempt password login inside Shopify's iframe — session won't stick.
     if (shouldBreakOutOfShopifyEmbed()) {
       setShopifyEmbed(true);
+      setShopifyAutoBreakOut(true);
       breakOutToPortalLogin(SHOPIFY_PORTAL_CONNECT_PATH);
       setLoading(false);
       return;
@@ -140,7 +148,15 @@ export default function LoginPage() {
   };
 
   if (shopifyEmbed) {
-    return <ShopifyEmbedBreakout href={SHOPIFY_PORTAL_CONNECT_PATH} />;
+    return (
+      <ShopifyEmbedBreakout
+        href={SHOPIFY_PORTAL_CONNECT_PATH}
+        autoBreakOut={shopifyAutoBreakOut}
+        title="Shopify app opened"
+        description="If you just installed the app, check Settings → Apps → Installed in Shopify. Then open the 7D portal and connect the store from Integrations (Partners OAuth)."
+        ctaLabel="Open Client Portal to connect"
+      />
+    );
   }
 
   return (

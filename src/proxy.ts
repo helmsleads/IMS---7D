@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase-server";
 import {
   SHOPIFY_APP_ENTRY_PATH,
-  isShopifyEmbeddedSearchParams,
 } from "@/lib/shopify-embed";
 
 // Routes that don't require authentication
@@ -45,14 +44,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Shopify Admin App URL loads `/` (or other pages) with embed query params.
-  // Never leave merchants on a password form inside the Admin iframe.
+  // Only rewrite true Admin iframe embeds (embedded=1). Top-level App URL
+  // loads with shop/hmac during install must not be bounced to portal login.
   if (
     pathname !== SHOPIFY_APP_ENTRY_PATH &&
-    isShopifyEmbeddedSearchParams(request.nextUrl.searchParams)
+    request.nextUrl.searchParams.get("embedded") === "1"
   ) {
     const entry = new URL(SHOPIFY_APP_ENTRY_PATH, request.url);
-    // Preserve shop for support/debug; drop hmac/host to avoid re-trigger loops if any.
     const shop = request.nextUrl.searchParams.get("shop");
     if (shop) entry.searchParams.set("shop", shop);
     return NextResponse.redirect(entry);
