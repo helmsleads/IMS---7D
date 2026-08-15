@@ -592,7 +592,7 @@ export default function OrderDetailPage() {
                   Rush Order
                 </span>
               )}
-              {isTestOutboundOrder(order.notes) || order.items.some((i) => i.is_unmatched) ? (
+              {isTestOutboundOrder(order.notes) ? (
                 <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-xs font-medium rounded-full">
                   Test
                 </span>

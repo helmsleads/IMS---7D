@@ -80,11 +80,11 @@ export default function ProductMappingPage() {
   const unmappedProducts = shopifyProducts.filter(
     (p) => !mappedVariantIds.has(p.variantId) && hasUsableShopifySku(p.sku)
   )
-  // Unmapped Shopify listings with blank / N/A SKU (available to map from Test tab)
+  // Unmapped Shopify listings with blank / N/A SKU (Test tab — real products, not test orders)
   const testProductsUnmapped = shopifyProducts.filter(
     (p) => !mappedVariantIds.has(p.variantId) && !hasUsableShopifySku(p.sku)
   )
-  // Already-mapped N/A / test connections (so Test tab still shows Hapa-style listings)
+  // Already-mapped no-SKU connections (still listed under Test tab)
   const testMappings = mappings.filter((m) => !hasUsableShopifySku(m.external_sku))
   const testTabCount = testProductsUnmapped.length + testMappings.length
 
@@ -110,7 +110,7 @@ export default function ProductMappingPage() {
   ) => {
     if (!integration || !client) return
 
-    const isTestMapping = Boolean(options?.allowMissingSku) || !hasUsableShopifySku(shopifyProduct.sku)
+    const isNoSkuMapping = Boolean(options?.allowMissingSku) || !hasUsableShopifySku(shopifyProduct.sku)
     if (!hasUsableShopifySku(shopifyProduct.sku) && !options?.allowMissingSku) {
       alert('This Shopify product has no SKU. Map it from the Test tab.')
       return
@@ -128,8 +128,8 @@ export default function ProductMappingPage() {
           external_sku: shopifyProduct.sku || undefined,
           external_title: shopifyProduct.title + (shopifyProduct.variantTitle ? ` - ${shopifyProduct.variantTitle}` : ''),
           external_image_url: shopifyProduct.imageUrl || undefined,
-          sync_inventory: isTestMapping ? false : true,
-          allowMissingSku: isTestMapping,
+          sync_inventory: isNoSkuMapping ? false : true,
+          allowMissingSku: isNoSkuMapping,
         },
         client.id
       )
@@ -186,13 +186,14 @@ export default function ProductMappingPage() {
           </button>
           <h1 className="text-2xl font-bold text-gray-900">Product Mapping</h1>
           <p className="text-gray-600 mt-1">
-            Map Shopify products to IMS products for order import. Use the Test tab for listings with no SKU (N/A).
+            Map Shopify products to IMS products for order import. Use the Test tab for
+            real listings that have no SKU (shown as N/A) — they are not test orders.
           </p>
         </div>
         <div className="text-right text-sm text-gray-500">
           <div>{mappings.length} mapped</div>
           <div>{unmappedProducts.length} unmapped</div>
-          <div>{testTabCount} test / no SKU</div>
+          <div>{testTabCount} no SKU</div>
         </div>
       </div>
 
@@ -208,7 +209,7 @@ export default function ProductMappingPage() {
         ) : (
           <div className="divide-y">
             {mappings.map((mapping) => {
-              const isTestMapping = !hasUsableShopifySku(mapping.external_sku)
+              const isNoSkuMapping = !hasUsableShopifySku(mapping.external_sku)
               return (
                 <div key={mapping.id} className="p-4 flex items-center gap-4">
                   {mapping.external_image_url && (
@@ -221,15 +222,15 @@ export default function ProductMappingPage() {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate flex items-center gap-2">
                       <span className="truncate">{mapping.external_title}</span>
-                      {isTestMapping && (
-                        <span className="shrink-0 px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
-                          Test
+                      {isNoSkuMapping && (
+                        <span className="shrink-0 px-1.5 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
+                          No SKU
                         </span>
                       )}
                     </div>
                     <div className="text-sm text-gray-500">
                       SKU: {mapping.external_sku || 'N/A'} &rarr; IMS: {mapping.product?.sku || 'Unknown'}
-                      {isTestMapping && !mapping.sync_inventory ? ' · inventory sync off' : ''}
+                      {isNoSkuMapping && !mapping.sync_inventory ? ' · inventory sync off' : ''}
                     </div>
                   </div>
                   <div className="text-sm text-gray-600">{mapping.product?.name}</div>
@@ -283,15 +284,16 @@ export default function ProductMappingPage() {
             />
           </div>
           {activeTab === 'test' && (
-            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-              Shopify listings with no SKU (shown as N/A). Map by variant ID for test orders. Inventory sync stays off for these mappings.
+            <p className="text-sm text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+              Real Shopify products with no SKU (shown as N/A). Map by variant ID. Inventory
+              sync stays off for these mappings. Orders using them are not marked as test.
             </p>
           )}
         </div>
         {activeTab === 'test' && filteredTestMappings.length > 0 && (
           <div className="border-b">
-            <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-amber-800 bg-amber-50">
-              Mapped test products ({filteredTestMappings.length})
+            <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600 bg-slate-50">
+              Mapped no-SKU products ({filteredTestMappings.length})
             </div>
             <div className="divide-y">
               {filteredTestMappings.map((mapping) => (
@@ -306,8 +308,8 @@ export default function ProductMappingPage() {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate flex items-center gap-2">
                       <span className="truncate">{mapping.external_title}</span>
-                      <span className="shrink-0 px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
-                        Test
+                      <span className="shrink-0 px-1.5 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
+                        No SKU
                       </span>
                     </div>
                     <div className="text-sm text-gray-500">

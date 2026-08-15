@@ -342,7 +342,6 @@ export async function processShopifyOrder(
   }> = []
 
   const unmappedItems: string[] = []
-  let usedTestMapping = false
   let hasUnmatchedLines = false
 
   for (const item of order.line_items || []) {
@@ -374,13 +373,8 @@ export async function processShopifyOrder(
       continue
     }
 
-    // Missing / N/A Shopify SKU mappings are treated as test (Test tab).
-    const mappingSku = mapping.external_sku as string | null | undefined
-    const skuValue = String(mappingSku || '').trim().toLowerCase()
-    if (!skuValue || skuValue === 'n/a' || skuValue === 'na') {
-      usedTestMapping = true
-    }
-
+    // Mapped lines (including no-SKU / Test-tab mappings) are real fulfillable lines.
+    // Missing Shopify SKU alone does not make the order a test order.
     lineItems.push({
       product_id: mapping.product_id,
       qty_requested: item.quantity,
@@ -410,9 +404,9 @@ export async function processShopifyOrder(
     shippingMethod.toLowerCase().includes('overnight') ||
     shippingMethod.toLowerCase().includes('priority')
 
-  // Build notes
+  // Build notes — [test] only when Shopify marks the order as test, not for no-SKU mappings
   const notes: string[] = []
-  if (usedTestMapping || hasUnmatchedLines || order.test === true) {
+  if (order.test === true) {
     notes.push('[test]')
   }
   notes.push('[7D]')

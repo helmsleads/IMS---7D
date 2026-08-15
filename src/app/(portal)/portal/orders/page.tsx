@@ -177,7 +177,7 @@ export default function PortalOrdersPage() {
           ship_to_city: order.ship_to_city,
           ship_to_state: order.ship_to_state,
           is_rush: order.is_rush || false,
-          is_test: isTestOutboundOrder(order.notes) || hasUnmatched,
+          is_test: isTestOutboundOrder(order.notes),
           needs_mapping: isNeedsMappingOutboundOrder(order.notes) || hasUnmatched,
           item_count: items.length,
           total_units: displayUnits,
