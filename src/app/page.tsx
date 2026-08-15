@@ -26,12 +26,44 @@ export default function LoginPage() {
   const [shopifyEmbed, setShopifyEmbed] = useState(false);
   const [shopifyAutoBreakOut, setShopifyAutoBreakOut] = useState(false);
 
+  // Shopify App URL / distribution install: send merchant to OAuth Install page.
+  // Legacy install flow requires the app to start /admin/oauth/authorize.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const shop = params.get("shop");
+    if (!shop || !shop.includes("myshopify.com")) return;
+    if (!params.get("hmac") && !params.get("host")) return;
+    // Already inside Admin iframe — break out / portal path handles that.
+    if (shouldBreakOutOfShopifyEmbed()) return;
+
+    const app = params.get("app") === "test" ? "test" : "live";
+    const url = `/api/integrations/shopify/begin-install?shop=${encodeURIComponent(shop)}&app=${app}`;
+    // Preserve hmac for server verification
+    if (params.get("hmac")) {
+      const q = new URLSearchParams();
+      params.forEach((v, k) => q.set(k, v));
+      q.set("app", app);
+      window.location.replace(`/api/integrations/shopify/begin-install?${q.toString()}`);
+      return;
+    }
+    window.location.replace(url);
+  }, []);
+
   // Shopify App URL: auto-break out only inside Admin iframe / embedded=1.
-  // Top-level install opens App URL with shop/hmac — show CTA, do not redirect.
   useEffect(() => {
     const embedded = shouldBreakOutOfShopifyEmbed();
     const fromShopify = isShopifyEmbeddedRequest();
     if (!embedded && !fromShopify) return;
+    // begin-install redirect owns top-level shop+hmac installs
+    if (
+      fromShopify &&
+      !embedded &&
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("shop")?.includes("myshopify.com")
+    ) {
+      return;
+    }
     setShopifyEmbed(true);
     setShopifyAutoBreakOut(embedded);
     if (embedded) {

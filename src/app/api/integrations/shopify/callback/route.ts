@@ -152,12 +152,12 @@ export async function GET(request: NextRequest) {
   const [stateNonce, stateData] = state.split(':')
 
   // Parse client ID / return URL / app from state
-  let clientId: string
+  let clientId: string | null = null
   let oauthSource: string | null = earlyOAuthSource
   let dtcReturnUrl: string | null = earlyDtcReturnUrl
   try {
     const decoded = JSON.parse(atob(stateData))
-    clientId = decoded.clientId
+    clientId = decoded.clientId ?? null
     oauthSource = decoded.source ?? null
     if (decoded.app) {
       appMode = parseShopifyAppMode(decoded.app)
@@ -166,7 +166,9 @@ export async function GET(request: NextRequest) {
       typeof decoded.returnUrl === 'string' && decoded.returnUrl.startsWith('http')
         ? decoded.returnUrl
         : null
-    if (!clientId) throw new Error('No clientId in state')
+    if (oauthSource !== 'begin_install' && !clientId) {
+      throw new Error('No clientId in state')
+    }
   } catch (e) {
     console.error('Failed to parse state:', e)
     return redirectOAuthError('invalid_state', earlyDtcReturnUrl, earlyOAuthSource)
@@ -178,6 +180,9 @@ export async function GET(request: NextRequest) {
   }
 
   if (oauthSource === 'dtc') {
+    if (!clientId) {
+      return redirectOAuthError('invalid_state', dtcReturnUrl, oauthSource)
+    }
     const supabaseForState = createServiceClient()
     const { data: oauthState, error: oauthStateError } = await supabaseForState
       .from('dtc_shopify_oauth_states')
@@ -212,6 +217,38 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     console.error('Token exchange error:', e)
     return redirectOAuthError('token_exchange_failed', dtcReturnUrl, oauthSource)
+  }
+
+  // Shopify App URL / distribution install: approve happened; stash tokens until portal login claims them.
+  if (oauthSource === 'begin_install') {
+    const pending = {
+      shop: shopDomain,
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token ?? null,
+      scope: tokenData.scope,
+      expires_in: tokenData.expires_in ?? null,
+      app: appMode,
+      created_at: Date.now(),
+    }
+    const payload = isEncryptionConfigured()
+      ? encryptToken(JSON.stringify(pending))
+      : JSON.stringify(pending)
+
+    const claimRedirect = `${APP_URL}/client-login?redirect=${encodeURIComponent('/portal/integrations?shopify_claim=1')}`
+    const response = NextResponse.redirect(claimRedirect)
+    response.cookies.set('shopify_pending_install', payload, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 600,
+      path: '/',
+    })
+    response.cookies.delete('shopify_oauth_nonce')
+    return response
+  }
+
+  if (!clientId) {
+    return redirectOAuthError('invalid_state', dtcReturnUrl, oauthSource)
   }
 
   // Get shop info

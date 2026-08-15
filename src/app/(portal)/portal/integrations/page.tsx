@@ -39,6 +39,44 @@ export default function IntegrationsHubPage() {
     }
   }, [searchParams])
 
+  // After Shopify App URL / begin-install OAuth, claim pending tokens for this client
+  useEffect(() => {
+    if (!client?.id || searchParams.get('shopify_claim') !== '1') return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch('/api/integrations/shopify/claim-install', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clientId: client.id }),
+        })
+        const data = (await res.json()) as { error?: string; shopName?: string }
+        if (cancelled) return
+        if (!res.ok) {
+          setMessage({
+            type: 'error',
+            text: data.error || 'Could not finish Shopify install',
+          })
+          return
+        }
+        setMessage({
+          type: 'success',
+          text: `Shopify connected${data.shopName ? `: ${data.shopName}` : ''}`,
+        })
+        const next = await getClientIntegrations(client.id)
+        if (!cancelled) setIntegrations(next)
+      } catch {
+        if (!cancelled) {
+          setMessage({ type: 'error', text: 'Could not finish Shopify install' })
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [client?.id, searchParams])
+
   useEffect(() => {
     let cancelled = false
     void fetch('/api/integrations/shopify/test-connect', { credentials: 'include' })
