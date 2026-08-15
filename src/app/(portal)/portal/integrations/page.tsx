@@ -309,7 +309,7 @@ function ShopifyCard({
               </div>
               <p className="text-sm text-slate-500 mt-0.5">
                 {isTest
-                  ? 'Connect from 7D, then install the test app when Shopify Admin asks'
+                  ? 'Reconnect a development store that already has the test app installed'
                   : 'Connect your production Shopify store with Partners OAuth'}
               </p>
             </div>
@@ -338,6 +338,7 @@ function ShopifyCard({
               clientId={clientId}
               testAppConfigured={testAppConfigured}
               onConnectError={onConnectError}
+              onConnected={() => void onRefresh()}
             />
           ) : (
             <ShopifyLiveOAuthConnect
@@ -463,16 +464,18 @@ function ShopifyLiveOAuthConnect({
   )
 }
 
-/* ─── Test: start in 7D → Shopify Admin install/approve (test app credentials) ─── */
+/* ─── Test: Dev Dashboard client_credentials (app must already be on the store) ─── */
 
 function ShopifyTestOAuthConnect({
   clientId,
   testAppConfigured = true,
   onConnectError,
+  onConnected,
 }: {
   clientId: string | undefined
   testAppConfigured?: boolean
   onConnectError: (message: string) => void
+  onConnected?: () => void
 }) {
   const [shopDomain, setShopDomain] = useState('')
   const [isConnecting, setIsConnecting] = useState(false)
@@ -496,33 +499,33 @@ function ShopifyTestOAuthConnect({
       .replace(/\//g, '')
       .trim()
 
-    // Separate from live: always app=test → SHOPIFY_TEST_CLIENT_*
-    const state = btoa(JSON.stringify({ clientId, timestamp: Date.now(), app: 'test' }))
-    const params = new URLSearchParams({
-      shop: cleanDomain,
-      state,
-      preflight: '1',
-      app: 'test',
-    })
-
     try {
-      const res = await fetch(`/api/integrations/shopify/auth?${params}`, {
+      // Separate from live Partners OAuth — no /oauth/authorize redirect
+      const res = await fetch('/api/integrations/shopify/test-connect', {
+        method: 'POST',
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId,
+          shop: cleanDomain,
+        }),
       })
-      const data = (await res.json()) as { error?: string; redirectUrl?: string }
+      const data = (await res.json()) as {
+        error?: string
+        shopName?: string
+        success?: boolean
+      }
 
       if (!res.ok) {
-        onConnectError(data.error || `Could not start connection (${res.status})`)
+        onConnectError(data.error || `Could not connect (${res.status})`)
         setIsConnecting(false)
         return
       }
-      if (!data.redirectUrl) {
-        onConnectError('Could not start Shopify authorization')
-        setIsConnecting(false)
-        return
-      }
-      // Leaves 7D → Shopify Admin install / approve for the test app
-      window.location.href = data.redirectUrl
+
+      setShowForm(false)
+      setShopDomain('')
+      onConnected?.()
+      setIsConnecting(false)
     } catch {
       onConnectError('Could not start Shopify connection. Please try again.')
       setIsConnecting(false)
@@ -568,10 +571,9 @@ function ShopifyTestOAuthConnect({
           <span className="text-sm text-slate-500">.myshopify.com</span>
         </div>
         <p className="text-xs text-slate-400 mt-1">
-          Enter{' '}
-          <code className="text-[11px]">test-7d-store</code> (or your development store),
-          then Connect. Shopify Admin will open so you can install the test app — you do
-          not install from the Dev Dashboard first.
+          The test app must already be installed on{' '}
+          <code className="text-[11px]">test-7d-store</code> in Shopify Admin. Connect
+          stays in 7D (no authorize redirect). Live store flow is unchanged.
         </p>
       </div>
 

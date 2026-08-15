@@ -104,6 +104,24 @@ export async function exchangeAuthorizationCode(
   )
 }
 
+/**
+ * Dev Dashboard apps (same org as the store): client credentials grant.
+ * Requires the app already installed on the shop. Tokens expire ~24h.
+ * @see https://shopify.dev/docs/apps/build/dev-dashboard/get-api-access-tokens
+ */
+export async function exchangeClientCredentials(
+  shopDomain: string,
+  appMode: ShopifyAppMode = 'test'
+): Promise<ShopifyOAuthTokenData> {
+  return requestAccessToken(
+    shopDomain,
+    {
+      grant_type: 'client_credentials',
+    },
+    appMode
+  )
+}
+
 async function refreshExpiringToken(
   shopDomain: string,
   refreshToken: string,
@@ -215,6 +233,29 @@ export async function getShopifyAccessToken(
   }
 
   const settings = integration.settings as { connection_mode?: string } | null
+
+  // Dev Dashboard test app: client_credentials tokens (no refresh_token, ~24h expiry)
+  if (
+    appMode === 'test' &&
+    (settings?.connection_mode === 'test_app' ||
+      settings?.connection_mode === 'client_credentials') &&
+    integration.token_expires_at
+  ) {
+    if (isAccessTokenValid(integration.token_expires_at)) {
+      return decryptedAccess
+    }
+    try {
+      const tokenData = await exchangeClientCredentials(shopDomain, 'test')
+      await persistTokenFields(integration.id, tokenData)
+      return tokenData.access_token
+    } catch (error) {
+      throw new Error(
+        `Shopify client-credentials token for ${shopDomain} expired and refresh failed (${error instanceof Error ? error.message : 'unknown'}). Reconnect the test store in Portal.`,
+        { cause: error },
+      )
+    }
+  }
+
   const isStaticTestToken =
     settings?.connection_mode === 'test_token' ||
     settings?.connection_mode === 'custom_app' ||
