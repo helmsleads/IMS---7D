@@ -22,30 +22,41 @@ export function isShopifyTestAppConfigured(): boolean {
 }
 
 /**
- * Staging / local portals show a dedicated test-store connection card.
- * Production (app.7degreesco.com) stays live-only unless test credentials are set.
+ * Staging / Preview / local portals show a dedicated test-store connection card.
+ * Production (VERCEL_ENV=production or app.7degreesco.com) stays live-only.
+ * Preview-scoped SHOPIFY_TEST_* vars must not surface the card on production.
  */
 export function shouldShowShopifyTestConnectUi(): boolean {
-  if (isShopifyTestAppConfigured()) {
-    return true;
-  }
   if (process.env.NEXT_PUBLIC_SHOPIFY_SHOW_TEST_CONNECT === "true") {
     return true;
   }
+  if (process.env.NEXT_PUBLIC_SHOPIFY_SHOW_TEST_CONNECT === "false") {
+    return false;
+  }
+
   const appUrl = (
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.APP_URL ||
     ""
   ).toLowerCase();
-  if (appUrl.includes("app.7degreesco.com")) {
+  const isProductionHost = appUrl.includes("app.7degreesco.com");
+  const isVercelProduction = process.env.VERCEL_ENV === "production";
+
+  // Live production never shows the test card (even if test secrets were mis-scoped).
+  if (isProductionHost || isVercelProduction) {
     return false;
   }
-  // Staging Vercel / local / preview hosts
+
+  // Preview / staging / local: show when test app is configured, or on known non-prod hosts.
+  if (isShopifyTestAppConfigured()) {
+    return true;
+  }
   return (
-    process.env.VERCEL_ENV !== "production" ||
     appUrl.includes("vercel.app") ||
     appUrl.includes("localhost") ||
-    appUrl.includes("127.0.0.1")
+    appUrl.includes("127.0.0.1") ||
+    process.env.VERCEL_ENV === "preview" ||
+    process.env.NODE_ENV !== "production"
   );
 }
 

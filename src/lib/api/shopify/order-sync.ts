@@ -329,16 +329,21 @@ export async function processShopifyOrder(
       .map((m) => [m.external_sku!.toLowerCase(), m])
   )
 
-  // Transform line items
+  // Transform line items (matched + unmatched display rows)
   const lineItems: Array<{
-    product_id: string
+    product_id: string | null
     qty_requested: number
     qty_shipped: number
     unit_price: number
+    external_sku?: string | null
+    external_title?: string | null
+    is_unmatched?: boolean
+    virtual_qty?: number
   }> = []
 
   const unmappedItems: string[] = []
   let usedTestMapping = false
+  let hasUnmatchedLines = false
 
   for (const item of order.line_items || []) {
     if (!item.requires_shipping || item.quantity <= 0) {
@@ -352,7 +357,20 @@ export async function processShopifyOrder(
     }
 
     if (!mapping) {
-      unmappedItems.push(`${item.sku || 'No SKU'}: ${item.name}`)
+      const label = `${item.sku || 'No SKU'}: ${item.name}`
+      unmappedItems.push(label)
+      hasUnmatchedLines = true
+      // Persist unmatched line for tester UI: real qty 0, virtual_qty = Shopify qty
+      lineItems.push({
+        product_id: null,
+        qty_requested: 0,
+        qty_shipped: 0,
+        unit_price: parseFloat(item.price) || 0,
+        external_sku: item.sku || null,
+        external_title: item.name || item.title || null,
+        is_unmatched: true,
+        virtual_qty: item.quantity,
+      })
       continue
     }
 
@@ -368,11 +386,13 @@ export async function processShopifyOrder(
       qty_requested: item.quantity,
       qty_shipped: 0,
       unit_price: parseFloat(item.price),
+      is_unmatched: false,
+      virtual_qty: 0,
     })
   }
 
   // 7D-tagged orders import even with zero mapped lines — staff finish matching in 7D.
-  if (lineItems.length === 0 && unmappedItems.length > 0) {
+  if (hasUnmatchedLines) {
     console.warn(
       `Order ${order.name} imported with unmapped products (7D tag present):`,
       unmappedItems
@@ -392,7 +412,7 @@ export async function processShopifyOrder(
 
   // Build notes
   const notes: string[] = []
-  if (usedTestMapping || order.test === true) {
+  if (usedTestMapping || hasUnmatchedLines || order.test === true) {
     notes.push('[test]')
   }
   notes.push('[7D]')
@@ -401,7 +421,9 @@ export async function processShopifyOrder(
   }
   if (unmappedItems.length > 0) {
     notes.push('[needs mapping]')
-    notes.push(`⚠️ ${unmappedItems.length} item(s) could not be mapped: ${unmappedItems.join(', ')}`)
+    notes.push(
+      `⚠️ ${unmappedItems.length} item(s) not matching IMS (shown with virtual qty): ${unmappedItems.join(', ')}`
+    )
   }
 
   // Build notes
@@ -467,7 +489,7 @@ export async function processShopifyOrder(
 
   await ensureIntegrationWarehouseLocation(supabase, integrationData.id)
 
-  // Create line items
+  // Create line items (matched + unmatched display rows)
   if (lineItems.length > 0) {
     const { error: itemsError } = await supabase.from('outbound_items').insert(
       lineItems.map((item) => ({
@@ -476,6 +498,10 @@ export async function processShopifyOrder(
         qty_requested: item.qty_requested,
         qty_shipped: item.qty_shipped,
         unit_price: item.unit_price,
+        external_sku: item.external_sku ?? null,
+        external_title: item.external_title ?? null,
+        is_unmatched: item.is_unmatched ?? false,
+        virtual_qty: item.virtual_qty ?? 0,
       }))
     )
 
@@ -483,9 +509,12 @@ export async function processShopifyOrder(
       console.error('Failed to create order items:', itemsError)
       // Don't throw - order was created, items can be added manually
     } else {
-      const hasShopifyShipped = (order.line_items || []).some(
-        (item) => item.requires_shipping && shopifyLineItemQtyShipped(item) > 0
-      )
+      const matchedCount = lineItems.filter((i) => !i.is_unmatched && i.product_id).length
+      const hasShopifyShipped =
+        matchedCount > 0 &&
+        (order.line_items || []).some(
+          (item) => item.requires_shipping && shopifyLineItemQtyShipped(item) > 0
+        )
       if (hasShopifyShipped) {
         const payload = order as unknown as Record<string, unknown>
         await deductInventoryFromShopifyFulfillment(
@@ -509,7 +538,8 @@ export async function processShopifyOrder(
 }
 
 /**
- * If an imported 7D order still has no line items, attach newly mapped products from the Shopify payload.
+ * If an imported 7D order has no matched line items yet, attach newly mapped products
+ * from the Shopify payload (replaces unmatched placeholder rows for those SKUs).
  * Used when staff finish product matching after the order already landed in IMS.
  */
 export async function attachMappedShopifyLineItemsIfMissing(
@@ -522,11 +552,13 @@ export async function attachMappedShopifyLineItemsIfMissing(
 
   const { data: existingItems } = await supabase
     .from('outbound_items')
-    .select('id')
+    .select('id, is_unmatched, product_id')
     .eq('order_id', imsOrderId)
-    .limit(1)
 
-  if (existingItems && existingItems.length > 0) {
+  const hasMatched = (existingItems || []).some(
+    (row) => row.product_id && !row.is_unmatched
+  )
+  if (hasMatched) {
     return { attached: 0 }
   }
 
@@ -550,6 +582,8 @@ export async function attachMappedShopifyLineItemsIfMissing(
     qty_requested: number
     qty_shipped: number
     unit_price: number
+    is_unmatched: boolean
+    virtual_qty: number
   }> = []
 
   for (const item of order.line_items || []) {
@@ -562,10 +596,23 @@ export async function attachMappedShopifyLineItemsIfMissing(
       qty_requested: item.quantity,
       qty_shipped: 0,
       unit_price: parseFloat(item.price) || 0,
+      is_unmatched: false,
+      virtual_qty: 0,
     })
   }
 
   if (lineItems.length === 0) return { attached: 0 }
+
+  // Drop unmatched placeholders before inserting real matched lines
+  const unmatchedIds = (existingItems || [])
+    .filter((row) => row.is_unmatched)
+    .map((row) => row.id)
+  if (unmatchedIds.length > 0) {
+    await supabase.from('outbound_items').delete().in('id', unmatchedIds)
+  } else if ((existingItems || []).length > 0) {
+    // Had only empty/legacy rows with no product — clear them
+    await supabase.from('outbound_items').delete().eq('order_id', imsOrderId)
+  }
 
   const { error } = await supabase.from('outbound_items').insert(lineItems)
   if (error) {
@@ -587,6 +634,7 @@ export async function attachMappedShopifyLineItemsIfMissing(
         if (!t) return false
         if (/^\[needs mapping\]$/i.test(t)) return false
         if (/item\(s\) could not be mapped/i.test(t)) return false
+        if (/item\(s\) not matching IMS/i.test(t)) return false
         return true
       })
       .join('\n')

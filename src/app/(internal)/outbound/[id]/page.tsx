@@ -452,11 +452,15 @@ export default function OutboundOrderDetailPage() {
 
         // Detect alcohol order from product categories (Beer, Wine, Spirits, RTD)
         const supabase = (await import("@/lib/supabase")).createClient();
-        const productIds = orderData.items.map((item) => item.product_id);
-        const { data: productData } = await supabase
-          .from("products")
-          .select("id, name, container_type, category_id, product_category:product_categories (id, name, slug)")
-          .in("id", productIds);
+        const productIds = orderData.items
+          .map((item) => item.product_id)
+          .filter((id): id is string => Boolean(id));
+        const { data: productData } = productIds.length
+          ? await supabase
+              .from("products")
+              .select("id, name, container_type, category_id, product_category:product_categories (id, name, slug)")
+              .in("id", productIds)
+          : { data: [] as { id: string; name: string; container_type: string | null; category_id: string | null; product_category: unknown }[] };
 
         const alcoholOrder = orderContainsAlcohol(
           (productData || []).flatMap((product) => {
@@ -1321,9 +1325,13 @@ export default function OutboundOrderDetailPage() {
 
   const currentStatusIndex = getStatusIndex(order.status);
   const warehouseTimezone = locations[0]?.timezone || "America/New_York";
-  const totalRequested = order.items.reduce((sum, item) => sum + item.qty_requested, 0);
+  const totalRequested = order.items.reduce((sum, item) => {
+    if (item.is_unmatched) return sum + (item.virtual_qty || 0);
+    return sum + item.qty_requested;
+  }, 0);
   const totalShipped = order.items.reduce((sum, item) => sum + item.qty_shipped, 0);
-  const itemsComplete = order.items.filter((item) => item.qty_shipped >= item.qty_requested).length;
+  const matchedItems = order.items.filter((item) => !item.is_unmatched);
+  const itemsComplete = matchedItems.filter((item) => item.qty_shipped >= item.qty_requested).length;
 
   const buildUnitBreakdown = (getQty: (item: OutboundItemWithProduct) => number) => {
     const grouped: Record<string, number> = {};
@@ -1337,9 +1345,13 @@ export default function OutboundOrderDetailPage() {
       .map(([label, qty]) => `${qty.toLocaleString()} ${label}`)
       .join(", ");
   };
-  const requestedBreakdown = buildUnitBreakdown((item) => item.qty_requested);
+  const requestedBreakdown = buildUnitBreakdown((item) =>
+    item.is_unmatched ? item.virtual_qty || 0 : item.qty_requested
+  );
   const shippedBreakdown = buildUnitBreakdown((item) => item.qty_shipped);
-  const allItemsShipped = order.items.every((item) => item.qty_shipped >= item.qty_requested);
+  const allItemsShipped =
+    matchedItems.length > 0 &&
+    matchedItems.every((item) => item.qty_shipped >= item.qty_requested);
   const canPick = order.status === "confirmed" || order.status === "processing";
   const canEdit = order.status !== "shipped";
 
@@ -1784,19 +1796,25 @@ export default function OutboundOrderDetailPage() {
                   Pick List
                 </h2>
                 <div className="text-sm text-gray-500">
-                  {order.items.filter(i => i.qty_shipped >= i.qty_requested).length} / {order.items.length} items picked
+                  {matchedItems.filter(i => i.qty_shipped >= i.qty_requested).length} / {matchedItems.length} items picked
+                  {order.items.some((i) => i.is_unmatched) ? (
+                    <span className="ml-2 text-rose-600">
+                      · {order.items.filter((i) => i.is_unmatched).length} unmatched
+                    </span>
+                  ) : null}
                 </div>
               </div>
 
               <div className="space-y-4">
                 {order.items.map((item) => {
+                  const isUnmatched = Boolean(item.is_unmatched);
                   const remaining = item.qty_requested - item.qty_shipped;
-                  const isComplete = remaining <= 0;
-                  const isPartial = item.qty_shipped > 0 && remaining > 0;
+                  const isComplete = !isUnmatched && remaining <= 0;
+                  const isPartial = !isUnmatched && item.qty_shipped > 0 && remaining > 0;
 
                   // Get inventory locations for this product
                   const productInventory = inventory.filter(
-                    (inv) => inv.product_id === item.product_id && inv.qty_on_hand > 0
+                    (inv) => item.product_id && inv.product_id === item.product_id && inv.qty_on_hand > 0
                   );
 
                   // Get current picking qty for this item
@@ -1806,7 +1824,9 @@ export default function OutboundOrderDetailPage() {
                     <div
                       key={item.id}
                       className={`border rounded-lg overflow-hidden transition-colors ${
-                        isComplete
+                        isUnmatched
+                          ? "border-rose-300 bg-rose-50"
+                          : isComplete
                           ? "border-green-300 bg-green-50"
                           : isPartial
                           ? "border-yellow-300 bg-yellow-50"
@@ -1816,7 +1836,11 @@ export default function OutboundOrderDetailPage() {
                       {/* Item Header */}
                       <div className="px-4 py-3 flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          {isComplete ? (
+                          {isUnmatched ? (
+                            <div className="w-8 h-8 rounded-full bg-rose-200 flex items-center justify-center">
+                              <Package className="w-5 h-5 text-rose-700" />
+                            </div>
+                          ) : isComplete ? (
                             <div className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center">
                               <CheckCircle2 className="w-5 h-5 text-white" />
                             </div>
@@ -1827,28 +1851,52 @@ export default function OutboundOrderDetailPage() {
                           )}
                           <div>
                             <p className="font-medium text-gray-900">
-                              {item.product?.name || "Unknown Product"}
+                              {item.product?.name || item.external_title || "Unknown Product"}
                             </p>
                             <div className="flex items-center gap-2">
                               <p className="text-sm text-gray-500">
-                                SKU: {item.product?.sku || "—"}
+                                SKU: {item.product?.sku || item.external_sku || "—"}
                               </p>
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getContainerBadge(item.product?.container_type).color}`}>
-                                {getContainerBadge(item.product?.container_type).label}
-                              </span>
+                              {isUnmatched ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800">
+                                  Not matching
+                                </span>
+                              ) : (
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getContainerBadge(item.product?.container_type).color}`}>
+                                  {getContainerBadge(item.product?.container_type).label}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm text-gray-500">Requested</p>
-                          <p className="text-xl font-bold text-gray-900">
-                            {item.qty_requested} <span className="text-sm font-normal text-gray-500">{getUnitLabel(item.product?.container_type)}</span>
-                          </p>
+                          {isUnmatched ? (
+                            <>
+                              <p className="text-sm text-gray-500">Virtual / Real</p>
+                              <p className="text-xl font-bold text-amber-800">
+                                {item.virtual_qty || 0}{" "}
+                                <span className="text-sm font-normal text-gray-500">/ 0</span>
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-sm text-gray-500">Requested</p>
+                              <p className="text-xl font-bold text-gray-900">
+                                {item.qty_requested} <span className="text-sm font-normal text-gray-500">{getUnitLabel(item.product?.container_type)}</span>
+                              </p>
+                            </>
+                          )}
                         </div>
                       </div>
 
-                      {/* Pick Details - Show if not complete */}
-                      {!isComplete && (
+                      {isUnmatched && (
+                        <div className="px-4 py-3 bg-rose-50 border-t border-rose-200 text-sm text-rose-800">
+                          Product not matching IMS — pick/ship disabled. Map in Integrations → Shopify → Products.
+                        </div>
+                      )}
+
+                      {/* Pick Details - Show if not complete and matched */}
+                      {!isUnmatched && !isComplete && (
                         <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
                           {/* Available Locations */}
                           <div className="mb-3">
@@ -2029,32 +2077,47 @@ export default function OutboundOrderDetailPage() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {order.items.map((item) => {
+                    const isUnmatched = Boolean(item.is_unmatched);
                     const remaining = item.qty_requested - item.qty_shipped;
-                    const isComplete = remaining <= 0;
-                    const isPartial = item.qty_shipped > 0 && remaining > 0;
+                    const isComplete = !isUnmatched && remaining <= 0;
+                    const isPartial = !isUnmatched && item.qty_shipped > 0 && remaining > 0;
                     const isShipped = order.status === "shipped" || order.status === "delivered";
-                    const isEditing = editingItems[item.id] !== undefined;
+                    const isEditing = !isUnmatched && editingItems[item.id] !== undefined;
                     const minQty = 1;
 
                     return (
-                      <tr key={item.id} className={isComplete ? "bg-green-50/50" : ""}>
+                      <tr key={item.id} className={isUnmatched ? "bg-rose-50/60" : isComplete ? "bg-green-50/50" : ""}>
                         <td className="px-4 py-3">
                           <div>
                             <p className="font-medium text-gray-900">
-                              {item.product?.name || "Unknown Product"}
+                              {item.product?.name || item.external_title || "Unknown Product"}
                             </p>
                             <div className="flex items-center gap-2">
                               <p className="text-sm text-gray-500">
-                                SKU: {item.product?.sku || "—"}
+                                SKU: {item.product?.sku || item.external_sku || "—"}
                               </p>
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getContainerBadge(item.product?.container_type).color}`}>
-                                {getContainerBadge(item.product?.container_type).label}
-                              </span>
+                              {isUnmatched ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800">
+                                  Not matching
+                                </span>
+                              ) : (
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getContainerBadge(item.product?.container_type).color}`}>
+                                  {getContainerBadge(item.product?.container_type).label}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          {isEditing ? (
+                          {isUnmatched ? (
+                            <div>
+                              <span className="text-amber-800 font-medium">
+                                {item.virtual_qty || 0}
+                                <span className="text-gray-500 text-xs ml-1">virtual</span>
+                              </span>
+                              <span className="block text-[11px] text-slate-500 mt-0.5">Real: 0</span>
+                            </div>
+                          ) : isEditing ? (
                             <div className="inline-flex items-center gap-1">
                               <input
                                 type="number"
@@ -2157,7 +2220,9 @@ export default function OutboundOrderDetailPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          {isShipped && isComplete ? (
+                          {isUnmatched ? (
+                            <Badge variant="warning">Not matching</Badge>
+                          ) : isShipped && isComplete ? (
                             <Badge variant="success">Shipped</Badge>
                           ) : isComplete ? (
                             <Badge variant="success">Picked</Badge>
@@ -2169,28 +2234,32 @@ export default function OutboundOrderDetailPage() {
                         </td>
                         {canEdit && (
                           <td className="px-4 py-3 text-center">
-                            <div className="inline-flex items-center gap-1">
-                              <button
-                                onClick={() =>
-                                  setEditingItems((prev) => ({
-                                    ...prev,
-                                    [item.id]: item.qty_requested,
-                                  }))
-                                }
-                                className="p-1.5 text-gray-400 hover:text-indigo-600 rounded transition-colors"
-                                title="Edit quantity"
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteItem(item.id)}
-                                disabled={savingItems}
-                                className="p-1.5 text-gray-400 hover:text-red-600 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                                title="Delete item"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
+                            {isUnmatched ? (
+                              <span className="text-xs text-rose-600">Map in Shopify</span>
+                            ) : (
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  onClick={() =>
+                                    setEditingItems((prev) => ({
+                                      ...prev,
+                                      [item.id]: item.qty_requested,
+                                    }))
+                                  }
+                                  className="p-1.5 text-gray-400 hover:text-indigo-600 rounded transition-colors"
+                                  title="Edit quantity"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteItem(item.id)}
+                                  disabled={savingItems}
+                                  className="p-1.5 text-gray-400 hover:text-red-600 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                  title="Delete item"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
                           </td>
                         )}
                       </tr>

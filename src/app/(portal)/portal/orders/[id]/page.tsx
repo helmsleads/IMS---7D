@@ -43,6 +43,8 @@ interface OrderItem {
   image_url: string | null;
   weight_lbs: number | null;
   freight_class: string | null;
+  is_unmatched?: boolean;
+  virtual_qty?: number;
 }
 
 interface OrderDetail {
@@ -249,6 +251,10 @@ export default function OrderDetailPage() {
             id,
             qty_requested,
             qty_shipped,
+            is_unmatched,
+            virtual_qty,
+            external_sku,
+            external_title,
             product:products (
               id,
               name,
@@ -277,8 +283,11 @@ export default function OrderDetailPage() {
         const product = Array.isArray(item.product) ? item.product[0] : item.product;
         return product?.client_id === client.id;
       });
+      const hasUnmatchedOnly =
+        (data.items || []).length > 0 &&
+        (data.items || []).every((item: any) => item.is_unmatched);
 
-      if (!isPrimaryClient && !hasOwnedItems) {
+      if (!isPrimaryClient && !hasOwnedItems && !hasUnmatchedOnly) {
         setError("You don't have permission to view this order");
         setLoading(false);
         return;
@@ -288,6 +297,7 @@ export default function OrderDetailPage() {
       const allItems = data.items || [];
       const visibleItems = data.is_multi_client
         ? allItems.filter((item: any) => {
+            if (item.is_unmatched && isPrimaryClient) return true;
             const product = Array.isArray(item.product) ? item.product[0] : item.product;
             return product?.client_id === client.id;
           })
@@ -320,6 +330,10 @@ export default function OrderDetailPage() {
           id: string;
           qty_requested: number;
           qty_shipped: number;
+          is_unmatched?: boolean | null;
+          virtual_qty?: number | null;
+          external_sku?: string | null;
+          external_title?: string | null;
           product:
             | {
                 id: string;
@@ -340,23 +354,34 @@ export default function OrderDetailPage() {
                 container_type?: string | null;
                 weight_lbs?: number | null;
                 freight_class?: string | null;
-              }[];
+              }[]
+            | null;
         }) => {
           const product = Array.isArray(item.product) ? item.product[0] : item.product;
           const qtyShipped = item.qty_shipped || 0;
+          const isUnmatched = Boolean(item.is_unmatched);
+          const virtualQty = item.virtual_qty || 0;
           return {
             id: item.id,
             product_id: product?.id || "",
-            product_name: product?.name || "Unknown",
-            sku: product?.sku || "",
+            product_name: product?.name || item.external_title || "Unmatched Shopify product",
+            sku: product?.sku || item.external_sku || "No SKU",
             container_type: product?.container_type || null,
             qty_requested: item.qty_requested,
             qty_picked: qtyShipped,
             qty_shipped: qtyShipped,
-            status: qtyShipped >= item.qty_requested ? "shipped" : qtyShipped > 0 ? "partial" : "pending",
+            status: isUnmatched
+              ? "unmatched"
+              : qtyShipped >= item.qty_requested
+                ? "shipped"
+                : qtyShipped > 0
+                  ? "partial"
+                  : "pending",
             image_url: product?.image_url || null,
             weight_lbs: product?.weight_lbs || null,
             freight_class: product?.freight_class || null,
+            is_unmatched: isUnmatched,
+            virtual_qty: virtualQty,
           };
         }),
       };
@@ -406,7 +431,8 @@ export default function OrderDetailPage() {
     const grouped: Record<string, number> = {};
     for (const item of order.items) {
       const label = getUnitLabel(item.container_type);
-      grouped[label] = (grouped[label] || 0) + item.qty_requested;
+      const qty = item.is_unmatched ? (item.virtual_qty || 0) : item.qty_requested;
+      grouped[label] = (grouped[label] || 0) + qty;
     }
     return Object.entries(grouped)
       .map(([label, qty]) => `${qty.toLocaleString()} ${label}`)
@@ -566,16 +592,16 @@ export default function OrderDetailPage() {
                   Rush Order
                 </span>
               )}
-              {isTestOutboundOrder(order.notes) && (
+              {isTestOutboundOrder(order.notes) || order.items.some((i) => i.is_unmatched) ? (
                 <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-xs font-medium rounded-full">
                   Test
                 </span>
-              )}
-              {isNeedsMappingOutboundOrder(order.notes) && (
+              ) : null}
+              {isNeedsMappingOutboundOrder(order.notes) || order.items.some((i) => i.is_unmatched) ? (
                 <span className="px-2.5 py-1 bg-rose-100 text-rose-800 text-xs font-medium rounded-full">
                   Needs mapping
                 </span>
-              )}
+              ) : null}
             </div>
             <p className="text-slate-500">
               Requested on {formatDateTime(order.created_at)}
@@ -824,8 +850,9 @@ export default function OrderDetailPage() {
           </div>
           <div className="divide-y divide-slate-100">
             {order.items.map((item) => {
-              const isPartiallyShipped = item.qty_shipped > 0 && item.qty_shipped < item.qty_requested;
-              const isFullyShipped = item.qty_shipped >= item.qty_requested;
+              const isUnmatched = Boolean(item.is_unmatched);
+              const isPartiallyShipped = !isUnmatched && item.qty_shipped > 0 && item.qty_shipped < item.qty_requested;
+              const isFullyShipped = !isUnmatched && item.qty_shipped >= item.qty_requested && item.qty_requested > 0;
 
               return (
                 <div key={item.id} className="p-4 flex items-center gap-4">
@@ -847,39 +874,63 @@ export default function OrderDetailPage() {
                   {/* Product Info */}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-slate-900 truncate">{item.product_name}</p>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm text-slate-500 font-mono">{item.sku}</p>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getContainerBadge(item.container_type).color}`}>
-                        {getContainerBadge(item.container_type).label}
-                      </span>
+                      {isUnmatched ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800">
+                          Not matching
+                        </span>
+                      ) : (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getContainerBadge(item.container_type).color}`}>
+                          {getContainerBadge(item.container_type).label}
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   {/* Quantities */}
                   <div className="text-right flex-shrink-0">
                     <div className="flex items-center gap-3">
-                      {/* Qty Requested */}
-                      <div>
-                        <p className="text-xs text-slate-500 uppercase tracking-wide">Requested</p>
-                        <p className="font-semibold text-slate-900">
-                          {item.qty_requested.toLocaleString()} <span className="text-xs font-normal text-slate-500">{getUnitLabel(item.container_type)}</span>
-                        </p>
-                      </div>
+                      {isUnmatched ? (
+                        <>
+                          <div>
+                            <p className="text-xs text-slate-500 uppercase tracking-wide">Virtual</p>
+                            <p className="font-semibold text-amber-800">
+                              {(item.virtual_qty || 0).toLocaleString()}{" "}
+                              <span className="text-xs font-normal text-slate-500">{getUnitLabel(item.container_type)}</span>
+                            </p>
+                          </div>
+                          <div className="pl-3 border-l border-slate-200">
+                            <p className="text-xs text-slate-500 uppercase tracking-wide">Real</p>
+                            <p className="font-semibold text-slate-400">0</p>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <p className="text-xs text-slate-500 uppercase tracking-wide">Requested</p>
+                            <p className="font-semibold text-slate-900">
+                              {item.qty_requested.toLocaleString()} <span className="text-xs font-normal text-slate-500">{getUnitLabel(item.container_type)}</span>
+                            </p>
+                          </div>
 
-                      {/* Qty Shipped (if applicable) */}
-                      {(order.status === "shipped" || order.status === "delivered" || item.qty_shipped > 0) && (
-                        <div className="pl-3 border-l border-slate-200">
-                          <p className="text-xs text-slate-500 uppercase tracking-wide">Shipped</p>
-                          <p className={`font-semibold ${isPartiallyShipped ? "text-yellow-600" : isFullyShipped ? "text-green-600" : "text-slate-400"}`}>
-                            {item.qty_shipped > 0 ? (
-                              <>{item.qty_shipped.toLocaleString()} <span className="text-xs font-normal">{getUnitLabel(item.container_type)}</span></>
-                            ) : "\u2014"}
-                          </p>
-                        </div>
+                          {(order.status === "shipped" || order.status === "delivered" || item.qty_shipped > 0) && (
+                            <div className="pl-3 border-l border-slate-200">
+                              <p className="text-xs text-slate-500 uppercase tracking-wide">Shipped</p>
+                              <p className={`font-semibold ${isPartiallyShipped ? "text-yellow-600" : isFullyShipped ? "text-green-600" : "text-slate-400"}`}>
+                                {item.qty_shipped > 0 ? (
+                                  <>{item.qty_shipped.toLocaleString()} <span className="text-xs font-normal">{getUnitLabel(item.container_type)}</span></>
+                                ) : "\u2014"}
+                              </p>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
 
-                    {/* Partial shipment warning */}
+                    {isUnmatched && (
+                      <p className="text-xs text-rose-600 mt-1">Product not matching IMS — map in Shopify Products</p>
+                    )}
                     {isPartiallyShipped && (
                       <p className="text-xs text-yellow-600 mt-1">
                         Partial shipment ({item.qty_requested - item.qty_shipped} remaining)

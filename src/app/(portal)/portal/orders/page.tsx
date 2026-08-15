@@ -144,7 +144,10 @@ export default function PortalOrdersPage() {
           tracking_number,
           preferred_carrier,
           items:outbound_items (
-            qty_requested
+            qty_requested,
+            virtual_qty,
+            is_unmatched,
+            external_sku
           )
         `)
         .in("id", orderIds)
@@ -153,7 +156,19 @@ export default function PortalOrdersPage() {
       if (fetchErr) throw fetchErr;
 
       const ordersData = (data || []).map((order) => {
-        const items = order.items as { qty_requested: number }[];
+        const items = order.items as {
+          qty_requested: number;
+          virtual_qty?: number | null;
+          is_unmatched?: boolean | null;
+          external_sku?: string | null;
+        }[];
+        const hasUnmatched = items.some((item) => item.is_unmatched);
+        const displayUnits = items.reduce((sum, item) => {
+          if (item.is_unmatched) {
+            return sum + (item.virtual_qty || 0);
+          }
+          return sum + item.qty_requested;
+        }, 0);
         return {
           id: order.id,
           order_number: order.order_number,
@@ -162,10 +177,10 @@ export default function PortalOrdersPage() {
           ship_to_city: order.ship_to_city,
           ship_to_state: order.ship_to_state,
           is_rush: order.is_rush || false,
-          is_test: isTestOutboundOrder(order.notes),
-          needs_mapping: isNeedsMappingOutboundOrder(order.notes),
+          is_test: isTestOutboundOrder(order.notes) || hasUnmatched,
+          needs_mapping: isNeedsMappingOutboundOrder(order.notes) || hasUnmatched,
           item_count: items.length,
-          total_units: items.reduce((sum, item) => sum + item.qty_requested, 0),
+          total_units: displayUnits,
           tracking_number: order.tracking_number || null,
           carrier: order.preferred_carrier || null,
         };
@@ -411,7 +426,10 @@ export default function PortalOrdersPage() {
                       <p className="font-semibold text-slate-900">
                         {order.item_count} product{order.item_count !== 1 ? "s" : ""}
                       </p>
-                      <p className="text-sm text-slate-500">{order.total_units.toLocaleString()} units</p>
+                      <p className="text-sm text-slate-500">
+                        {order.total_units.toLocaleString()} units
+                        {order.needs_mapping ? " (virtual)" : ""}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Destination</p>

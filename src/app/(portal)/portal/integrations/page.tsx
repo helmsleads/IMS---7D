@@ -14,7 +14,9 @@ export default function IntegrationsHubPage() {
   const searchParams = useSearchParams()
   const [integrations, setIntegrations] = useState<ClientIntegration[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [testAppConfigured, setTestAppConfigured] = useState(true)
+  const [testAppConfigured, setTestAppConfigured] = useState(false)
+  /** Staging/preview only — production must not show the test-store card. */
+  const [showTestCard, setShowTestCard] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // Check for success/error messages from OAuth callback
@@ -42,14 +44,20 @@ export default function IntegrationsHubPage() {
     void fetch('/api/integrations/shopify/test-connect', { credentials: 'include' })
       .then(async (res) => {
         if (!res.ok) return
-        const data = (await res.json()) as { enabled?: boolean }
+        const data = (await res.json()) as {
+          enabled?: boolean
+          show_test_card?: boolean
+        }
         if (cancelled) return
         if (typeof data.enabled === 'boolean') {
           setTestAppConfigured(data.enabled)
         }
+        if (typeof data.show_test_card === 'boolean') {
+          setShowTestCard(data.show_test_card)
+        }
       })
       .catch(() => {
-        /* keep optimistic default */
+        /* keep hidden until we know this host allows the test card */
       })
     return () => {
       cancelled = true
@@ -130,7 +138,11 @@ export default function IntegrationsHubPage() {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
               Shopify connections
             </h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div
+              className={`grid grid-cols-1 gap-6 ${
+                showTestCard ? 'lg:grid-cols-2' : ''
+              }`}
+            >
               <ShopifyCard
                 variant="live"
                 integration={liveShopifyIntegration}
@@ -138,14 +150,16 @@ export default function IntegrationsHubPage() {
                 onRefresh={handleRefresh}
                 onConnectError={(text) => setMessage({ type: 'error', text })}
               />
-              <ShopifyCard
-                variant="test"
-                integration={testShopifyIntegration}
-                clientId={client?.id}
-                testAppConfigured={testAppConfigured}
-                onRefresh={handleRefresh}
-                onConnectError={(text) => setMessage({ type: 'error', text })}
-              />
+              {showTestCard && (
+                <ShopifyCard
+                  variant="test"
+                  integration={testShopifyIntegration}
+                  clientId={client?.id}
+                  testAppConfigured={testAppConfigured}
+                  onRefresh={handleRefresh}
+                  onConnectError={(text) => setMessage({ type: 'error', text })}
+                />
+              )}
             </div>
           </section>
 

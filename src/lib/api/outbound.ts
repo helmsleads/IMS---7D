@@ -79,10 +79,14 @@ export interface OutboundOrder {
 export interface OutboundItem {
   id: string;
   order_id: string;
-  product_id: string;
+  product_id: string | null;
   qty_requested: number;
   qty_shipped: number;
   unit_price: number;
+  external_sku?: string | null;
+  external_title?: string | null;
+  is_unmatched?: boolean;
+  virtual_qty?: number;
 }
 
 export interface OutboundItemWithProduct extends OutboundItem {
@@ -93,7 +97,7 @@ export interface OutboundItemWithProduct extends OutboundItem {
     client_id?: string | null;
     container_type?: string | null;
     units_per_case?: number | null;
-  };
+  } | null;
 }
 
 export interface OutboundOrderWithClient extends OutboundOrder {
@@ -262,6 +266,10 @@ export async function getOutboundOrder(id: string): Promise<OutboundOrderWithIte
         qty_requested,
         qty_shipped,
         unit_price,
+        external_sku,
+        external_title,
+        is_unmatched,
+        virtual_qty,
         product:products (
           id,
           sku,
