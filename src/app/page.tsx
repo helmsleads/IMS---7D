@@ -26,28 +26,25 @@ export default function LoginPage() {
   const [shopifyEmbed, setShopifyEmbed] = useState(false);
   const [shopifyAutoBreakOut, setShopifyAutoBreakOut] = useState(false);
 
-  // Shopify App URL / distribution install: send merchant to OAuth Install page.
-  // Legacy install flow requires the app to start /admin/oauth/authorize.
+  // Fallback if proxy did not redirect (older deploy). Prefer shop-only URL so
+  // we do not break Shopify's hmac by appending extra signed params incorrectly.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const shop = params.get("shop");
     if (!shop || !shop.includes("myshopify.com")) return;
     if (!params.get("hmac") && !params.get("host")) return;
-    // Already inside Admin iframe — break out / portal path handles that.
     if (shouldBreakOutOfShopifyEmbed()) return;
 
     const app = params.get("app") === "test" ? "test" : "live";
-    const url = `/api/integrations/shopify/begin-install?shop=${encodeURIComponent(shop)}&app=${app}`;
-    // Preserve hmac for server verification
-    if (params.get("hmac")) {
-      const q = new URLSearchParams();
-      params.forEach((v, k) => q.set(k, v));
-      q.set("app", app);
-      window.location.replace(`/api/integrations/shopify/begin-install?${q.toString()}`);
-      return;
+    const q = new URLSearchParams();
+    // Forward Shopify params only; `app` is ours and excluded from hmac check.
+    for (const key of ["shop", "hmac", "host", "timestamp", "session", "locale", "id_token"]) {
+      const v = params.get(key);
+      if (v) q.set(key, v);
     }
-    window.location.replace(url);
+    q.set("app", app);
+    window.location.replace(`/api/integrations/shopify/begin-install?${q.toString()}`);
   }, []);
 
   // Shopify App URL: auto-break out only inside Admin iframe / embedded=1.

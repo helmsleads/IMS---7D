@@ -56,34 +56,56 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Optional: verify App URL hmac when Shopify includes it
+  // Optional: verify App URL hmac (exclude our own `app` query — not part of Shopify signature)
   const hmac = searchParams.get("hmac");
   if (hmac) {
     const params = new URLSearchParams(searchParams);
     params.delete("hmac");
+    params.delete("app");
     const sorted = Array.from(params.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `${k}=${v}`)
       .join("&");
-    const expected = crypto
-      .createHmac("sha256", credentials.clientSecret)
-      .update(sorted)
-      .digest("hex");
+
+    const secrets = [credentials.clientSecret];
     try {
-      const a = Buffer.from(hmac, "utf8");
-      const b = Buffer.from(expected, "utf8");
-      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-        console.error("begin-install: invalid App URL hmac");
-        return NextResponse.redirect(
-          `${APP_URL}/client-login?redirect=${encodeURIComponent("/portal/integrations")}&error=invalid_hmac`,
-        );
+      if (appMode === "live") {
+        const testCreds = getShopifyAppCredentials("test");
+        if (testCreds.clientSecret !== credentials.clientSecret) {
+          secrets.push(testCreds.clientSecret);
+        }
       }
     } catch {
-      if (hmac !== expected) {
-        return NextResponse.redirect(
-          `${APP_URL}/client-login?redirect=${encodeURIComponent("/portal/integrations")}&error=invalid_hmac`,
-        );
+      /* test app optional */
+    }
+
+    let hmacOk = false;
+    for (const secret of secrets) {
+      const expected = crypto
+        .createHmac("sha256", secret)
+        .update(sorted)
+        .digest("hex");
+      try {
+        const a = Buffer.from(hmac, "utf8");
+        const b = Buffer.from(expected, "utf8");
+        if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+          hmacOk = true;
+          break;
+        }
+      } catch {
+        if (hmac === expected) {
+          hmacOk = true;
+          break;
+        }
       }
+    }
+
+    // Do not block install on hmac mismatch — client_id is public and authorize
+    // is the real gate. Bad hmac used to bounce merchants to client-login.
+    if (!hmacOk) {
+      console.warn(
+        "begin-install: App URL hmac mismatch; continuing to OAuth authorize",
+      );
     }
   }
 

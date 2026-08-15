@@ -44,8 +44,33 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Only rewrite true Admin iframe embeds (embedded=1). Top-level App URL
-  // loads with shop/hmac during install must not be bounced to portal login.
+  // Legacy install: Shopify opens App URL with shop+hmac. Send to OAuth authorize
+  // immediately (server-side) so install does not depend on client JS.
+  if (
+    (pathname === "/" || pathname === SHOPIFY_APP_ENTRY_PATH) &&
+    request.nextUrl.searchParams.get("embedded") !== "1"
+  ) {
+    const shop = request.nextUrl.searchParams.get("shop") || "";
+    const hasShopifyInstallParams =
+      shop.includes("myshopify.com") &&
+      (request.nextUrl.searchParams.has("hmac") ||
+        request.nextUrl.searchParams.has("host"));
+    if (hasShopifyInstallParams) {
+      const begin = new URL(
+        "/api/integrations/shopify/begin-install",
+        request.url,
+      );
+      request.nextUrl.searchParams.forEach((value, key) => {
+        begin.searchParams.set(key, value);
+      });
+      if (!begin.searchParams.get("app")) {
+        begin.searchParams.set("app", "live");
+      }
+      return NextResponse.redirect(begin);
+    }
+  }
+
+  // Only rewrite true Admin iframe embeds (embedded=1).
   if (
     pathname !== SHOPIFY_APP_ENTRY_PATH &&
     request.nextUrl.searchParams.get("embedded") === "1"
