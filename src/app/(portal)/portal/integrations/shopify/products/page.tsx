@@ -5,7 +5,13 @@ import { useRouter } from 'next/navigation'
 import Card from '@/components/ui/Card'
 import { useClient } from '@/lib/client-auth'
 import { getClientIntegrations } from '@/lib/api/integrations'
-import { getProductMappings, createProductMapping, deleteProductMapping, hasUsableShopifySku, ProductMapping } from '@/lib/api/product-mappings'
+import {
+  getProductMappings,
+  createProductMapping,
+  deleteProductMapping,
+  hasUsableShopifySku,
+  ProductMapping,
+} from '@/lib/api/product-mappings'
 import { getProducts, type ProductWithCategory } from '@/lib/api/products'
 import type { ClientIntegration } from '@/types/database'
 
@@ -20,7 +26,110 @@ interface ShopifyProduct {
   imageUrl: string | null
 }
 
-type MappingTab = 'unmapped' | 'test'
+function matchesSearch(
+  searchTerm: string,
+  fields: Array<string | null | undefined>,
+): boolean {
+  const q = searchTerm.toLowerCase().trim()
+  if (!q) return true
+  return fields.some((f) => (f || '').toLowerCase().includes(q))
+}
+
+function ProductRow({
+  product,
+  imsProducts,
+  isSaving,
+  onMap,
+}: {
+  product: ShopifyProduct
+  imsProducts: ProductWithCategory[]
+  isSaving: boolean
+  onMap: (product: ShopifyProduct, imsProductId: string) => void
+}) {
+  return (
+    <div className="p-4 flex items-center gap-4">
+      {product.imageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={product.imageUrl}
+          alt=""
+          className="w-12 h-12 object-cover rounded"
+        />
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="font-medium truncate">
+          {product.title}
+          {product.variantTitle && (
+            <span className="text-gray-500"> - {product.variantTitle}</span>
+          )}
+        </div>
+        <div className="text-sm text-gray-500">SKU: {product.sku || 'N/A'}</div>
+      </div>
+      <select
+        className="px-3 py-1.5 border rounded-lg text-sm"
+        defaultValue=""
+        disabled={isSaving}
+        onChange={(e) => {
+          if (e.target.value) {
+            onMap(product, e.target.value)
+            e.target.value = ''
+          }
+        }}
+      >
+        <option value="">Map to IMS product...</option>
+        {imsProducts.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.sku} - {p.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+function MappingRow({
+  mapping,
+  onRemove,
+}: {
+  mapping: ProductMapping
+  onRemove: (id: string) => void
+}) {
+  const isNoSku = !hasUsableShopifySku(mapping.external_sku)
+  return (
+    <div className="p-4 flex items-center gap-4">
+      {mapping.external_image_url && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={mapping.external_image_url}
+          alt=""
+          className="w-12 h-12 object-cover rounded"
+        />
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="font-medium truncate flex items-center gap-2">
+          <span className="truncate">{mapping.external_title}</span>
+          {isNoSku && (
+            <span className="shrink-0 px-1.5 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
+              No SKU
+            </span>
+          )}
+        </div>
+        <div className="text-sm text-gray-500">
+          SKU: {mapping.external_sku || 'N/A'} &rarr; IMS:{' '}
+          {mapping.product?.sku || 'Unknown'}
+          {isNoSku && !mapping.sync_inventory ? ' · inventory sync off' : ''}
+        </div>
+      </div>
+      <div className="text-sm text-gray-600">{mapping.product?.name}</div>
+      <button
+        onClick={() => onRemove(mapping.id)}
+        className="text-red-600 hover:text-red-800 text-sm"
+      >
+        Remove
+      </button>
+    </div>
+  )
+}
 
 export default function ProductMappingPage() {
   const router = useRouter()
@@ -33,9 +142,7 @@ export default function ProductMappingPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [activeTab, setActiveTab] = useState<MappingTab>('unmapped')
 
-  // Load data
   useEffect(() => {
     async function loadData() {
       if (!client?.id) return
@@ -44,9 +151,10 @@ export default function ProductMappingPage() {
       setError(null)
 
       try {
-        // Get Shopify integration
         const integrations = await getClientIntegrations(client.id)
-        const shopifyInt = integrations.find((i) => i.platform === 'shopify' && i.status === 'active')
+        const shopifyInt = integrations.find(
+          (i) => i.platform === 'shopify' && i.status === 'active',
+        )
 
         if (!shopifyInt) {
           setError('No active Shopify integration found')
@@ -56,11 +164,12 @@ export default function ProductMappingPage() {
 
         setIntegration(shopifyInt)
 
-        // Load in parallel
         const [mappingsData, productsData, shopifyData] = await Promise.all([
           getProductMappings(shopifyInt.id, client.id),
           getProducts(client.id),
-          fetch(`/api/integrations/shopify/${shopifyInt.id}/products`).then((r) => r.json()),
+          fetch(`/api/integrations/shopify/${shopifyInt.id}/products`).then((r) =>
+            r.json(),
+          ),
         ])
 
         setMappings(mappingsData)
@@ -77,44 +186,47 @@ export default function ProductMappingPage() {
   }, [client?.id])
 
   const mappedVariantIds = new Set(mappings.map((m) => m.external_variant_id))
-  const unmappedProducts = shopifyProducts.filter(
-    (p) => !mappedVariantIds.has(p.variantId) && hasUsableShopifySku(p.sku)
-  )
-  // Unmapped Shopify listings with blank / N/A SKU (Test tab — real products, not test orders)
-  const testProductsUnmapped = shopifyProducts.filter(
-    (p) => !mappedVariantIds.has(p.variantId) && !hasUsableShopifySku(p.sku)
-  )
-  // Already-mapped no-SKU connections (still listed under Test tab)
-  const testMappings = mappings.filter((m) => !hasUsableShopifySku(m.external_sku))
-  const testTabCount = testProductsUnmapped.length + testMappings.length
 
-  const listForTab = activeTab === 'unmapped' ? unmappedProducts : testProductsUnmapped
-  const filteredList = listForTab.filter(
-    (p) =>
-      p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.variantTitle?.toLowerCase().includes(searchTerm.toLowerCase())
+  const unmappedWithSku = shopifyProducts.filter(
+    (p) => !mappedVariantIds.has(p.variantId) && hasUsableShopifySku(p.sku),
   )
-  const filteredTestMappings = testMappings.filter(
-    (m) =>
-      (m.external_title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (m.external_sku || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (m.product?.sku || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (m.product?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
+  const unmappedNoSku = shopifyProducts.filter(
+    (p) => !mappedVariantIds.has(p.variantId) && !hasUsableShopifySku(p.sku),
+  )
+
+  const mappedWithSku = mappings.filter((m) => hasUsableShopifySku(m.external_sku))
+  const mappedNoSku = mappings.filter((m) => !hasUsableShopifySku(m.external_sku))
+
+  const filteredUnmappedWithSku = unmappedWithSku.filter((p) =>
+    matchesSearch(searchTerm, [p.title, p.sku, p.variantTitle]),
+  )
+  const filteredUnmappedNoSku = unmappedNoSku.filter((p) =>
+    matchesSearch(searchTerm, [p.title, p.sku, p.variantTitle]),
+  )
+  const filteredMappedWithSku = mappedWithSku.filter((m) =>
+    matchesSearch(searchTerm, [
+      m.external_title,
+      m.external_sku,
+      m.product?.sku,
+      m.product?.name,
+    ]),
+  )
+  const filteredMappedNoSku = mappedNoSku.filter((m) =>
+    matchesSearch(searchTerm, [
+      m.external_title,
+      m.external_sku,
+      m.product?.sku,
+      m.product?.name,
+    ]),
   )
 
   const handleCreateMapping = async (
     shopifyProduct: ShopifyProduct,
     imsProductId: string,
-    options?: { allowMissingSku?: boolean }
   ) => {
     if (!integration || !client) return
 
-    const isNoSkuMapping = Boolean(options?.allowMissingSku) || !hasUsableShopifySku(shopifyProduct.sku)
-    if (!hasUsableShopifySku(shopifyProduct.sku) && !options?.allowMissingSku) {
-      alert('This Shopify product has no SKU. Map it from the Test tab.')
-      return
-    }
+    const isNoSkuMapping = !hasUsableShopifySku(shopifyProduct.sku)
 
     setIsSaving(true)
     try {
@@ -126,16 +238,21 @@ export default function ProductMappingPage() {
           external_variant_id: shopifyProduct.variantId,
           external_inventory_item_id: shopifyProduct.inventoryItemId,
           external_sku: shopifyProduct.sku || undefined,
-          external_title: shopifyProduct.title + (shopifyProduct.variantTitle ? ` - ${shopifyProduct.variantTitle}` : ''),
+          external_title:
+            shopifyProduct.title +
+            (shopifyProduct.variantTitle ? ` - ${shopifyProduct.variantTitle}` : ''),
           external_image_url: shopifyProduct.imageUrl || undefined,
           sync_inventory: isNoSkuMapping ? false : true,
           allowMissingSku: isNoSkuMapping,
         },
-        client.id
+        client.id,
       )
       setMappings([...mappings, newMapping])
     } catch (err) {
-      alert('Failed to create mapping: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      alert(
+        'Failed to create mapping: ' +
+          (err instanceof Error ? err.message : 'Unknown error'),
+      )
     }
     setIsSaving(false)
   }
@@ -148,7 +265,10 @@ export default function ProductMappingPage() {
       await deleteProductMapping(mappingId, client.id)
       setMappings(mappings.filter((m) => m.id !== mappingId))
     } catch (err) {
-      alert('Failed to delete mapping: ' + (err instanceof Error ? err.message : 'Unknown error'))
+      alert(
+        'Failed to delete mapping: ' +
+          (err instanceof Error ? err.message : 'Unknown error'),
+      )
     }
   }
 
@@ -174,9 +294,12 @@ export default function ProductMappingPage() {
     )
   }
 
+  const unmappedTotal = filteredUnmappedWithSku.length + filteredUnmappedNoSku.length
+  const mappedTotal = filteredMappedWithSku.length + filteredMappedNoSku.length
+
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <button
             onClick={() => router.push('/portal/integrations')}
@@ -186,209 +309,122 @@ export default function ProductMappingPage() {
           </button>
           <h1 className="text-2xl font-bold text-gray-900">Product Mapping</h1>
           <p className="text-gray-600 mt-1">
-            Map Shopify products to IMS products for order import. Use the Test tab for
-            real listings that have no SKU (shown as N/A) — they are not test orders.
+            Map Shopify products to IMS products for order import. Products are grouped by
+            SKU and No SKU.
           </p>
         </div>
-        <div className="text-right text-sm text-gray-500">
+        <div className="text-right text-sm text-gray-500 shrink-0">
           <div>{mappings.length} mapped</div>
-          <div>{unmappedProducts.length} unmapped</div>
-          <div>{testTabCount} no SKU</div>
+          <div>{unmappedWithSku.length + unmappedNoSku.length} unmapped</div>
         </div>
       </div>
 
-      {/* Current Mappings */}
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder="Search products..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="px-3 py-2 border rounded-lg text-sm w-full max-w-sm"
+        />
+      </div>
+
+      {/* Mapped */}
       <Card className="mb-6">
         <div className="p-4 border-b">
-          <h2 className="font-semibold">Mapped Products ({mappings.length})</h2>
+          <h2 className="font-semibold">Mapped Products ({mappedTotal})</h2>
         </div>
-        {mappings.length === 0 ? (
+        {mappedTotal === 0 ? (
           <div className="p-8 text-center text-gray-500">
-            No products mapped yet. Map products below to enable order line item import.
+            {mappings.length === 0
+              ? 'No products mapped yet. Map products below to enable order line item import.'
+              : 'No mapped products match your search'}
           </div>
         ) : (
-          <div className="divide-y">
-            {mappings.map((mapping) => {
-              const isNoSkuMapping = !hasUsableShopifySku(mapping.external_sku)
-              return (
-                <div key={mapping.id} className="p-4 flex items-center gap-4">
-                  {mapping.external_image_url && (
-                    <img
-                      src={mapping.external_image_url}
-                      alt=""
-                      className="w-12 h-12 object-cover rounded"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate flex items-center gap-2">
-                      <span className="truncate">{mapping.external_title}</span>
-                      {isNoSkuMapping && (
-                        <span className="shrink-0 px-1.5 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
-                          No SKU
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      SKU: {mapping.external_sku || 'N/A'} &rarr; IMS: {mapping.product?.sku || 'Unknown'}
-                      {isNoSkuMapping && !mapping.sync_inventory ? ' · inventory sync off' : ''}
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-600">{mapping.product?.name}</div>
-                  <button
-                    onClick={() => handleDeleteMapping(mapping.id)}
-                    className="text-red-600 hover:text-red-800 text-sm"
-                  >
-                    Remove
-                  </button>
+          <div className="max-h-[360px] overflow-y-auto">
+            {filteredMappedWithSku.length > 0 && (
+              <div>
+                <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600 bg-slate-50 border-b">
+                  SKU ({filteredMappedWithSku.length})
                 </div>
-              )
-            })}
+                <div className="divide-y">
+                  {filteredMappedWithSku.map((mapping) => (
+                    <MappingRow
+                      key={mapping.id}
+                      mapping={mapping}
+                      onRemove={handleDeleteMapping}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            {filteredMappedNoSku.length > 0 && (
+              <div>
+                <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600 bg-slate-50 border-b border-t">
+                  No SKU ({filteredMappedNoSku.length})
+                </div>
+                <div className="divide-y">
+                  {filteredMappedNoSku.map((mapping) => (
+                    <MappingRow
+                      key={mapping.id}
+                      mapping={mapping}
+                      onRemove={handleDeleteMapping}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Card>
 
-      {/* Unmapped / Test Products */}
+      {/* Unmapped — single list, grouped */}
       <Card>
-        <div className="p-4 border-b space-y-3">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveTab('unmapped')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                  activeTab === 'unmapped'
-                    ? 'bg-cyan-600 text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                Unmapped ({unmappedProducts.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('test')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                  activeTab === 'test'
-                    ? 'bg-amber-600 text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-              >
-                Test ({testTabCount})
-              </button>
-            </div>
-            <input
-              type="text"
-              placeholder="Search products..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="px-3 py-1.5 border rounded-lg text-sm w-64"
-            />
-          </div>
-          {activeTab === 'test' && (
-            <p className="text-sm text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-              Real Shopify products with no SKU (shown as N/A). Map by variant ID. Inventory
-              sync stays off for these mappings. Orders using them are not marked as test.
-            </p>
-          )}
+        <div className="p-4 border-b">
+          <h2 className="font-semibold">Unmapped Products ({unmappedTotal})</h2>
         </div>
-        {activeTab === 'test' && filteredTestMappings.length > 0 && (
-          <div className="border-b">
-            <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600 bg-slate-50">
-              Mapped no-SKU products ({filteredTestMappings.length})
-            </div>
-            <div className="divide-y">
-              {filteredTestMappings.map((mapping) => (
-                <div key={mapping.id} className="p-4 flex items-center gap-4">
-                  {mapping.external_image_url && (
-                    <img
-                      src={mapping.external_image_url}
-                      alt=""
-                      className="w-12 h-12 object-cover rounded"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate flex items-center gap-2">
-                      <span className="truncate">{mapping.external_title}</span>
-                      <span className="shrink-0 px-1.5 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
-                        No SKU
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      SKU: {mapping.external_sku || 'N/A'} &rarr; IMS: {mapping.product?.sku || 'Unknown'}
-                      {!mapping.sync_inventory ? ' · inventory sync off' : ''}
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-600">{mapping.product?.name}</div>
-                  <button
-                    onClick={() => handleDeleteMapping(mapping.id)}
-                    className="text-red-600 hover:text-red-800 text-sm"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {filteredList.length === 0 ? (
+        {unmappedTotal === 0 ? (
           <div className="p-8 text-center text-gray-500">
-            {listForTab.length === 0
-              ? activeTab === 'test'
-                ? filteredTestMappings.length > 0
-                  ? 'No additional N/A Shopify products left to map.'
-                  : 'No Shopify products with missing SKU.'
-                : 'All Shopify products with a SKU are mapped!'
-              : 'No products match your search'}
+            {unmappedWithSku.length + unmappedNoSku.length === 0
+              ? 'All Shopify products are mapped.'
+              : 'No unmapped products match your search'}
           </div>
         ) : (
-          <div className="divide-y max-h-[500px] overflow-y-auto">
-            {activeTab === 'test' && (
-              <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 bg-slate-50">
-                Unmapped N/A products ({filteredList.length})
+          <div className="max-h-[500px] overflow-y-auto">
+            {filteredUnmappedWithSku.length > 0 && (
+              <div>
+                <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600 bg-slate-50 border-b">
+                  SKU ({filteredUnmappedWithSku.length})
+                </div>
+                <div className="divide-y">
+                  {filteredUnmappedWithSku.map((product) => (
+                    <ProductRow
+                      key={product.variantId}
+                      product={product}
+                      imsProducts={imsProducts}
+                      isSaving={isSaving}
+                      onMap={handleCreateMapping}
+                    />
+                  ))}
+                </div>
               </div>
             )}
-            {filteredList.slice(0, 50).map((product) => (
-              <div key={product.variantId} className="p-4 flex items-center gap-4">
-                {product.imageUrl && (
-                  <img
-                    src={product.imageUrl}
-                    alt=""
-                    className="w-12 h-12 object-cover rounded"
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">
-                    {product.title}
-                    {product.variantTitle && (
-                      <span className="text-gray-500"> - {product.variantTitle}</span>
-                    )}
-                  </div>
-                  <div className="text-sm text-gray-500">SKU: {product.sku || 'N/A'}</div>
+            {filteredUnmappedNoSku.length > 0 && (
+              <div>
+                <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600 bg-slate-50 border-b border-t">
+                  No SKU ({filteredUnmappedNoSku.length})
                 </div>
-                <select
-                  className="px-3 py-1.5 border rounded-lg text-sm"
-                  defaultValue=""
-                  disabled={isSaving}
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      handleCreateMapping(product, e.target.value, {
-                        allowMissingSku: activeTab === 'test',
-                      })
-                      e.target.value = ''
-                    }
-                  }}
-                >
-                  <option value="">Map to IMS product...</option>
-                  {imsProducts.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.sku} - {p.name}
-                    </option>
+                <div className="divide-y">
+                  {filteredUnmappedNoSku.map((product) => (
+                    <ProductRow
+                      key={product.variantId}
+                      product={product}
+                      imsProducts={imsProducts}
+                      isSaving={isSaving}
+                      onMap={handleCreateMapping}
+                    />
                   ))}
-                </select>
-              </div>
-            ))}
-            {filteredList.length > 50 && (
-              <div className="p-4 text-center text-gray-500 text-sm">
-                Showing first 50 products. Use search to find specific products.
+                </div>
               </div>
             )}
           </div>

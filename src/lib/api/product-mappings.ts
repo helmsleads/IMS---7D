@@ -60,7 +60,7 @@ export async function createProductMapping(
     external_title?: string
     external_image_url?: string
     sync_inventory?: boolean
-    /** Allow mapping Shopify listings with blank / N/A SKU (Test tab). Relies on variant ID. */
+    /** Allow mapping Shopify listings with blank / N/A SKU. Relies on variant ID. */
     allowMissingSku?: boolean
   },
   clientId: string
