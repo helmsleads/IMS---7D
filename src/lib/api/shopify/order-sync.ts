@@ -1,7 +1,7 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { ShopifyApiError } from './client'
 import { createShopifyClientForIntegration } from './tokens'
-import { fetchOrdersForSync, fetchShopifyOrderByLegacyId } from './graphql/orders-sync'
+import { fetchOrdersForSync, fetchShopifyOrderForImsRepair } from './graphql/orders-sync'
 import { logSyncResult } from './sync-logger'
 import {
   mapShopifyFulfillmentToImsStatus,
@@ -297,6 +297,17 @@ export function buildShopifyOrderNumber(
   return shop ? `SH-${shop}-${namePart}` : `SH-${namePart}`
 }
 
+function wrapOutboundItemInsertError(message: string): Error {
+  if (
+    /is_unmatched|virtual_qty|external_title|product_id.*null/i.test(message)
+  ) {
+    return new Error(
+      `Database migration required: run 20260815_outbound_items_unmatched_shopify.sql on production, then retry import. (${message})`
+    )
+  }
+  return new Error(message)
+}
+
 /**
  * Process and import a Shopify order into IMS.
  * Only orders tagged **7D** are imported (warehouse location is not reliable for multi-fulfillment shops).
@@ -463,8 +474,15 @@ export async function processShopifyOrder(
     )
 
     if (itemsError) {
-      console.error('Failed to create order items:', itemsError)
-      // Don't throw - order was created, items can be added manually
+      const importError = wrapOutboundItemInsertError(itemsError.message).message
+      console.error('Failed to create order items:', importError)
+      const failureNote = `⚠️ Shopify line import failed: ${importError}`
+      await supabase
+        .from('outbound_orders')
+        .update({
+          notes: fullNotes ? `${fullNotes}\n${failureNote}` : failureNote,
+        })
+        .eq('id', newOrder.id)
     } else {
       const matchedCount = lineItems.filter((i) => !i.is_unmatched && i.product_id).length
       const hasShopifyShipped =
@@ -631,6 +649,90 @@ export function describeShopifyLineItemsForImport(order: ShopifyOrder): string {
     .join('; ')
 }
 
+async function loadShopifyOrderForRepair(
+  integration: ClientIntegration,
+  externalOrderId: string,
+  externalOrderNumber?: string | null
+): Promise<ShopifyOrder> {
+  const client = await createShopifyClientForIntegration(integration)
+  const shopifyOrder = await fetchShopifyOrderForImsRepair(client, {
+    externalOrderId,
+    externalOrderNumber,
+  })
+
+  if (!shopifyOrder) {
+    throw new Error(
+      `Shopify order not found (id ${externalOrderId}${externalOrderNumber ? `, name ${externalOrderNumber}` : ''}). Confirm Integrations → Shopify is connected to the correct shop.`
+    )
+  }
+
+  return shopifyOrder
+}
+
+/** Preview Shopify lines available for IMS import (support / UI). */
+export async function previewShopifyOrderLinesForIms(
+  imsOrderId: string
+): Promise<{
+  shopify_order_name: string | null
+  line_count: number
+  importable_count: number
+  lines_summary: string
+  ims_item_count: number
+}> {
+  const supabase = createServiceClient()
+
+  const { data: order } = await supabase
+    .from('outbound_orders')
+    .select(
+      'id, integration_id, external_platform, external_order_id, external_order_number'
+    )
+    .eq('id', imsOrderId)
+    .single()
+
+  if (!order?.integration_id || order.external_platform !== 'shopify') {
+    throw new Error('Not a Shopify order')
+  }
+
+  const { count: imsItemCount } = await supabase
+    .from('outbound_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('order_id', imsOrderId)
+
+  const { data: integration } = await supabase
+    .from('client_integrations')
+    .select('*')
+    .eq('id', order.integration_id)
+    .single()
+
+  if (!integration) {
+    throw new Error('Shopify integration not found')
+  }
+
+  const shopifyOrder = await loadShopifyOrderForRepair(
+    integration as ClientIntegration,
+    order.external_order_id!,
+    order.external_order_number
+  )
+
+  const normalized = normalizeShopifyOrderPayload(
+    shopifyOrder as unknown as Record<string, unknown>
+  ) as unknown as ShopifyOrder
+
+  const { lineItems } = await buildShopifyOutboundLineItems(
+    normalized,
+    order.integration_id,
+    { importNonShippingIfNoShippable: true }
+  )
+
+  return {
+    shopify_order_name: normalized.name || null,
+    line_count: (normalized.line_items || []).length,
+    importable_count: lineItems.length,
+    lines_summary: describeShopifyLineItemsForImport(normalized),
+    ims_item_count: imsItemCount ?? 0,
+  }
+}
+
 /** Build IMS outbound line rows from a Shopify order (matched + unmatched placeholders). */
 export async function buildShopifyOutboundLineItems(
   order: ShopifyOrder,
@@ -743,7 +845,7 @@ export async function reimportShopifyOrderLineItems(
   const { data: order, error: orderError } = await supabase
     .from('outbound_orders')
     .select(
-      'id, status, integration_id, external_platform, external_order_id, notes'
+      'id, status, integration_id, external_platform, external_order_id, external_order_number, notes'
     )
     .eq('id', imsOrderId)
     .single()
@@ -760,13 +862,30 @@ export async function reimportShopifyOrderLineItems(
     throw new Error('Order has no Shopify external ID')
   }
 
-  const { count: existingCount } = await supabase
+  const { data: existingItems } = await supabase
     .from('outbound_items')
-    .select('id', { count: 'exact', head: true })
+    .select('id, is_unmatched, product_id, virtual_qty, external_title')
     .eq('order_id', imsOrderId)
 
-  if (existingCount && existingCount > 0) {
-    throw new Error('Order already has line items')
+  const existingCount = existingItems?.length ?? 0
+  const canReplaceExisting =
+    existingCount > 0 &&
+    (existingItems || []).every(
+      (row) =>
+        row.is_unmatched &&
+        !row.product_id &&
+        (row.virtual_qty || 0) === 0 &&
+        !row.external_title
+    )
+
+  if (existingCount > 0 && !canReplaceExisting) {
+    throw new Error(
+      'Order already has line items. Remove or match existing lines before re-importing from Shopify.'
+    )
+  }
+
+  if (canReplaceExisting) {
+    await supabase.from('outbound_items').delete().eq('order_id', imsOrderId)
   }
 
   const { data: integration, error: integrationError } = await supabase
@@ -779,25 +898,11 @@ export async function reimportShopifyOrderLineItems(
     throw new Error('Shopify integration not found')
   }
 
-  const client = await createShopifyClientForIntegration(integration)
-
-  let shopifyOrder = await fetchShopifyOrderByLegacyId(
-    client,
-    order.external_order_id
+  const shopifyOrder = await loadShopifyOrderForRepair(
+    integration as ClientIntegration,
+    order.external_order_id,
+    order.external_order_number
   )
-
-  if (!shopifyOrder) {
-    const rest = await client.get<{ order: ShopifyOrder }>(
-      `/orders/${order.external_order_id}.json`
-    )
-    shopifyOrder = rest.order ?? null
-  }
-
-  if (!shopifyOrder) {
-    throw new Error(
-      `Shopify order not found (external id ${order.external_order_id}). Check Integrations → Shopify is connected to the correct shop.`
-    )
-  }
 
   const normalized = normalizeShopifyOrderPayload(
     shopifyOrder as unknown as Record<string, unknown>
@@ -813,13 +918,13 @@ export async function reimportShopifyOrderLineItems(
 
   if (lineItems.length === 0) {
     throw new Error(
-      `No importable line items from Shopify order ${normalized.name || order.external_order_id}. ${describeShopifyLineItemsForImport(normalized)}`
+      `No importable line items from Shopify order ${normalized.name || order.external_order_number || order.external_order_id}. ${describeShopifyLineItemsForImport(normalized)}`
     )
   }
 
   if (importedNonShippingFallback) {
     console.warn(
-      `Order ${normalized.name}: imported line(s) marked non-shippable in Shopify (requires_shipping=false). Enable "This is a physical product" on the variant in Shopify Admin for future orders.`
+      `Order ${normalized.name}: imported line(s) marked non-shippable in Shopify (requires_shipping=false).`
     )
   }
 
@@ -838,7 +943,7 @@ export async function reimportShopifyOrderLineItems(
   )
 
   if (insertError) {
-    throw new Error(insertError.message)
+    throw wrapOutboundItemInsertError(insertError.message)
   }
 
   if (hasUnmatchedLines) {

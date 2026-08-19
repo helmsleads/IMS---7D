@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { createServiceClient } from '@/lib/supabase-service'
-import { reimportShopifyOrderLineItems } from '@/lib/api/shopify/order-sync'
+import { reimportShopifyOrderLineItems, previewShopifyOrderLinesForIms } from '@/lib/api/shopify/order-sync'
 
 async function getAuthUser(request: NextRequest) {
   const supabase = createServerClient(
@@ -81,6 +81,41 @@ async function authorizeOrderAccess(
   }
 
   return { ok: true }
+}
+
+/**
+ * GET /api/outbound/[orderId]/reimport-shopify-lines — preview Shopify lines
+ * POST — import lines into IMS
+ */
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ orderId: string }> }
+) {
+  try {
+    const user = await getAuthUser(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { orderId } = await context.params
+    const access = await authorizeOrderAccess(user.id, user.email, orderId)
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status })
+    }
+
+    const preview = await previewShopifyOrderLinesForIms(orderId)
+    return NextResponse.json(preview)
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to preview Shopify lines',
+      },
+      { status: 500 }
+    )
+  }
 }
 
 /**

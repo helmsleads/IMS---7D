@@ -415,6 +415,15 @@ export default function OutboundOrderDetailPage() {
   const [damageGeneralNotes, setDamageGeneralNotes] = useState("");
   const [reimportingLines, setReimportingLines] = useState(false);
   const [reimportError, setReimportError] = useState("");
+  const [shopifyLinePreview, setShopifyLinePreview] = useState<{
+    shopify_order_name?: string | null;
+    line_count?: number;
+    importable_count?: number;
+    lines_summary?: string;
+    ims_item_count?: number;
+    error?: string;
+  } | null>(null);
+  const [loadingShopifyPreview, setLoadingShopifyPreview] = useState(false);
 
   // Helper to get client setting value
   const getClientSettingValue = (category: string, key: string): unknown => {
@@ -557,12 +566,84 @@ export default function OutboundOrderDetailPage() {
 
   // Always refresh order data when the ship modal closes so UI stays in sync
   const shipModalWasOpen = useRef(false);
+  const autoReimportAttempted = useRef(false);
   useEffect(() => {
     if (shipModalWasOpen.current && !showShipModal) {
       fetchOrder();
     }
     shipModalWasOpen.current = showShipModal;
   }, [showShipModal]);
+
+  useEffect(() => {
+    if (!order) return;
+    const shouldPreview =
+      order.external_platform === "shopify" &&
+      order.items.length === 0 &&
+      Boolean(order.integration_id);
+    if (!shouldPreview) {
+      setShopifyLinePreview(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingShopifyPreview(true);
+    fetch(`/api/outbound/${order.id}/reimport-shopify-lines`)
+      .then(async (res) => {
+        const data = (await res.json()) as typeof shopifyLinePreview & {
+          importable_count?: number;
+          ims_item_count?: number;
+          error?: string;
+        };
+        if (cancelled) return;
+        setShopifyLinePreview(data);
+
+        const canAutoImport =
+          res.ok &&
+          (data.importable_count ?? 0) > 0 &&
+          (data.ims_item_count ?? 0) === 0 &&
+          !autoReimportAttempted.current;
+
+        if (!canAutoImport) return;
+
+        autoReimportAttempted.current = true;
+        setReimportingLines(true);
+        setReimportError("");
+        try {
+          const postRes = await fetch(
+            `/api/outbound/${order.id}/reimport-shopify-lines`,
+            { method: "POST" }
+          );
+          const postData = (await postRes.json()) as { error?: string };
+          if (!postRes.ok) {
+            throw new Error(postData.error || "Failed to import lines from Shopify");
+          }
+          await fetchOrder();
+        } catch (err) {
+          setReimportError(
+            err instanceof Error
+              ? err.message
+              : "Failed to import lines from Shopify"
+          );
+        } finally {
+          if (!cancelled) setReimportingLines(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setShopifyLinePreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingShopifyPreview(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    order?.id,
+    order?.items.length,
+    order?.external_platform,
+    order?.integration_id,
+  ]);
 
   const handleStatusUpdate = async (newStatus: string, additionalFields?: { carrier?: string; tracking_number?: string }): Promise<boolean> => {
     if (!order) return false;
@@ -1365,9 +1446,9 @@ export default function OutboundOrderDetailPage() {
     order.status !== "cancelled";
   const hasUnmatchedItems = order.items.some((item) => item.is_unmatched);
   const needsShopifyLineImport =
-    order.external_platform === "shopify" &&
-    Boolean(order.integration_id) &&
-    order.items.length === 0;
+    order.external_platform === "shopify" && order.items.length === 0;
+  const shopifyMissingIntegration =
+    needsShopifyLineImport && !order.integration_id;
   const showNeedsMappingBanner =
     hasUnmatchedItems ||
     needsShopifyLineImport ||
@@ -2080,15 +2161,53 @@ export default function OutboundOrderDetailPage() {
                       : "Products need matching"}
                   </h2>
                   <p className="text-sm text-rose-800 mt-1">
-                    {needsShopifyLineImport
-                      ? "This order was synced from Shopify but has no line items in IMS yet. Import them below, then match each product to an IMS SKU."
-                      : "One or more Shopify lines are not linked to IMS products. Match them below so fulfillment and inventory stay accurate — even on shipped orders."}
+                    {shopifyMissingIntegration
+                      ? "This order is linked to Shopify but has no integration on file, so line items cannot be imported automatically. Assign a Shopify integration to this order or re-import from the integration."
+                      : needsShopifyLineImport
+                        ? "This order was synced from Shopify but has no line items in IMS yet. Import them below, then match each product to an IMS SKU."
+                        : "One or more Shopify lines are not linked to IMS products. Match them below so fulfillment and inventory stay accurate — even on shipped orders."}
                   </p>
+                  {needsShopifyLineImport && !shopifyMissingIntegration ? (
+                    <div className="mt-2 text-sm text-rose-900">
+                      {loadingShopifyPreview || reimportingLines ? (
+                        <p>
+                          {reimportingLines
+                            ? "Importing line items from Shopify…"
+                            : "Checking Shopify for line items…"}
+                        </p>
+                      ) : shopifyLinePreview?.error ? (
+                        <p className="text-red-700">{shopifyLinePreview.error}</p>
+                      ) : shopifyLinePreview ? (
+                        <>
+                          {shopifyLinePreview.shopify_order_name ? (
+                            <p>
+                              Shopify order:{" "}
+                              <span className="font-medium">
+                                {shopifyLinePreview.shopify_order_name}
+                              </span>
+                            </p>
+                          ) : null}
+                          {shopifyLinePreview.lines_summary ? (
+                            <p className="mt-1">{shopifyLinePreview.lines_summary}</p>
+                          ) : null}
+                          {shopifyLinePreview.importable_count === 0 &&
+                          (shopifyLinePreview.line_count ?? 0) > 0 ? (
+                            <p className="mt-1 text-red-700">
+                              Shopify has lines but none are importable (e.g. all
+                              digital / no shipping). Uncheck “This is a digital
+                              product” on the variant in Shopify Admin, or add a
+                              shippable line.
+                            </p>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {reimportError ? (
                     <p className="text-sm text-red-700 mt-2">{reimportError}</p>
                   ) : null}
                 </div>
-                {needsShopifyLineImport ? (
+                {needsShopifyLineImport && !shopifyMissingIntegration ? (
                   <Button
                     variant="primary"
                     onClick={handleReimportShopifyLines}

@@ -315,6 +315,106 @@ export async function fetchOrdersForSync(
   return orders
 }
 
+interface OrderByIdData {
+  order: GqlOrderNode | null
+}
+
+const ORDER_BY_ID_QUERY = `#graphql
+  query OrderByLegacyId($id: ID!) {
+    order(id: $id) {
+      legacyResourceId
+      name
+      createdAt
+      updatedAt
+      displayFinancialStatus
+      displayFulfillmentStatus
+      cancelledAt
+      note
+      tags
+      test
+      sourceName
+      fulfillments(first: 10) {
+        createdAt
+        status
+        displayStatus
+        deliveredAt
+        trackingInfo(first: 5) {
+          number
+          company
+        }
+      }
+      totalPriceSet {
+        shopMoney {
+          amount
+          currencyCode
+        }
+      }
+      shippingAddress {
+        firstName
+        lastName
+        company
+        address1
+        address2
+        city
+        province
+        provinceCode
+        zip
+        country
+        countryCodeV2
+        phone
+      }
+      shippingLines(first: 10) {
+        edges {
+          node {
+            id
+            title
+          }
+        }
+      }
+      lineItems(first: 250) {
+        edges {
+          node {
+            id
+            name
+            title
+            sku
+            quantity
+            fulfillableQuantity
+            requiresShipping
+            originalUnitPriceSet {
+              shopMoney {
+                amount
+              }
+            }
+            variant {
+              id
+            }
+            product {
+              id
+            }
+          }
+        }
+      }
+    }
+  }
+`
+
+function searchOrdersByQuery(
+  client: ShopifyClient,
+  query: string
+): Promise<ShopifyOrder | null> {
+  return client
+    .graphql<SyncOrdersData>(SYNC_ORDERS_QUERY, {
+      first: 1,
+      after: null,
+      query,
+    })
+    .then((data) => {
+      const node = data.orders.edges[0]?.node
+      return node ? mapOrderNode(node) : null
+    })
+}
+
 /** Fetch one order by REST legacy numeric id (re-import / repair). */
 export async function fetchShopifyOrderByLegacyId(
   client: ShopifyClient,
@@ -323,18 +423,71 @@ export async function fetchShopifyOrderByLegacyId(
   const id = String(legacyResourceId || '').trim()
   if (!id) return null
 
-  const data: SyncOrdersData = await client.graphql<SyncOrdersData>(
-    SYNC_ORDERS_QUERY,
-    {
-      first: 1,
-      after: null,
-      query: `id:${id}`,
-    }
-  )
-
-  const node = data.orders.edges[0]?.node
-  if (!node || String(node.legacyResourceId) !== id) {
-    return null
+  const gid = `gid://shopify/Order/${id}`
+  const byId = await client.graphql<OrderByIdData>(ORDER_BY_ID_QUERY, { id: gid })
+  if (
+    byId.order &&
+    String(byId.order.legacyResourceId) === id
+  ) {
+    return mapOrderNode(byId.order)
   }
-  return mapOrderNode(node)
+
+  // Fallback: order search by legacy id (some shops)
+  const bySearchId = await searchOrdersByQuery(client, `id:${id}`)
+  if (bySearchId && String(bySearchId.id) === id) {
+    return bySearchId
+  }
+
+  return null
+}
+
+/** Lookup by Shopify order name, e.g. #1631 */
+export async function fetchShopifyOrderByName(
+  client: ShopifyClient,
+  orderName: string
+): Promise<ShopifyOrder | null> {
+  const raw = String(orderName || '').trim()
+  if (!raw) return null
+  const name = raw.startsWith('#') ? raw : `#${raw}`
+  return searchOrdersByQuery(client, `name:${name}`)
+}
+
+/**
+ * Load Shopify order for IMS line repair (id → REST → order name).
+ */
+export async function fetchShopifyOrderForImsRepair(
+  client: ShopifyClient,
+  options: {
+    externalOrderId: string
+    externalOrderNumber?: string | null
+  }
+): Promise<ShopifyOrder | null> {
+  const byId = await fetchShopifyOrderByLegacyId(client, options.externalOrderId)
+  if (byId?.line_items?.length) {
+    return byId
+  }
+
+  try {
+    const rest = await client.get<{ order: ShopifyOrder }>(
+      `/orders/${options.externalOrderId}.json`
+    )
+    if (rest.order?.line_items?.length) {
+      return rest.order
+    }
+    if (rest.order && !byId) {
+      return rest.order
+    }
+  } catch {
+    // fall through to name lookup
+  }
+
+  if (options.externalOrderNumber) {
+    const byName = await fetchShopifyOrderByName(
+      client,
+      options.externalOrderNumber
+    )
+    if (byName) return byName
+  }
+
+  return byId
 }
