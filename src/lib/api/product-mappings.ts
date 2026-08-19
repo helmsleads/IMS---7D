@@ -60,7 +60,7 @@ export async function createProductMapping(
     external_title?: string
     external_image_url?: string
     sync_inventory?: boolean
-    /** Allow mapping Shopify listings with blank / N/A SKU. Relies on variant ID. */
+    /** Map by Shopify variant ID when the listing has no usable SKU. */
     allowMissingSku?: boolean
   },
   clientId: string
@@ -83,7 +83,7 @@ export async function createProductMapping(
   const usableSku = hasUsableShopifySku(mapping.external_sku)
   if (!usableSku && !mapping.allowMissingSku) {
     throw new Error(
-      'This Shopify product has no SKU. Add a SKU in Shopify Admin, then map it — or use the Test tab.'
+      'This Shopify product has no SKU. Add a SKU in Shopify Admin, or map it from the No SKU group.'
     )
   }
 
@@ -91,9 +91,7 @@ export async function createProductMapping(
     throw new Error('Cannot map a product without a Shopify variant ID.')
   }
 
-  // Test / no-SKU mappings match by variant ID only; never store literal "N/A" as SKU.
   const externalSku = usableSku ? String(mapping.external_sku).trim() : null
-  // Default inventory sync off for missing-SKU (test) mappings so Sync Inventory cannot overwrite live qty.
   const syncInventory =
     mapping.sync_inventory ?? (usableSku ? true : false)
 

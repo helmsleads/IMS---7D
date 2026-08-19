@@ -6,6 +6,7 @@ import {
   syncShopifyOrderStatusFromPayload,
   attachMappedShopifyLineItemsIfMissing,
   shopifyOrderHas7DTag,
+  mergeShopifyTestTagNote,
 } from '@/lib/api/shopify/order-sync'
 import type { IntegrationSettings } from '@/types/database'
 import {
@@ -290,11 +291,6 @@ async function handleOrderCreate(
     return 'ignored'
   }
 
-  // Skip test orders if not in test mode
-  if (payload.test === true) {
-    console.log(`Test order ${payload.name}, processing anyway for dev`)
-  }
-
   // Requires Shopify tag "7D" — unmatched products are OK (staff finish mapping in 7D).
   const outcome = await processShopifyOrder(payload, integration)
   if (outcome === 'skipped') {
@@ -311,7 +307,7 @@ async function handleOrderUpdated(
 
   const { data: order } = await supabase
     .from('outbound_orders')
-    .select('id, status')
+    .select('id, status, notes')
     .eq('external_order_id', String(payload.id))
     .eq('external_platform', 'shopify')
     .single()
@@ -365,6 +361,18 @@ async function handleOrderUpdated(
     console.log(
       `Synced Shopify status for order ${order.id} → ${statusResult.status}`
     )
+  }
+
+  const mergedNotes = mergeShopifyTestTagNote(
+    order.notes,
+    payload.tags as string | string[] | null | undefined
+  )
+  const existingNotes = order.notes?.trim() || null
+  if (mergedNotes !== existingNotes) {
+    await supabase
+      .from('outbound_orders')
+      .update({ notes: mergedNotes })
+      .eq('id', order.id)
   }
 
   const statusAfterSync = statusResult.status ?? order.status

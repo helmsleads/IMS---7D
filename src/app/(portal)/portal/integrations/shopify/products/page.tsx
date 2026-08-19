@@ -378,7 +378,7 @@ export default function ProductMappingPage() {
         )}
       </Card>
 
-      {/* Unmapped — single list, grouped */}
+      {/* Unmapped */}
       <Card>
         <div className="p-4 border-b">
           <h2 className="font-semibold">Unmapped Products ({unmappedTotal})</h2>

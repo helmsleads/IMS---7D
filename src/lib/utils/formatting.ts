@@ -30,7 +30,7 @@ export function formatNumber(value: number, decimals?: number): string {
   }).format(value);
 }
 
-/** Orders tagged with [test] in notes (Shopify test-flagged orders only). */
+/** Orders marked [test] in notes (Shopify order tag "test" in Admin). */
 export function isTestOutboundOrder(notes: string | null | undefined): boolean {
   if (!notes) return false;
   return /\[test\]/i.test(notes);

@@ -1,7 +1,7 @@
 import { createServiceClient } from '@/lib/supabase-service'
 import { ShopifyApiError } from './client'
 import { createShopifyClientForIntegration } from './tokens'
-import { fetchOrdersForSync } from './graphql/orders-sync'
+import { fetchOrdersForSync, fetchShopifyOrderByLegacyId } from './graphql/orders-sync'
 import { logSyncResult } from './sync-logger'
 import {
   mapShopifyFulfillmentToImsStatus,
@@ -15,7 +15,7 @@ import {
   normalizeShopifyOrderPayload,
   ensureIntegrationWarehouseLocation,
 } from './shopify-order-payload'
-import { shopifyOrderHas7DTag } from './order-tag'
+import { shopifyOrderHas7DTag, shopifyOrderHasTestTag } from './order-tag'
 import type {
   ClientIntegration,
   ShopifyOrder,
@@ -26,7 +26,12 @@ import type {
 
 export type ProcessShopifyOrderResult = 'created' | 'exists' | 'skipped'
 
-export { shopifyOrderHas7DTag, SHOPIFY_7D_ORDER_TAG } from './order-tag'
+export {
+  shopifyOrderHas7DTag,
+  shopifyOrderHasTestTag,
+  SHOPIFY_7D_ORDER_TAG,
+  SHOPIFY_TEST_ORDER_TAG,
+} from './order-tag'
 
 export {
   mapShopifyFulfillmentToImsStatus,
@@ -35,6 +40,24 @@ export {
   extractDeliveryDate,
   shopifyLineItemQtyShipped,
 } from './order-status-sync'
+
+/** Merge or remove `[test]` in order notes based on Shopify order tag. */
+export function mergeShopifyTestTagNote(
+  existingNotes: string | null | undefined,
+  tags: string | string[] | null | undefined
+): string | null {
+  const hasTest = shopifyOrderHasTestTag(tags)
+  const lines = String(existingNotes || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !/^\[test\]$/i.test(line))
+
+  if (hasTest) {
+    lines.unshift('[test]')
+  }
+
+  return lines.length > 0 ? lines.join('\n') : null
+}
 
 function isShopifyOrderCancelled(shopifyOrder: Record<string, unknown>): boolean {
   if (shopifyOrder.cancelled_at) return true
@@ -313,76 +336,16 @@ export async function processShopifyOrder(
     return 'exists'
   }
 
-  // Get product mappings for this integration
-  const { data: mappings } = await supabase
-    .from('product_mappings')
-    .select('*, product:products(id, sku, name)')
-    .eq('integration_id', integrationData.id)
-
-  // Create lookup maps
-  const mappingsByVariant = new Map(
-    (mappings || []).map((m) => [String(m.external_variant_id), m])
-  )
-  const mappingsBySku = new Map(
-    (mappings || [])
-      .filter((m) => m.external_sku)
-      .map((m) => [m.external_sku!.toLowerCase(), m])
-  )
-
-  // Transform line items (matched + unmatched display rows)
-  const lineItems: Array<{
-    product_id: string | null
-    qty_requested: number
-    qty_shipped: number
-    unit_price: number
-    external_sku?: string | null
-    external_title?: string | null
-    is_unmatched?: boolean
-    virtual_qty?: number
-  }> = []
-
-  const unmappedItems: string[] = []
-  let hasUnmatchedLines = false
-
-  for (const item of order.line_items || []) {
-    if (!item.requires_shipping || item.quantity <= 0) {
-      continue
-    }
-
-    // Find mapping by variant ID first, then by SKU
-    let mapping = mappingsByVariant.get(String(item.variant_id))
-    if (!mapping && item.sku) {
-      mapping = mappingsBySku.get(item.sku.toLowerCase())
-    }
-
-    if (!mapping) {
-      const label = `${item.sku || 'No SKU'}: ${item.name}`
-      unmappedItems.push(label)
-      hasUnmatchedLines = true
-      // Persist unmatched line for tester UI: real qty 0, virtual_qty = Shopify qty
-      lineItems.push({
-        product_id: null,
-        qty_requested: 0,
-        qty_shipped: 0,
-        unit_price: parseFloat(item.price) || 0,
-        external_sku: item.sku || null,
-        external_title: item.name || item.title || null,
-        is_unmatched: true,
-        virtual_qty: item.quantity,
-      })
-      continue
-    }
-
-    // Mapped lines (including no-SKU / Test-tab mappings) are real fulfillable lines.
-    // Missing Shopify SKU alone does not make the order a test order.
-    lineItems.push({
-      product_id: mapping.product_id,
-      qty_requested: item.quantity,
-      qty_shipped: 0,
-      unit_price: parseFloat(item.price),
-      is_unmatched: false,
-      virtual_qty: 0,
+  // Build line items (matched + unmatched); include non-shipping lines when no shippable lines exist.
+  const { lineItems, unmappedItems, hasUnmatchedLines, importedNonShippingFallback } =
+    await buildShopifyOutboundLineItems(order, integrationData.id, {
+      importNonShippingIfNoShippable: true,
     })
+
+  if (importedNonShippingFallback) {
+    console.warn(
+      `Order ${order.name}: imported non-shippable Shopify line(s) (requires_shipping=false).`
+    )
   }
 
   // 7D-tagged orders import even with zero mapped lines — staff finish matching in 7D.
@@ -404,9 +367,9 @@ export async function processShopifyOrder(
     shippingMethod.toLowerCase().includes('overnight') ||
     shippingMethod.toLowerCase().includes('priority')
 
-  // Build notes — [test] only when Shopify marks the order as test, not for no-SKU mappings
+  // Build notes — [test] when the client tagged the order "test" in Shopify Admin.
   const notes: string[] = []
-  if (order.test === true) {
+  if (shopifyOrderHasTestTag(order.tags)) {
     notes.push('[test]')
   }
   notes.push('[7D]')
@@ -653,18 +616,39 @@ export type ShopifyOutboundLineItemRow = {
   virtual_qty?: number
 }
 
+/** Human-readable summary when line import fails (support / UI). */
+export function describeShopifyLineItemsForImport(order: ShopifyOrder): string {
+  const lines = order.line_items || []
+  if (lines.length === 0) {
+    return 'Shopify returned 0 line items on this order.'
+  }
+  return lines
+    .map((li) => {
+      const label = li.name || li.title || 'Line item'
+      const ship = li.requires_shipping ? 'requires shipping' : 'does NOT require shipping'
+      return `${label} (qty ${li.quantity}, ${ship})`
+    })
+    .join('; ')
+}
+
 /** Build IMS outbound line rows from a Shopify order (matched + unmatched placeholders). */
 export async function buildShopifyOutboundLineItems(
   order: ShopifyOrder,
   integrationId: string,
-  options?: { treatAsShipped?: boolean }
+  options?: {
+    treatAsShipped?: boolean
+    /** Import non-shipping lines when every line has requires_shipping=false. */
+    importNonShippingIfNoShippable?: boolean
+  }
 ): Promise<{
   lineItems: ShopifyOutboundLineItemRow[]
   unmappedItems: string[]
   hasUnmatchedLines: boolean
+  importedNonShippingFallback?: boolean
 }> {
   const supabase = createServiceClient()
   const treatAsShipped = options?.treatAsShipped ?? false
+  const allowNonShippingFallback = options?.importNonShippingIfNoShippable ?? false
 
   const { data: mappings } = await supabase
     .from('product_mappings')
@@ -684,9 +668,7 @@ export async function buildShopifyOutboundLineItems(
   const unmappedItems: string[] = []
   let hasUnmatchedLines = false
 
-  for (const item of order.line_items || []) {
-    if (!item.requires_shipping || item.quantity <= 0) continue
-
+  const appendFromShopifyLine = (item: ShopifyLineItem) => {
     let mapping = mappingsByVariant.get(String(item.variant_id))
     if (!mapping && item.sku) {
       mapping = mappingsBySku.get(item.sku.toLowerCase())
@@ -706,7 +688,7 @@ export async function buildShopifyOutboundLineItems(
         is_unmatched: true,
         virtual_qty: item.quantity,
       })
-      continue
+      return
     }
 
     const qty = item.quantity
@@ -721,7 +703,32 @@ export async function buildShopifyOutboundLineItems(
     })
   }
 
-  return { lineItems, unmappedItems, hasUnmatchedLines }
+  const rawLines = order.line_items || []
+
+  for (const item of rawLines) {
+    if (!item.requires_shipping || item.quantity <= 0) continue
+    appendFromShopifyLine(item)
+  }
+
+  let importedNonShippingFallback = false
+  if (
+    lineItems.length === 0 &&
+    allowNonShippingFallback &&
+    rawLines.some((item) => item.quantity > 0)
+  ) {
+    importedNonShippingFallback = true
+    for (const item of rawLines) {
+      if (item.quantity <= 0) continue
+      appendFromShopifyLine(item)
+    }
+  }
+
+  return {
+    lineItems,
+    unmappedItems,
+    hasUnmatchedLines,
+    importedNonShippingFallback,
+  }
 }
 
 /**
@@ -773,12 +780,23 @@ export async function reimportShopifyOrderLineItems(
   }
 
   const client = await createShopifyClientForIntegration(integration)
-  const { order: shopifyOrder } = await client.get<{ order: ShopifyOrder }>(
-    `/orders/${order.external_order_id}.json`
+
+  let shopifyOrder = await fetchShopifyOrderByLegacyId(
+    client,
+    order.external_order_id
   )
 
   if (!shopifyOrder) {
-    throw new Error('Shopify order not found')
+    const rest = await client.get<{ order: ShopifyOrder }>(
+      `/orders/${order.external_order_id}.json`
+    )
+    shopifyOrder = rest.order ?? null
+  }
+
+  if (!shopifyOrder) {
+    throw new Error(
+      `Shopify order not found (external id ${order.external_order_id}). Check Integrations → Shopify is connected to the correct shop.`
+    )
   }
 
   const normalized = normalizeShopifyOrderPayload(
@@ -787,14 +805,21 @@ export async function reimportShopifyOrderLineItems(
 
   const treatAsShipped =
     order.status === 'shipped' || order.status === 'delivered'
-  const { lineItems, unmappedItems, hasUnmatchedLines } =
+  const { lineItems, unmappedItems, hasUnmatchedLines, importedNonShippingFallback } =
     await buildShopifyOutboundLineItems(normalized, order.integration_id, {
       treatAsShipped,
+      importNonShippingIfNoShippable: true,
     })
 
   if (lineItems.length === 0) {
     throw new Error(
-      'No shippable line items found in Shopify for this order'
+      `No importable line items from Shopify order ${normalized.name || order.external_order_id}. ${describeShopifyLineItemsForImport(normalized)}`
+    )
+  }
+
+  if (importedNonShippingFallback) {
+    console.warn(
+      `Order ${normalized.name}: imported line(s) marked non-shippable in Shopify (requires_shipping=false). Enable "This is a physical product" on the variant in Shopify Admin for future orders.`
     )
   }
 

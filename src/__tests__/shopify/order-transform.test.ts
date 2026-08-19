@@ -299,8 +299,9 @@ describe('Order Filtering', () => {
       return { import: false, reason: 'Already fulfilled' }
     }
 
-    if (order.test === true) {
-      return { import: true, reason: 'Test order - importing for dev' }
+    const tags = String(order.tags || '')
+    if (/\btest\b/i.test(tags)) {
+      return { import: true, reason: 'Test order (test tag in Shopify Admin)' }
     }
 
     const shippableItems = order.line_items.filter(
@@ -326,8 +327,8 @@ describe('Order Filtering', () => {
     expect(result.reason).toBe('Already fulfilled')
   })
 
-  it('should import test orders with note', () => {
-    const order = createMockShopifyOrder({ test: true })
+  it('should import orders with test tag', () => {
+    const order = createMockShopifyOrder({ tags: '7D, test' })
     const result = shouldImportOrder(order)
     expect(result.import).toBe(true)
     expect(result.reason).toContain('Test order')

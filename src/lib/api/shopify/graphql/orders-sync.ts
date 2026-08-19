@@ -15,12 +15,6 @@ function numericIdFromGid(gid: string | null | undefined): number {
   return Number.isFinite(n) ? n : 0
 }
 
-/**
- * Order fields for sync. Includes `shippingAddress` (MailingAddress) so outbound
- * ship-to fields can be populated. That requires Partner **protected customer fields**
- * approval for **Address** (Level 2) on public apps. See:
- * https://shopify.dev/docs/apps/launch/protected-customer-data
- */
 const SYNC_ORDERS_QUERY = `#graphql
   query SyncOrders($first: Int!, $after: String, $query: String) {
     orders(first: $first, after: $after, query: $query, sortKey: CREATED_AT, reverse: true) {
@@ -319,4 +313,28 @@ export async function fetchOrdersForSync(
   }
 
   return orders
+}
+
+/** Fetch one order by REST legacy numeric id (re-import / repair). */
+export async function fetchShopifyOrderByLegacyId(
+  client: ShopifyClient,
+  legacyResourceId: string
+): Promise<ShopifyOrder | null> {
+  const id = String(legacyResourceId || '').trim()
+  if (!id) return null
+
+  const data: SyncOrdersData = await client.graphql<SyncOrdersData>(
+    SYNC_ORDERS_QUERY,
+    {
+      first: 1,
+      after: null,
+      query: `id:${id}`,
+    }
+  )
+
+  const node = data.orders.edges[0]?.node
+  if (!node || String(node.legacyResourceId) !== id) {
+    return null
+  }
+  return mapOrderNode(node)
 }

@@ -1022,7 +1022,7 @@ function ShopifyConnectedStatus({
             <p className="text-sm font-medium text-slate-700">Auto-import new orders</p>
             <p className="text-xs text-slate-400">
               Import Shopify orders tagged <span className="font-semibold">7D</span> into 7 Degrees.
-              Add the tag in Shopify Admin when the order is for us (at create or later). Unmapped products still import so staff can finish matching.
+              Add the tag in Shopify Admin when the order is for us (at create or later). Tag orders <span className="font-semibold">test</span> in Shopify Admin to mark test orders. Unmapped products still import so staff can finish matching.
             </p>
           </div>
           <Toggle
