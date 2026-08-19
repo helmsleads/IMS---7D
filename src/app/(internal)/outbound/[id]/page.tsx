@@ -95,6 +95,7 @@ import {
   PREFERRED_CARRIER_OPTIONS,
 } from "@/lib/outbound-service-options";
 import { Download } from "lucide-react";
+import UnmatchedProductMatcher from "@/components/outbound/UnmatchedProductMatcher";
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: Clock },
@@ -1891,9 +1892,16 @@ export default function OutboundOrderDetailPage() {
                         </div>
                       </div>
 
-                      {isUnmatched && (
-                        <div className="px-4 py-3 bg-rose-50 border-t border-rose-200 text-sm text-rose-800">
-                          Product not matching IMS — pick/ship disabled. Map in Integrations → Shopify → Products.
+                      {isUnmatched && order.client_id && (
+                        <div className="px-4 py-3 bg-rose-50 border-t border-rose-200">
+                          <UnmatchedProductMatcher
+                            orderId={order.id}
+                            itemId={item.id}
+                            clientId={order.client_id}
+                            externalSku={item.external_sku}
+                            externalTitle={item.external_title}
+                            onMatched={fetchOrder}
+                          />
                         </div>
                       )}
 
@@ -2237,7 +2245,19 @@ export default function OutboundOrderDetailPage() {
                         {canEdit && (
                           <td className="px-4 py-3 text-center">
                             {isUnmatched ? (
-                              <span className="text-xs text-rose-600">Map in Shopify</span>
+                              order.client_id ? (
+                                <UnmatchedProductMatcher
+                                  orderId={order.id}
+                                  itemId={item.id}
+                                  clientId={order.client_id}
+                                  externalSku={item.external_sku}
+                                  externalTitle={item.external_title}
+                                  onMatched={fetchOrder}
+                                  variant="inline"
+                                />
+                              ) : (
+                                <span className="text-xs text-rose-600">No client — map in Integrations</span>
+                              )
                             ) : (
                               <div className="inline-flex items-center gap-1">
                                 <button

@@ -29,6 +29,7 @@ import { isTestOutboundOrder, isNeedsMappingOutboundOrder } from "@/lib/utils/fo
 import { downloadBOL, printBOL, BOLData } from "@/lib/generate-bol";
 import { getSystemSetting } from "@/lib/api/settings";
 import { ShipmentTrackingPanel } from "@/components/portal/ShipmentTrackingPanel";
+import UnmatchedProductMatcher from "@/components/outbound/UnmatchedProductMatcher";
 
 interface OrderItem {
   id: string;
@@ -45,6 +46,8 @@ interface OrderItem {
   freight_class: string | null;
   is_unmatched?: boolean;
   virtual_qty?: number;
+  external_sku?: string | null;
+  external_title?: string | null;
 }
 
 interface OrderDetail {
@@ -69,6 +72,7 @@ interface OrderDetail {
   shipped_date: string | null;
   delivered_date: string | null;
   client_shipping_cost: number | null;
+  client_id: string;
   items: OrderItem[];
 }
 
@@ -204,6 +208,7 @@ export default function OrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [copiedTracking, setCopiedTracking] = useState(false);
   const [generatingBOL, setGeneratingBOL] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -382,8 +387,11 @@ export default function OrderDetailPage() {
             freight_class: product?.freight_class || null,
             is_unmatched: isUnmatched,
             virtual_qty: virtualQty,
+            external_sku: item.external_sku ?? null,
+            external_title: item.external_title ?? null,
           };
         }),
+        client_id: data.client_id,
       };
 
       setOrder(orderDetail);
@@ -391,7 +399,7 @@ export default function OrderDetailPage() {
     };
 
     fetchOrder();
-  }, [client, orderId]);
+  }, [client, orderId, refreshKey]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -928,9 +936,16 @@ export default function OrderDetailPage() {
                       )}
                     </div>
 
-                    {isUnmatched && (
-                      <p className="text-xs text-rose-600 mt-1">Product not matching IMS — map in Shopify Products</p>
-                    )}
+                    {isUnmatched && order.client_id ? (
+                      <UnmatchedProductMatcher
+                        orderId={order.id}
+                        itemId={item.id}
+                        clientId={order.client_id}
+                        externalSku={item.external_sku}
+                        externalTitle={item.external_title}
+                        onMatched={() => setRefreshKey((k) => k + 1)}
+                      />
+                    ) : null}
                     {isPartiallyShipped && (
                       <p className="text-xs text-yellow-600 mt-1">
                         Partial shipment ({item.qty_requested - item.qty_shipped} remaining)

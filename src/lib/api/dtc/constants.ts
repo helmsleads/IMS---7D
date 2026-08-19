@@ -2,6 +2,13 @@ export const DTC_ORDER_NUMBER_PREFIX = "DTC-";
 
 export const DTC_OUTBOUND_PLATFORM = "dtc";
 
+/**
+ * Warehouse fulfills DTC orders. Money is owned by DTC_backend:
+ * customer pays 7D Stripe (retailer). Remainder remits by ACH to the brand’s
+ * licensed wholesaler. $399/mo is invoiced to the brand. 7D outbound does not
+ * pay the brand from the shopper charge.
+ */
+
 /** Statuses where DTC-synced outbound orders can be removed from the warehouse UI. */
 export const DTC_DELETABLE_STATUSES = new Set([
   "pending",
