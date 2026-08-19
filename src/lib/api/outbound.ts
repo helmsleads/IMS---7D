@@ -74,6 +74,7 @@ export interface OutboundOrder {
   external_platform?: string | null;
   external_order_id?: string | null;
   external_order_number?: string | null;
+  integration_id?: string | null;
 }
 
 export interface OutboundItem {

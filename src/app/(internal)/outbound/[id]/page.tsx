@@ -96,6 +96,7 @@ import {
 } from "@/lib/outbound-service-options";
 import { Download } from "lucide-react";
 import UnmatchedProductMatcher from "@/components/outbound/UnmatchedProductMatcher";
+import { isNeedsMappingOutboundOrder } from "@/lib/utils/formatting";
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: Clock },
@@ -412,6 +413,8 @@ export default function OutboundOrderDetailPage() {
   const [damageSuccess, setDamageSuccess] = useState("");
   const [damageItems, setDamageItems] = useState<Record<string, { checked: boolean; quantity: number; damageType: string; description: string }>>({});
   const [damageGeneralNotes, setDamageGeneralNotes] = useState("");
+  const [reimportingLines, setReimportingLines] = useState(false);
+  const [reimportError, setReimportError] = useState("");
 
   // Helper to get client setting value
   const getClientSettingValue = (category: string, key: string): unknown => {
@@ -1356,7 +1359,40 @@ export default function OutboundOrderDetailPage() {
     matchedItems.length > 0 &&
     matchedItems.every((item) => item.qty_shipped >= item.qty_requested);
   const canPick = order.status === "confirmed" || order.status === "processing";
-  const canEdit = order.status !== "shipped";
+  const canEditLineItems =
+    order.status !== "shipped" &&
+    order.status !== "delivered" &&
+    order.status !== "cancelled";
+  const hasUnmatchedItems = order.items.some((item) => item.is_unmatched);
+  const needsShopifyLineImport =
+    order.external_platform === "shopify" &&
+    Boolean(order.integration_id) &&
+    order.items.length === 0;
+  const showNeedsMappingBanner =
+    hasUnmatchedItems ||
+    needsShopifyLineImport ||
+    isNeedsMappingOutboundOrder(order.notes);
+
+  const handleReimportShopifyLines = async () => {
+    setReimportingLines(true);
+    setReimportError("");
+    try {
+      const res = await fetch(`/api/outbound/${order.id}/reimport-shopify-lines`, {
+        method: "POST",
+      });
+      const data = (await res.json()) as { error?: string; inserted?: number };
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to import lines from Shopify");
+      }
+      await fetchOrder();
+    } catch (err) {
+      setReimportError(
+        err instanceof Error ? err.message : "Failed to import lines from Shopify"
+      );
+    } finally {
+      setReimportingLines(false);
+    }
+  };
 
   // Derive brand IDs from existing order items + the order's primary client + any added brands
   const orderBrandIds = (() => {
@@ -2032,13 +2068,47 @@ export default function OutboundOrderDetailPage() {
             </Card>
           )}
 
+          {/* Needs mapping / missing Shopify lines */}
+          {showNeedsMappingBanner && (
+            <Card className="border-rose-200 bg-rose-50/50">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-rose-900 flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5" />
+                    {needsShopifyLineImport
+                      ? "Shopify products not imported"
+                      : "Products need matching"}
+                  </h2>
+                  <p className="text-sm text-rose-800 mt-1">
+                    {needsShopifyLineImport
+                      ? "This order was synced from Shopify but has no line items in IMS yet. Import them below, then match each product to an IMS SKU."
+                      : "One or more Shopify lines are not linked to IMS products. Match them below so fulfillment and inventory stay accurate — even on shipped orders."}
+                  </p>
+                  {reimportError ? (
+                    <p className="text-sm text-red-700 mt-2">{reimportError}</p>
+                  ) : null}
+                </div>
+                {needsShopifyLineImport ? (
+                  <Button
+                    variant="primary"
+                    onClick={handleReimportShopifyLines}
+                    disabled={reimportingLines}
+                    className="shrink-0"
+                  >
+                    {reimportingLines ? "Importing…" : "Import from Shopify"}
+                  </Button>
+                ) : null}
+              </div>
+            </Card>
+          )}
+
           {/* Line Items Table */}
           <Card>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">
                 Line Items
               </h2>
-              {canEdit && (
+              {canEditLineItems && (
                 <button
                   onClick={handleStartAddItem}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
@@ -2078,7 +2148,7 @@ export default function OutboundOrderDetailPage() {
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Status
                     </th>
-                    {canEdit && (
+                    {canEditLineItems && (
                       <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
                       </th>
@@ -2086,6 +2156,18 @@ export default function OutboundOrderDetailPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
+                  {order.items.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={canEditLineItems ? 6 : 5}
+                        className="px-4 py-10 text-center text-sm text-gray-500"
+                      >
+                        {needsShopifyLineImport
+                          ? "No line items yet — use Import from Shopify above."
+                          : "No line items on this order."}
+                      </td>
+                    </tr>
+                  ) : null}
                   {order.items.map((item) => {
                     const isUnmatched = Boolean(item.is_unmatched);
                     const remaining = item.qty_requested - item.qty_shipped;
@@ -2116,6 +2198,18 @@ export default function OutboundOrderDetailPage() {
                                 </span>
                               )}
                             </div>
+                            {isUnmatched && order.client_id ? (
+                              <div className="mt-3">
+                                <UnmatchedProductMatcher
+                                  orderId={order.id}
+                                  itemId={item.id}
+                                  clientId={order.client_id}
+                                  externalSku={item.external_sku}
+                                  externalTitle={item.external_title}
+                                  onMatched={fetchOrder}
+                                />
+                              </div>
+                            ) : null}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -2173,16 +2267,16 @@ export default function OutboundOrderDetailPage() {
                             </div>
                           ) : (
                             <span
-                              className={`text-gray-900 font-medium ${canEdit ? "cursor-pointer hover:text-indigo-600" : ""}`}
+                              className={`text-gray-900 font-medium ${canEditLineItems ? "cursor-pointer hover:text-indigo-600" : ""}`}
                               onClick={() => {
-                                if (canEdit) {
+                                if (canEditLineItems) {
                                   setEditingItems((prev) => ({
                                     ...prev,
                                     [item.id]: item.qty_requested,
                                   }));
                                 }
                               }}
-                              title={canEdit ? "Click to edit" : undefined}
+                              title={canEditLineItems ? "Click to edit" : undefined}
                             >
                               {item.qty_requested}
                               <span className="text-gray-500 text-xs ml-1">{getUnitLabel(item.product?.container_type)}</span>
@@ -2242,22 +2336,10 @@ export default function OutboundOrderDetailPage() {
                             <Badge variant="default">Pending</Badge>
                           )}
                         </td>
-                        {canEdit && (
+                        {canEditLineItems && (
                           <td className="px-4 py-3 text-center">
                             {isUnmatched ? (
-                              order.client_id ? (
-                                <UnmatchedProductMatcher
-                                  orderId={order.id}
-                                  itemId={item.id}
-                                  clientId={order.client_id}
-                                  externalSku={item.external_sku}
-                                  externalTitle={item.external_title}
-                                  onMatched={fetchOrder}
-                                  variant="inline"
-                                />
-                              ) : (
-                                <span className="text-xs text-rose-600">No client — map in Integrations</span>
-                              )
+                              <span className="text-xs text-slate-400">—</span>
                             ) : (
                               <div className="inline-flex items-center gap-1">
                                 <button
@@ -2320,7 +2402,7 @@ export default function OutboundOrderDetailPage() {
                       <td className="px-4 py-3" />
                       <td className="px-4 py-3" />
                       <td className="px-4 py-3" />
-                      {canEdit && (
+                      {canEditLineItems && (
                         <td className="px-4 py-3 text-center">
                           <div className="inline-flex items-center gap-1">
                             <button
@@ -2368,7 +2450,7 @@ export default function OutboundOrderDetailPage() {
                         {itemsComplete} / {order.items.length} picked
                       </span>
                     </td>
-                    {canEdit && <td className="px-4 py-3" />}
+                    {canEditLineItems && <td className="px-4 py-3" />}
                   </tr>
                 </tfoot>
               </table>
@@ -3092,7 +3174,7 @@ export default function OutboundOrderDetailPage() {
                 )}
 
                 {/* Additional Brands (for multi-client orders) */}
-                {canEdit && (
+                {canEditLineItems && (
                   <div>
                     <p className="text-sm text-gray-500 mb-1">Brands on Order</p>
                     <div className="space-y-2">

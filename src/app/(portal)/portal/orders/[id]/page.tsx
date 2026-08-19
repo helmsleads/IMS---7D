@@ -73,6 +73,8 @@ interface OrderDetail {
   delivered_date: string | null;
   client_shipping_cost: number | null;
   client_id: string;
+  integration_id?: string | null;
+  external_platform?: string | null;
   items: OrderItem[];
 }
 
@@ -209,6 +211,8 @@ export default function OrderDetailPage() {
   const [copiedTracking, setCopiedTracking] = useState(false);
   const [generatingBOL, setGeneratingBOL] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [reimportingLines, setReimportingLines] = useState(false);
+  const [reimportError, setReimportError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -251,6 +255,8 @@ export default function OrderDetailPage() {
           delivered_date,
           client_shipping_cost,
           client_id,
+          integration_id,
+          external_platform,
           is_multi_client,
           items:outbound_items (
             id,
@@ -392,6 +398,8 @@ export default function OrderDetailPage() {
           };
         }),
         client_id: data.client_id,
+        integration_id: data.integration_id,
+        external_platform: data.external_platform,
       };
 
       setOrder(orderDetail);
@@ -857,6 +865,46 @@ export default function OrderDetailPage() {
             </div>
           </div>
           <div className="divide-y divide-slate-100">
+            {order.items.length === 0 &&
+            order.external_platform === "shopify" &&
+            order.integration_id ? (
+              <div className="p-6 text-center space-y-3">
+                <p className="text-sm text-slate-600">
+                  Shopify line items have not been imported into this order yet.
+                </p>
+                {reimportError ? (
+                  <p className="text-sm text-red-600">{reimportError}</p>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={reimportingLines}
+                  onClick={async () => {
+                    setReimportingLines(true);
+                    setReimportError(null);
+                    try {
+                      const res = await fetch(
+                        `/api/outbound/${order.id}/reimport-shopify-lines`,
+                        { method: "POST" }
+                      );
+                      const body = (await res.json()) as { error?: string };
+                      if (!res.ok) {
+                        throw new Error(body.error || "Import failed");
+                      }
+                      setRefreshKey((k) => k + 1);
+                    } catch (err) {
+                      setReimportError(
+                        err instanceof Error ? err.message : "Import failed"
+                      );
+                    } finally {
+                      setReimportingLines(false);
+                    }
+                  }}
+                  className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {reimportingLines ? "Importing…" : "Import from Shopify"}
+                </button>
+              </div>
+            ) : null}
             {order.items.map((item) => {
               const isUnmatched = Boolean(item.is_unmatched);
               const isPartiallyShipped = !isUnmatched && item.qty_shipped > 0 && item.qty_shipped < item.qty_requested;

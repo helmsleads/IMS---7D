@@ -641,6 +641,205 @@ export async function attachMappedShopifyLineItemsIfMissing(
 
   return { attached: lineItems.length }
 }
+
+export type ShopifyOutboundLineItemRow = {
+  product_id: string | null
+  qty_requested: number
+  qty_shipped: number
+  unit_price: number
+  external_sku?: string | null
+  external_title?: string | null
+  is_unmatched?: boolean
+  virtual_qty?: number
+}
+
+/** Build IMS outbound line rows from a Shopify order (matched + unmatched placeholders). */
+export async function buildShopifyOutboundLineItems(
+  order: ShopifyOrder,
+  integrationId: string,
+  options?: { treatAsShipped?: boolean }
+): Promise<{
+  lineItems: ShopifyOutboundLineItemRow[]
+  unmappedItems: string[]
+  hasUnmatchedLines: boolean
+}> {
+  const supabase = createServiceClient()
+  const treatAsShipped = options?.treatAsShipped ?? false
+
+  const { data: mappings } = await supabase
+    .from('product_mappings')
+    .select('product_id, external_variant_id, external_sku')
+    .eq('integration_id', integrationId)
+
+  const mappingsByVariant = new Map(
+    (mappings || []).map((m) => [String(m.external_variant_id), m])
+  )
+  const mappingsBySku = new Map(
+    (mappings || [])
+      .filter((m) => m.external_sku)
+      .map((m) => [m.external_sku!.toLowerCase(), m])
+  )
+
+  const lineItems: ShopifyOutboundLineItemRow[] = []
+  const unmappedItems: string[] = []
+  let hasUnmatchedLines = false
+
+  for (const item of order.line_items || []) {
+    if (!item.requires_shipping || item.quantity <= 0) continue
+
+    let mapping = mappingsByVariant.get(String(item.variant_id))
+    if (!mapping && item.sku) {
+      mapping = mappingsBySku.get(item.sku.toLowerCase())
+    }
+
+    if (!mapping) {
+      const label = `${item.sku || 'No SKU'}: ${item.name}`
+      unmappedItems.push(label)
+      hasUnmatchedLines = true
+      lineItems.push({
+        product_id: null,
+        qty_requested: 0,
+        qty_shipped: 0,
+        unit_price: parseFloat(item.price) || 0,
+        external_sku: item.sku || null,
+        external_title: item.name || item.title || null,
+        is_unmatched: true,
+        virtual_qty: item.quantity,
+      })
+      continue
+    }
+
+    const qty = item.quantity
+    const shippedQty = treatAsShipped ? shopifyLineItemQtyShipped(item) : 0
+    lineItems.push({
+      product_id: mapping.product_id,
+      qty_requested: qty,
+      qty_shipped: shippedQty,
+      unit_price: parseFloat(item.price),
+      is_unmatched: false,
+      virtual_qty: 0,
+    })
+  }
+
+  return { lineItems, unmappedItems, hasUnmatchedLines }
+}
+
+/**
+ * Re-import Shopify line items when an order exists in IMS but has no outbound_items
+ * (e.g. migration lag or failed item insert).
+ */
+export async function reimportShopifyOrderLineItems(
+  imsOrderId: string
+): Promise<{ inserted: number }> {
+  const supabase = createServiceClient()
+
+  const { data: order, error: orderError } = await supabase
+    .from('outbound_orders')
+    .select(
+      'id, status, integration_id, external_platform, external_order_id, notes'
+    )
+    .eq('id', imsOrderId)
+    .single()
+
+  if (orderError || !order) {
+    throw new Error('Order not found')
+  }
+
+  if (order.external_platform !== 'shopify' || !order.integration_id) {
+    throw new Error('Line import is only available for Shopify orders')
+  }
+
+  if (!order.external_order_id) {
+    throw new Error('Order has no Shopify external ID')
+  }
+
+  const { count: existingCount } = await supabase
+    .from('outbound_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('order_id', imsOrderId)
+
+  if (existingCount && existingCount > 0) {
+    throw new Error('Order already has line items')
+  }
+
+  const { data: integration, error: integrationError } = await supabase
+    .from('client_integrations')
+    .select('*')
+    .eq('id', order.integration_id)
+    .single()
+
+  if (integrationError || !integration) {
+    throw new Error('Shopify integration not found')
+  }
+
+  const client = await createShopifyClientForIntegration(integration)
+  const { order: shopifyOrder } = await client.get<{ order: ShopifyOrder }>(
+    `/orders/${order.external_order_id}.json`
+  )
+
+  if (!shopifyOrder) {
+    throw new Error('Shopify order not found')
+  }
+
+  const normalized = normalizeShopifyOrderPayload(
+    shopifyOrder as unknown as Record<string, unknown>
+  ) as unknown as ShopifyOrder
+
+  const treatAsShipped =
+    order.status === 'shipped' || order.status === 'delivered'
+  const { lineItems, unmappedItems, hasUnmatchedLines } =
+    await buildShopifyOutboundLineItems(normalized, order.integration_id, {
+      treatAsShipped,
+    })
+
+  if (lineItems.length === 0) {
+    throw new Error(
+      'No shippable line items found in Shopify for this order'
+    )
+  }
+
+  const { error: insertError } = await supabase.from('outbound_items').insert(
+    lineItems.map((item) => ({
+      order_id: imsOrderId,
+      product_id: item.product_id,
+      qty_requested: item.qty_requested,
+      qty_shipped: item.qty_shipped,
+      unit_price: item.unit_price,
+      external_sku: item.external_sku ?? null,
+      external_title: item.external_title ?? null,
+      is_unmatched: item.is_unmatched ?? false,
+      virtual_qty: item.virtual_qty ?? 0,
+    }))
+  )
+
+  if (insertError) {
+    throw new Error(insertError.message)
+  }
+
+  if (hasUnmatchedLines) {
+    const noteLines = String(order.notes || '')
+      .split('\n')
+      .filter(Boolean)
+    if (!noteLines.some((l) => /^\[needs mapping\]$/i.test(l.trim()))) {
+      noteLines.push('[needs mapping]')
+    }
+    if (
+      !noteLines.some((l) => /item\(s\) not matching IMS/i.test(l)) &&
+      unmappedItems.length > 0
+    ) {
+      noteLines.push(
+        `⚠️ ${unmappedItems.length} item(s) not matching IMS (shown with virtual qty): ${unmappedItems.join(', ')}`
+      )
+    }
+    await supabase
+      .from('outbound_orders')
+      .update({ notes: noteLines.join('\n') })
+      .eq('id', imsOrderId)
+  }
+
+  return { inserted: lineItems.length }
+}
+
 export async function syncShopifyOrders(
   integrationId: string,
   since?: Date,
