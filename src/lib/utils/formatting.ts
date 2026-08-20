@@ -39,7 +39,66 @@ export function isTestOutboundOrder(notes: string | null | undefined): boolean {
 /** Shopify 7D-tagged orders that still need product matching in 7D. */
 export function isNeedsMappingOutboundOrder(notes: string | null | undefined): boolean {
   if (!notes) return false;
-  return /\[needs mapping\]/i.test(notes);
+  return (
+    /\[needs mapping\]/i.test(notes) ||
+    /item\(s\) could not be mapped/i.test(notes) ||
+    /item\(s\) not matching IMS/i.test(notes)
+  );
+}
+
+export function isShopifyConnectionError(raw: string | null | undefined): boolean {
+  if (!raw?.trim()) return false
+  const lower = raw.toLowerCase()
+  return (
+    lower.includes('shopify_client_not_connected') ||
+    lower.includes('disconnected') ||
+    lower.includes('missing access token') ||
+    lower.includes('not connected') ||
+    lower.includes('shop domain')
+  )
+}
+
+/** User-facing copy for Shopify line import errors (hides internal API details). */
+export function formatShopifyImportError(
+  raw: string | null | undefined,
+  options?: { audience?: 'admin' | 'portal' }
+): string | null {
+  if (!raw?.trim()) return null
+
+  const audience = options?.audience ?? 'portal'
+
+  if (isShopifyConnectionError(raw)) {
+    return audience === 'admin'
+      ? "This client's Shopify store is not connected. View the client record to check the store connection."
+      : 'Shopify is not connected. Reconnect your store under Integrations, then try again.'
+  }
+
+  const lower = raw.toLowerCase()
+
+  if (lower.includes('no importable') || lower.includes('no shippable')) {
+    return 'No shippable items were found on this order in Shopify.'
+  }
+
+  if (lower.includes('shopify order not found') || lower.includes('not found in shopify')) {
+    return 'This order could not be found in Shopify. Confirm the correct store is connected.'
+  }
+
+  if (lower.includes('migration required')) {
+    return 'Import is temporarily unavailable. Please contact support.'
+  }
+
+  if (
+    lower.includes('client_id') ||
+    lower.includes('access token') ||
+    lower.includes('integration linked') ||
+    lower.includes('oauth')
+  ) {
+    return audience === 'admin'
+      ? "Unable to import from Shopify. Check the client's store connection and try again."
+      : 'Unable to import from Shopify. Reconnect your store under Integrations and try again.'
+  }
+
+  return raw
 }
 
 export function formatDate(

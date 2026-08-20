@@ -295,11 +295,11 @@ function ShopifyCard({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-lg font-semibold text-slate-900">
-                  {isTest ? 'Shopify (test store)' : 'Shopify'}
+                  {isTest ? 'Shopify (development store)' : 'Shopify'}
                 </h3>
                 {isTest ? (
                   <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200">
-                    Staging / test app
+                    Development store
                   </span>
                 ) : (
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
@@ -309,8 +309,8 @@ function ShopifyCard({
               </div>
               <p className="text-sm text-slate-500 mt-0.5">
                 {isTest
-                  ? 'Reconnect a development store that already has the test app installed'
-                  : 'Connect your production Shopify store with Partners OAuth'}
+                  ? 'Connect a Shopify development store that already has the 7D development app installed'
+                  : 'Connect a live Shopify store (for example xc1uiz-gy)'}
               </p>
             </div>
           </div>
@@ -364,6 +364,10 @@ function ShopifyLiveOAuthConnect({
   const [shopDomain, setShopDomain] = useState('')
   const [isConnecting, setIsConnecting] = useState(false)
   const [showForm, setShowForm] = useState(false)
+  const callbackUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/api/integrations/shopify/callback`
+      : '/api/integrations/shopify/callback'
 
   const handleConnect = async () => {
     if (!shopDomain || !clientId) return
@@ -430,14 +434,24 @@ function ShopifyLiveOAuthConnect({
             type="text"
             value={shopDomain}
             onChange={(e) => setShopDomain(e.target.value)}
-            placeholder="your-store-name"
+            placeholder="xc1uiz-gy"
             className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
             disabled={isConnecting}
           />
           <span className="text-sm text-slate-500">.myshopify.com</span>
         </div>
         <p className="text-xs text-slate-400 mt-1">
-          Enter your live store name without the .myshopify.com part. Uses Partners OAuth.
+          Example: <span className="font-medium text-slate-500">xc1uiz-gy</span>
+          {' '}— enter the store handle only, without .myshopify.com.
+        </p>
+        <p className="text-xs text-slate-500 mt-2 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+          If Shopify shows <span className="font-medium">Unauthorized Access</span>, the
+          live Partners app is not authorized for that store yet. Check that the app
+          installed in Shopify Admin matches the live 7D app, and that the Partners
+          app allowlists{' '}
+          <code className="text-[11px]">{callbackUrl}</code>
+          . This error happens on Shopify&apos;s page before 7D receives a callback — it
+          is not caused by an old token stored in 7D.
         </p>
       </div>
 
@@ -547,7 +561,7 @@ function ShopifyTestOAuthConnect({
           disabled={!testAppConfigured}
           className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-lg hover:from-green-600 hover:to-green-700 shadow-sm hover:shadow transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Connect test store
+          Connect development store
         </button>
       </div>
     )
@@ -571,9 +585,8 @@ function ShopifyTestOAuthConnect({
           <span className="text-sm text-slate-500">.myshopify.com</span>
         </div>
         <p className="text-xs text-slate-400 mt-1">
-          The test app must already be installed on{' '}
-          <code className="text-[11px]">test-7d-store</code> in Shopify Admin. Connect
-          stays in 7D (no authorize redirect). Live store flow is unchanged.
+          Example: <span className="font-medium text-slate-500">test-7d-store</span>
+          {' '}— the 7D development app must already be installed in Shopify Admin.
         </p>
       </div>
 
@@ -583,7 +596,7 @@ function ShopifyTestOAuthConnect({
           disabled={!shopDomain || isConnecting || !testAppConfigured}
           className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-lg hover:from-green-600 hover:to-green-700 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2"
         >
-          {isConnecting ? 'Connecting...' : 'Connect test store'}
+          {isConnecting ? 'Connecting...' : 'Connect development store'}
         </button>
         <button
           onClick={() => {

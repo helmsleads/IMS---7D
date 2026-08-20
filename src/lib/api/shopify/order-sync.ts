@@ -649,11 +649,85 @@ export function describeShopifyLineItemsForImport(order: ShopifyOrder): string {
     .join('; ')
 }
 
+function integrationIsCallable(
+  integration: Pick<ClientIntegration, 'status' | 'access_token'>
+): boolean {
+  return integration.status === 'active' && Boolean(integration.access_token)
+}
+
+export const SHOPIFY_CLIENT_NOT_CONNECTED = 'SHOPIFY_CLIENT_NOT_CONNECTED'
+
+/** Resolve the client's Shopify integration for import (prefers active connection for the order's brand). */
+async function resolveShopifyIntegrationForOrder(order: {
+  id: string
+  client_id: string | null
+  integration_id: string | null
+}): Promise<{ integration: ClientIntegration; integrationId: string }> {
+  const supabase = createServiceClient()
+
+  let pinned: ClientIntegration | null = null
+  if (order.integration_id) {
+    const { data } = await supabase
+      .from('client_integrations')
+      .select('*')
+      .eq('id', order.integration_id)
+      .maybeSingle()
+    pinned = (data as ClientIntegration | null) ?? null
+    if (pinned && integrationIsCallable(pinned)) {
+      return { integration: pinned, integrationId: pinned.id }
+    }
+  }
+
+  if (!order.client_id) {
+    throw new Error(SHOPIFY_CLIENT_NOT_CONNECTED)
+  }
+
+  const { data: rows } = await supabase
+    .from('client_integrations')
+    .select('*')
+    .eq('client_id', order.client_id)
+    .eq('platform', 'shopify')
+    .order('updated_at', { ascending: false })
+
+  const callable = (rows || []).filter((row) =>
+    integrationIsCallable(row as ClientIntegration)
+  )
+  const pinnedDomain = pinned?.shop_domain
+  const match =
+    (pinnedDomain
+      ? callable.find((row) => row.shop_domain === pinnedDomain)
+      : null) ?? callable[0]
+
+  if (!match) {
+    throw new Error(SHOPIFY_CLIENT_NOT_CONNECTED)
+  }
+
+  const integration = match as ClientIntegration
+  if (integration.id !== order.integration_id) {
+    await supabase
+      .from('outbound_orders')
+      .update({ integration_id: integration.id })
+      .eq('id', order.id)
+  }
+
+  return { integration, integrationId: integration.id }
+}
+
+function assertShopifyIntegrationConnected(integration: ClientIntegration): void {
+  if (integrationIsCallable(integration)) {
+    return
+  }
+
+  throw new Error(SHOPIFY_CLIENT_NOT_CONNECTED)
+}
+
 async function loadShopifyOrderForRepair(
   integration: ClientIntegration,
   externalOrderId: string,
   externalOrderNumber?: string | null
 ): Promise<ShopifyOrder> {
+  assertShopifyIntegrationConnected(integration)
+
   const client = await createShopifyClientForIntegration(integration)
   const shopifyOrder = await fetchShopifyOrderForImsRepair(client, {
     externalOrderId,
@@ -684,12 +758,16 @@ export async function previewShopifyOrderLinesForIms(
   const { data: order } = await supabase
     .from('outbound_orders')
     .select(
-      'id, integration_id, external_platform, external_order_id, external_order_number'
+      'id, client_id, integration_id, external_platform, external_order_id, external_order_number'
     )
     .eq('id', imsOrderId)
     .single()
 
-  if (!order?.integration_id || order.external_platform !== 'shopify') {
+  if (order?.external_platform !== 'shopify') {
+    throw new Error('Not a Shopify order')
+  }
+
+  if (!order.integration_id && !order.client_id) {
     throw new Error('Not a Shopify order')
   }
 
@@ -698,18 +776,12 @@ export async function previewShopifyOrderLinesForIms(
     .select('id', { count: 'exact', head: true })
     .eq('order_id', imsOrderId)
 
-  const { data: integration } = await supabase
-    .from('client_integrations')
-    .select('*')
-    .eq('id', order.integration_id)
-    .single()
-
-  if (!integration) {
-    throw new Error('Shopify integration not found')
-  }
+  const { integration, integrationId } = await resolveShopifyIntegrationForOrder(
+    order
+  )
 
   const shopifyOrder = await loadShopifyOrderForRepair(
-    integration as ClientIntegration,
+    integration,
     order.external_order_id!,
     order.external_order_number
   )
@@ -720,7 +792,7 @@ export async function previewShopifyOrderLinesForIms(
 
   const { lineItems } = await buildShopifyOutboundLineItems(
     normalized,
-    order.integration_id,
+    integrationId,
     { importNonShippingIfNoShippable: true }
   )
 
@@ -845,7 +917,7 @@ export async function reimportShopifyOrderLineItems(
   const { data: order, error: orderError } = await supabase
     .from('outbound_orders')
     .select(
-      'id, status, integration_id, external_platform, external_order_id, external_order_number, notes'
+      'id, client_id, status, integration_id, external_platform, external_order_id, external_order_number, notes'
     )
     .eq('id', imsOrderId)
     .single()
@@ -854,7 +926,11 @@ export async function reimportShopifyOrderLineItems(
     throw new Error('Order not found')
   }
 
-  if (order.external_platform !== 'shopify' || !order.integration_id) {
+  if (order.external_platform !== 'shopify') {
+    throw new Error('Line import is only available for Shopify orders')
+  }
+
+  if (!order.integration_id && !order.client_id) {
     throw new Error('Line import is only available for Shopify orders')
   }
 
@@ -888,18 +964,12 @@ export async function reimportShopifyOrderLineItems(
     await supabase.from('outbound_items').delete().eq('order_id', imsOrderId)
   }
 
-  const { data: integration, error: integrationError } = await supabase
-    .from('client_integrations')
-    .select('*')
-    .eq('id', order.integration_id)
-    .single()
-
-  if (integrationError || !integration) {
-    throw new Error('Shopify integration not found')
-  }
+  const { integration, integrationId } = await resolveShopifyIntegrationForOrder(
+    order
+  )
 
   const shopifyOrder = await loadShopifyOrderForRepair(
-    integration as ClientIntegration,
+    integration,
     order.external_order_id,
     order.external_order_number
   )
@@ -911,7 +981,7 @@ export async function reimportShopifyOrderLineItems(
   const treatAsShipped =
     order.status === 'shipped' || order.status === 'delivered'
   const { lineItems, unmappedItems, hasUnmatchedLines, importedNonShippingFallback } =
-    await buildShopifyOutboundLineItems(normalized, order.integration_id, {
+    await buildShopifyOutboundLineItems(normalized, integrationId, {
       treatAsShipped,
       importNonShippingIfNoShippable: true,
     })

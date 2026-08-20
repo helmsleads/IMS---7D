@@ -96,7 +96,7 @@ import {
 } from "@/lib/outbound-service-options";
 import { Download } from "lucide-react";
 import UnmatchedProductMatcher from "@/components/outbound/UnmatchedProductMatcher";
-import { isNeedsMappingOutboundOrder } from "@/lib/utils/formatting";
+import { isNeedsMappingOutboundOrder, formatShopifyImportError, isShopifyConnectionError } from "@/lib/utils/formatting";
 
 const STATUS_STEPS = [
   { key: "pending", label: "Pending", icon: Clock },
@@ -579,7 +579,7 @@ export default function OutboundOrderDetailPage() {
     const shouldPreview =
       order.external_platform === "shopify" &&
       order.items.length === 0 &&
-      Boolean(order.integration_id);
+      Boolean(order.integration_id || order.client_id);
     if (!shouldPreview) {
       setShopifyLinePreview(null);
       return;
@@ -620,9 +620,10 @@ export default function OutboundOrderDetailPage() {
           await fetchOrder();
         } catch (err) {
           setReimportError(
-            err instanceof Error
-              ? err.message
-              : "Failed to import lines from Shopify"
+            formatShopifyImportError(
+              err instanceof Error ? err.message : "Failed to import from Shopify",
+              { audience: 'admin' }
+            ) || "Failed to import from Shopify"
           );
         } finally {
           if (!cancelled) setReimportingLines(false);
@@ -643,6 +644,7 @@ export default function OutboundOrderDetailPage() {
     order?.items.length,
     order?.external_platform,
     order?.integration_id,
+    order?.client_id,
   ]);
 
   const handleStatusUpdate = async (newStatus: string, additionalFields?: { carrier?: string; tracking_number?: string }): Promise<boolean> => {
@@ -1366,6 +1368,14 @@ export default function OutboundOrderDetailPage() {
     },
   ] : [];
 
+  const shopifyImportError = formatShopifyImportError(
+    reimportError || shopifyLinePreview?.error,
+    { audience: 'admin' }
+  );
+  const shopifyConnectionError = isShopifyConnectionError(
+    reimportError || shopifyLinePreview?.error
+  );
+
   const backLink = (
     <div className="flex items-center gap-3">
       <Link
@@ -1448,7 +1458,7 @@ export default function OutboundOrderDetailPage() {
   const needsShopifyLineImport =
     order.external_platform === "shopify" && order.items.length === 0;
   const shopifyMissingIntegration =
-    needsShopifyLineImport && !order.integration_id;
+    needsShopifyLineImport && !order.integration_id && !order.client_id;
   const showNeedsMappingBanner =
     hasUnmatchedItems ||
     needsShopifyLineImport ||
@@ -1468,7 +1478,10 @@ export default function OutboundOrderDetailPage() {
       await fetchOrder();
     } catch (err) {
       setReimportError(
-        err instanceof Error ? err.message : "Failed to import lines from Shopify"
+        formatShopifyImportError(
+          err instanceof Error ? err.message : "Failed to import from Shopify",
+          { audience: 'admin' }
+        ) || "Failed to import from Shopify"
       );
     } finally {
       setReimportingLines(false);
@@ -2162,49 +2175,52 @@ export default function OutboundOrderDetailPage() {
                   </h2>
                   <p className="text-sm text-rose-800 mt-1">
                     {shopifyMissingIntegration
-                      ? "This order is linked to Shopify but has no integration on file, so line items cannot be imported automatically. Assign a Shopify integration to this order or re-import from the integration."
+                      ? "This order is from Shopify, but no client is assigned. Assign a client to this order before importing products."
                       : needsShopifyLineImport
-                        ? "This order was synced from Shopify but has no line items in IMS yet. Import them below, then match each product to an IMS SKU."
-                        : "One or more Shopify lines are not linked to IMS products. Match them below so fulfillment and inventory stay accurate — even on shipped orders."}
+                        ? "Product lines from Shopify have not been added to this order yet. Click Import from Shopify, then match each line to a warehouse product in the table below."
+                        : "Some products still need to be linked to warehouse inventory. Use Match on each line in the table below."}
                   </p>
                   {needsShopifyLineImport && !shopifyMissingIntegration ? (
                     <div className="mt-2 text-sm text-rose-900">
                       {loadingShopifyPreview || reimportingLines ? (
                         <p>
                           {reimportingLines
-                            ? "Importing line items from Shopify…"
-                            : "Checking Shopify for line items…"}
+                            ? "Importing from Shopify…"
+                            : "Checking Shopify…"}
                         </p>
-                      ) : shopifyLinePreview?.error ? (
-                        <p className="text-red-700">{shopifyLinePreview.error}</p>
-                      ) : shopifyLinePreview ? (
+                      ) : shopifyLinePreview && !shopifyImportError ? (
                         <>
                           {shopifyLinePreview.shopify_order_name ? (
                             <p>
-                              Shopify order:{" "}
+                              Shopify order{" "}
                               <span className="font-medium">
                                 {shopifyLinePreview.shopify_order_name}
                               </span>
                             </p>
                           ) : null}
-                          {shopifyLinePreview.lines_summary ? (
-                            <p className="mt-1">{shopifyLinePreview.lines_summary}</p>
-                          ) : null}
                           {shopifyLinePreview.importable_count === 0 &&
                           (shopifyLinePreview.line_count ?? 0) > 0 ? (
                             <p className="mt-1 text-red-700">
-                              Shopify has lines but none are importable (e.g. all
-                              digital / no shipping). Uncheck “This is a digital
-                              product” on the variant in Shopify Admin, or add a
-                              shippable line.
+                              No shippable items found. In Shopify, confirm the
+                              product is marked as physical, then try again.
                             </p>
                           ) : null}
                         </>
                       ) : null}
                     </div>
                   ) : null}
-                  {reimportError ? (
-                    <p className="text-sm text-red-700 mt-2">{reimportError}</p>
+                  {shopifyImportError ? (
+                    <p className="text-sm text-red-700 mt-2">{shopifyImportError}</p>
+                  ) : null}
+                  {shopifyConnectionError && order.client_id ? (
+                    <p className="text-sm text-rose-900 mt-2">
+                      <Link
+                        href={`/clients/${order.client_id}`}
+                        className="font-medium text-indigo-700 underline hover:text-indigo-900"
+                      >
+                        View client
+                      </Link>
+                    </p>
                   ) : null}
                 </div>
                 {needsShopifyLineImport && !shopifyMissingIntegration ? (
@@ -2282,7 +2298,7 @@ export default function OutboundOrderDetailPage() {
                         className="px-4 py-10 text-center text-sm text-gray-500"
                       >
                         {needsShopifyLineImport
-                          ? "No line items yet — use Import from Shopify above."
+                          ? "No products yet. Use Import from Shopify above."
                           : "No line items on this order."}
                       </td>
                     </tr>
