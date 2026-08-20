@@ -318,7 +318,9 @@ export async function getOutboundOrder(id: string): Promise<OutboundOrderWithIte
     }
   );
 
-  const items = (data.items || []).map((item) => ({
+  const items: OutboundItemWithProduct[] = (
+    (data.items || []) as Omit<OutboundItemWithProduct, 'shopify_listing_title'>[]
+  ).map((item) => ({
     ...item,
     shopify_listing_title: resolveShopifyListingTitleForOrderItem(
       item,
