@@ -8,6 +8,10 @@ import { syncFulfillmentToShopify } from "./shopify/fulfillment-sync";
 import { isDtcOutboundOrder, DTC_DELETABLE_STATUSES } from "./dtc/constants";
 import { notifyDtcOrderShipped } from "./dtc/ship-notify";
 import { toBillableHandlingUnits } from "./billing-codes";
+import {
+  fetchShopifyListingTitlesByProductId,
+  resolveShopifyListingTitleForOrderItem,
+} from "./shopify/listing-display";
 
 export { isDtcOutboundOrder, DTC_DELETABLE_STATUSES } from "./dtc/constants";
 
@@ -99,6 +103,8 @@ export interface OutboundItemWithProduct extends OutboundItem {
     container_type?: string | null;
     units_per_case?: number | null;
   } | null;
+  /** Shopify listing title from product_mappings or line import. */
+  shopify_listing_title?: string | null;
 }
 
 export interface OutboundOrderWithClient extends OutboundOrder {
@@ -304,7 +310,23 @@ export async function getOutboundOrder(id: string): Promise<OutboundOrderWithIte
     }
   }
 
-  return { ...data, created_by_user };
+  const listingTitleByProductId = await fetchShopifyListingTitlesByProductId(
+    supabase,
+    {
+      integrationId: data.integration_id,
+      clientId: data.client_id,
+    }
+  );
+
+  const items = (data.items || []).map((item) => ({
+    ...item,
+    shopify_listing_title: resolveShopifyListingTitleForOrderItem(
+      item,
+      listingTitleByProductId
+    ),
+  }));
+
+  return { ...data, items, created_by_user };
 }
 
 export async function createOutboundOrder(

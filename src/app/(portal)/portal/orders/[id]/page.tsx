@@ -26,10 +26,19 @@ import Breadcrumbs from "@/components/ui/Breadcrumbs";
 import FetchError from "@/components/ui/FetchError";
 import { handleApiError } from "@/lib/utils/error-handler";
 import { isTestOutboundOrder, isNeedsMappingOutboundOrder } from "@/lib/utils/formatting";
+import {
+  isPortalTestOrderNote,
+  isShopifySyncedTestOrderNote,
+} from "@/lib/api/shopify/order-tag";
 import { downloadBOL, printBOL, BOLData } from "@/lib/generate-bol";
 import { getSystemSetting } from "@/lib/api/settings";
 import { ShipmentTrackingPanel } from "@/components/portal/ShipmentTrackingPanel";
 import UnmatchedProductMatcher from "@/components/outbound/UnmatchedProductMatcher";
+import { ShopifyListingLabel } from "@/components/shopify/ShopifyListingLabel";
+import {
+  fetchShopifyListingTitlesByProductId,
+  resolveShopifyListingTitleForOrderItem,
+} from "@/lib/api/shopify/listing-display";
 
 interface OrderItem {
   id: string;
@@ -48,6 +57,7 @@ interface OrderItem {
   virtual_qty?: number;
   external_sku?: string | null;
   external_title?: string | null;
+  shopify_listing_title?: string | null;
 }
 
 interface OrderDetail {
@@ -213,6 +223,8 @@ export default function OrderDetailPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [reimportingLines, setReimportingLines] = useState(false);
   const [reimportError, setReimportError] = useState<string | null>(null);
+  const [updatingTestFlag, setUpdatingTestFlag] = useState(false);
+  const [testFlagError, setTestFlagError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -314,6 +326,14 @@ export default function OrderDetailPage() {
           })
         : allItems;
 
+      const listingTitleByProductId = await fetchShopifyListingTitlesByProductId(
+        supabase,
+        {
+          integrationId: data.integration_id,
+          clientId: client.id,
+        }
+      );
+
       // Transform data
       const orderDetail: OrderDetail = {
         id: data.id,
@@ -372,6 +392,14 @@ export default function OrderDetailPage() {
           const qtyShipped = item.qty_shipped || 0;
           const isUnmatched = Boolean(item.is_unmatched);
           const virtualQty = item.virtual_qty || 0;
+          const shopifyListingTitle = resolveShopifyListingTitleForOrderItem(
+            {
+              is_unmatched: isUnmatched,
+              external_title: item.external_title,
+              product_id: product?.id ?? null,
+            },
+            listingTitleByProductId
+          );
           return {
             id: item.id,
             product_id: product?.id || "",
@@ -395,6 +423,7 @@ export default function OrderDetailPage() {
             virtual_qty: virtualQty,
             external_sku: item.external_sku ?? null,
             external_title: item.external_title ?? null,
+            shopify_listing_title: shopifyListingTitle,
           };
         }),
         client_id: data.client_id,
@@ -433,6 +462,28 @@ export default function OrderDetailPage() {
       await navigator.clipboard.writeText(order.tracking_number);
       setCopiedTracking(true);
       setTimeout(() => setCopiedTracking(false), 2000);
+    }
+  };
+
+  const handleSetTestOrder = async (markAsTest: boolean) => {
+    if (!order) return;
+    setUpdatingTestFlag(true);
+    setTestFlagError(null);
+    try {
+      const res = await fetch(`/api/portal/orders/${order.id}/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ test: markAsTest }),
+      });
+      const body = (await res.json()) as { error?: string; notes?: string | null };
+      if (!res.ok) {
+        throw new Error(body.error || "Could not update test flag");
+      }
+      setOrder({ ...order, notes: body.notes ?? order.notes });
+    } catch (err) {
+      setTestFlagError(err instanceof Error ? err.message : "Could not update test flag");
+    } finally {
+      setUpdatingTestFlag(false);
     }
   };
 
@@ -930,6 +981,7 @@ export default function OrderDetailPage() {
                   {/* Product Info */}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-slate-900 truncate">{item.product_name}</p>
+                    <ShopifyListingLabel title={item.shopify_listing_title} />
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm text-slate-500 font-mono">{item.sku}</p>
                       {isUnmatched ? (
@@ -1036,6 +1088,7 @@ export default function OrderDetailPage() {
               .filter((line) => {
                 if (!line) return false
                 if (/^\[test\]$/i.test(line)) return false
+                if (/^\[test:portal\]$/i.test(line)) return false
                 if (/^\[7d\]$/i.test(line)) return false
                 if (/^\[needs mapping\]$/i.test(line)) return false
                 return true
@@ -1087,6 +1140,48 @@ export default function OrderDetailPage() {
                   </span>
                 </div>
               )}
+              {order.status !== "cancelled" ? (
+                <div className="pt-3 mt-1 border-t border-slate-100 space-y-2">
+                  <div className="flex justify-between gap-3 items-start">
+                    <div>
+                      <span className="text-slate-500 block">Test order</span>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Mark here or add tag{" "}
+                        <span className="font-medium text-slate-500">test</span> in Shopify
+                        Admin.
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      {isPortalTestOrderNote(order.notes) ? (
+                        <button
+                          type="button"
+                          disabled={updatingTestFlag}
+                          onClick={() => void handleSetTestOrder(false)}
+                          className="text-sm font-medium text-slate-700 hover:text-slate-900 disabled:opacity-50"
+                        >
+                          {updatingTestFlag ? "Saving…" : "Remove test mark"}
+                        </button>
+                      ) : isShopifySyncedTestOrderNote(order.notes) ? (
+                        <span className="text-xs text-amber-800 bg-amber-50 px-2 py-1 rounded">
+                          From Shopify
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={updatingTestFlag}
+                          onClick={() => void handleSetTestOrder(true)}
+                          className="text-sm font-medium text-amber-800 hover:text-amber-900 disabled:opacity-50"
+                        >
+                          {updatingTestFlag ? "Saving…" : "Mark as test"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {testFlagError ? (
+                    <p className="text-xs text-red-600">{testFlagError}</p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

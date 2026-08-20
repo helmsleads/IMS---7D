@@ -96,6 +96,7 @@ import {
 } from "@/lib/outbound-service-options";
 import { Download } from "lucide-react";
 import UnmatchedProductMatcher from "@/components/outbound/UnmatchedProductMatcher";
+import { ShopifyListingLabel } from "@/components/shopify/ShopifyListingLabel";
 import { isNeedsMappingOutboundOrder, formatShopifyImportError, isShopifyConnectionError } from "@/lib/utils/formatting";
 
 const STATUS_STEPS = [
@@ -1986,6 +1987,7 @@ export default function OutboundOrderDetailPage() {
                             <p className="font-medium text-gray-900">
                               {item.product?.name || item.external_title || "Unknown Product"}
                             </p>
+                            <ShopifyListingLabel title={item.shopify_listing_title} />
                             <div className="flex items-center gap-2">
                               <p className="text-sm text-gray-500">
                                 SKU: {item.product?.sku || item.external_sku || "—"}
@@ -2319,6 +2321,7 @@ export default function OutboundOrderDetailPage() {
                             <p className="font-medium text-gray-900">
                               {item.product?.name || item.external_title || "Unknown Product"}
                             </p>
+                            <ShopifyListingLabel title={item.shopify_listing_title} />
                             <div className="flex items-center gap-2">
                               <p className="text-sm text-gray-500">
                                 SKU: {item.product?.sku || item.external_sku || "—"}

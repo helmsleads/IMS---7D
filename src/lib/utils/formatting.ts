@@ -30,10 +30,10 @@ export function formatNumber(value: number, decimals?: number): string {
   }).format(value);
 }
 
-/** Orders marked [test] in notes (Shopify order tag "test" in Admin). */
+/** Orders marked [test] (Shopify tag) or [test:portal] (7D client portal). */
 export function isTestOutboundOrder(notes: string | null | undefined): boolean {
   if (!notes) return false;
-  return /\[test\]/i.test(notes);
+  return /\[test(:portal)?\]/i.test(notes);
 }
 
 /** Shopify 7D-tagged orders that still need product matching in 7D. */

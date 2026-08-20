@@ -3,6 +3,8 @@ import {
   shopifyOrderHas7DTag,
   shopifyOrderHasTestTag,
   SHOPIFY_TEST_ORDER_TAG,
+  mergePortalTestOrderNote,
+  isPortalTestOrderNote,
 } from '@/lib/api/shopify/order-tag'
 import { mergeShopifyTestTagNote } from '@/lib/api/shopify/order-sync'
 
@@ -32,5 +34,26 @@ describe('mergeShopifyTestTagNote', () => {
 describe('shopifyOrderHas7DTag', () => {
   it('still matches 7D tag', () => {
     expect(shopifyOrderHas7DTag('test, 7D')).toBe(true)
+  })
+})
+
+describe('mergePortalTestOrderNote', () => {
+  it('adds portal test marker', () => {
+    expect(mergePortalTestOrderNote('[7D]', true)).toBe('[test:portal]\n[7D]')
+  })
+
+  it('removes portal test marker', () => {
+    expect(mergePortalTestOrderNote('[test:portal]\n[7D]', false)).toBe('[7D]')
+  })
+
+  it('does not remove Shopify [test] line', () => {
+    expect(mergePortalTestOrderNote('[test]\n[7D]', false)).toBe('[test]\n[7D]')
+  })
+})
+
+describe('isPortalTestOrderNote', () => {
+  it('detects portal marker only', () => {
+    expect(isPortalTestOrderNote('[test:portal]\n[7D]')).toBe(true)
+    expect(isPortalTestOrderNote('[test]\n[7D]')).toBe(false)
   })
 })

@@ -329,6 +329,14 @@ export default function ProductMappingPage() {
         />
       </div>
 
+      {imsProducts.length === 0 ? (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          No IMS products exist for your brand yet, so there is nothing to map to.
+          Ask 7 Degrees to add your product catalog in 7D first, then return here
+          to link Shopify listings.
+        </div>
+      ) : null}
+
       {/* Mapped */}
       <Card className="mb-6">
         <div className="p-4 border-b">
