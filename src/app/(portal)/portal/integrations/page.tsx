@@ -369,47 +369,31 @@ function ShopifyLiveOAuthConnect({
       ? `${window.location.origin}/api/integrations/shopify/callback`
       : '/api/integrations/shopify/callback'
 
-  const handleConnect = async () => {
-    if (!shopDomain || !clientId) return
+  const shopHandle = shopDomain
+    .replace('https://', '')
+    .replace('http://', '')
+    .replace('.myshopify.com', '')
+    .replace(/\//g, '')
+    .trim()
+  const shopifyAdminUrl = shopHandle
+    ? `https://admin.shopify.com/store/${shopHandle}`
+    : null
+
+  const handleConnect = () => {
+    if (!shopHandle || !clientId) return
 
     setIsConnecting(true)
 
-    const cleanDomain = shopDomain
-      .replace('https://', '')
-      .replace('http://', '')
-      .replace('.myshopify.com', '')
-      .replace(/\//g, '')
-      .trim()
-
     const state = btoa(JSON.stringify({ clientId, timestamp: Date.now(), app: 'live' }))
     const params = new URLSearchParams({
-      shop: cleanDomain,
+      shop: shopHandle,
       state,
-      preflight: '1',
       app: 'live',
     })
 
-    try {
-      const res = await fetch(`/api/integrations/shopify/auth?${params}`, {
-        credentials: 'include',
-      })
-      const data = (await res.json()) as { error?: string; redirectUrl?: string }
-
-      if (!res.ok) {
-        onConnectError(data.error || `Could not start connection (${res.status})`)
-        setIsConnecting(false)
-        return
-      }
-      if (!data.redirectUrl) {
-        onConnectError('Could not start Shopify authorization')
-        setIsConnecting(false)
-        return
-      }
-      window.location.href = data.redirectUrl
-    } catch {
-      onConnectError('Could not start Shopify connection. Please try again.')
-      setIsConnecting(false)
-    }
+    // Full-page redirect (not fetch preflight) so Shopify sees the same browser
+    // session/cookies as when you open Admin in this tab.
+    window.location.href = `/api/integrations/shopify/auth?${params}`
   }
 
   if (!showForm) {
@@ -445,17 +429,23 @@ function ShopifyLiveOAuthConnect({
           {' '}— enter the store handle only, without .myshopify.com.
         </p>
         <p className="text-xs text-slate-500 mt-2 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
-          Shopify&apos;s <span className="font-medium">Unauthorized Access</span> page
-          has no extra detail. It means this store is not allowed to install the
-          staging live app, or that app has legacy OAuth turned off. 7D never sees
-          a callback. In Dev Dashboard / Partners, open the app whose Client ID
-          starts with <span className="font-medium">aa0f70b6</span>, add{' '}
-          <span className="font-medium">xc1uiz-gy.myshopify.com</span> under custom
-          distribution, turn on the legacy install flow (authorization code grant),
-          and set the redirect URL to{' '}
-          <code className="text-[11px]">{callbackUrl}</code>. Then retry while
-          logged into Shopify as an admin of xc1uiz-gy.
+          Custom distribution apps only authorize when you are already logged into
+          Shopify Admin for this store in <span className="font-medium">this browser</span>.
+          If you see <span className="font-medium">Unauthorized Access</span>, open
+          Shopify Admin below, sign in as a store admin, then click Connect again.
+          Redirect URL in Partners must be{' '}
+          <code className="text-[11px]">{callbackUrl}</code>.
         </p>
+        {shopifyAdminUrl ? (
+          <a
+            href={shopifyAdminUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex text-xs font-medium text-green-700 hover:text-green-800 underline underline-offset-2"
+          >
+            Open Shopify Admin for {shopHandle}
+          </a>
+        ) : null}
       </div>
 
       <div className="flex gap-2">
