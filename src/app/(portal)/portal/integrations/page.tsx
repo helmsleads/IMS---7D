@@ -445,13 +445,16 @@ function ShopifyLiveOAuthConnect({
           {' '}— enter the store handle only, without .myshopify.com.
         </p>
         <p className="text-xs text-slate-500 mt-2 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
-          If Shopify shows <span className="font-medium">Unauthorized Access</span>, the
-          live Partners app is not authorized for that store yet. Check that the app
-          installed in Shopify Admin matches the live 7D app, and that the Partners
-          app allowlists{' '}
-          <code className="text-[11px]">{callbackUrl}</code>
-          . This error happens on Shopify&apos;s page before 7D receives a callback — it
-          is not caused by an old token stored in 7D.
+          Shopify&apos;s <span className="font-medium">Unauthorized Access</span> page
+          has no extra detail. It means this store is not allowed to install the
+          staging live app, or that app has legacy OAuth turned off. 7D never sees
+          a callback. In Dev Dashboard / Partners, open the app whose Client ID
+          starts with <span className="font-medium">aa0f70b6</span>, add{' '}
+          <span className="font-medium">xc1uiz-gy.myshopify.com</span> under custom
+          distribution, turn on the legacy install flow (authorization code grant),
+          and set the redirect URL to{' '}
+          <code className="text-[11px]">{callbackUrl}</code>. Then retry while
+          logged into Shopify as an admin of xc1uiz-gy.
         </p>
       </div>
 
